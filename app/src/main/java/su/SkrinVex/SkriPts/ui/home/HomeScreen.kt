@@ -1,9 +1,11 @@
 package su.SkrinVex.SkriPts.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,9 +22,11 @@ import su.SkrinVex.SkriPts.data.ScriptProject
 import su.SkrinVex.SkriPts.ui.theme.*
 
 @Composable
-fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit) {
+fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChanged: () -> Unit = {}) {
     val projects by vm.projects.collectAsState()
     var showNewDialog by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.refresh() }
 
@@ -33,9 +39,15 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit) {
                 ) {
                     Icon(Icons.Default.Code, null, tint = Accent, modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(10.dp))
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text("SkriPts", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrim)
                         Text("Визуальный конструктор программ", fontSize = 12.sp, color = TextSec)
+                    }
+                    IconButton(onClick = { showHelp = true }) {
+                        Icon(Icons.Default.Help, "Справка", tint = TextSec)
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, "Настройки", tint = TextSec)
                     }
                 }
             }
@@ -78,6 +90,17 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit) {
             onDismiss = { showNewDialog = false },
             onCreate = { name -> vm.createProject(name); showNewDialog = false; onOpenProject(null) }
         )
+    }
+
+    if (showSettings) {
+        SettingsDialog(
+            onDismiss = { showSettings = false },
+            onThemeChanged = onThemeChanged
+        )
+    }
+
+    if (showHelp) {
+        HelpDialog(onDismiss = { showHelp = false })
     }
 }
 
@@ -124,6 +147,175 @@ private fun ProjectCard(project: ScriptProject, onOpen: () -> Unit, onDelete: ()
                 TextButton(onClick = { showConfirm = false }) { Text("Отмена", color = TextSec) }
             }
         )
+    }
+}
+
+@Composable
+private fun SettingsDialog(onDismiss: () -> Unit, onThemeChanged: () -> Unit) {
+    var selectedTheme by remember { mutableStateOf(ThemeManager.getCurrentTheme()) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        title = { Text("Настройки", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Тема оформления", color = TextPrim, fontWeight = FontWeight.SemiBold)
+                
+                AppTheme.entries.forEach { theme ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (selectedTheme == theme) theme.accent.copy(0.15f) else Surface3)
+                            .clickable { selectedTheme = theme }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(24.dp).clip(CircleShape).background(theme.accent)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            theme.displayName, 
+                            color = if (selectedTheme == theme) theme.accent else TextPrim,
+                            fontWeight = if (selectedTheme == theme) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { 
+                    ThemeManager.setTheme(selectedTheme)
+                    onThemeChanged()
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+            ) { Text("Применить", color = Navy900) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена", color = TextSec)
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HelpDialog(onDismiss: () -> Unit) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Surface1,
+        modifier = Modifier.fillMaxHeight(),
+        dragHandle = null
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 0.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxHeight()
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.MenuBook, null, tint = Accent, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Справка по SkriPts", 
+                        color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                }
+            }
+            
+            item { HelpSection(Icons.Default.Info, "Основы", listOf(
+                "SkriPts — визуальный конструктор для создания интерактивных сцен",
+                "Создавайте скрипты из блоков, запускайте симуляцию и взаимодействуйте с объектами",
+                "Используйте переменные для хранения данных и выражения для вычислений"
+            )) }
+            
+            item { HelpSection(Icons.Default.DataObject, "Переменные", listOf(
+                "Глобальные переменные доступны во всех скриптах",
+                "Локальные переменные доступны только в текущем скрипте",
+                "Используйте {имя} для обращения к переменной: {score} + 10"
+            )) }
+            
+            item { HelpSection(Icons.Default.PhoneAndroid, "Константы экрана", listOf(
+                "\$screenWidth — ширина экрана в пикселях",
+                "\$screenHeight — высота экрана в пикселях", 
+                "\$screenTop — Y верхнего края (screenHeight / 2)",
+                "\$screenBottom — Y нижнего края (-screenHeight / 2)",
+                "\$screenLeft — X левого края (-screenWidth / 2)",
+                "\$screenRight — X правого края (screenWidth / 2)"
+            )) }
+            
+            item { HelpSection(Icons.Default.Functions, "Функции", listOf(
+                "\$rand(0, 100) — случайное число от 0 до 100",
+                "\$add(5, 3) — сложение: 5 + 3 = 8",
+                "\$sub(10, 3) — вычитание: 10 - 3 = 7", 
+                "\$mul(4, 5) — умножение: 4 × 5 = 20",
+                "\$div(20, 4) — деление: 20 ÷ 4 = 5",
+                "\$abs(-5) — модуль числа: |-5| = 5",
+                "\$min(3, 7) — минимум: min(3, 7) = 3",
+                "\$max(3, 7) — максимум: max(3, 7) = 7"
+            )) }
+            
+            item { HelpSection(Icons.Default.AccountTree, "Логические функции", listOf(
+                "\$and(true, false) — логическое И: true && false = false",
+                "\$or(true, false) — логическое ИЛИ: true || false = true",
+                "\$not(true) — логическое НЕ: !true = false"
+            )) }
+            
+            item { HelpSection(Icons.Default.TextFields, "Строковые функции", listOf(
+                "\$concat(\"Привет\", \" мир\") — соединение: \"Привет мир\"",
+                "\$length(\"текст\") — длина строки: 5",
+                "\$upper(\"текст\") — в верхний регистр: \"ТЕКСТ\"",
+                "\$lower(\"ТЕКСТ\") — в нижний регистр: \"текст\""
+            )) }
+            
+            item { HelpSection(Icons.Default.Tune, "Блоки управления", listOf(
+                "Условие (если) — выполняет блоки если условие истинно",
+                "Цикл (повторить) — повторяет блоки N раз, создаёт переменную {i}",
+                "Цикл (пока) — повторяет пока условие истинно",
+                "Ждать — пауза в выполнении (в симуляции показывает сообщение)",
+                "Завершить симуляцию — останавливает выполнение скрипта"
+            )) }
+            
+            item { HelpSection(Icons.Default.Widgets, "Блоки симуляции", listOf(
+                "Создать объект — создаёт прямоугольник на сцене",
+                "Переместить объект — меняет позицию (моментально или шагом)",
+                "Изменить размер — меняет ширину и высоту",
+                "Изменить цвет — меняет цвет объекта (#RRGGBB)",
+                "Текст на объекте — добавляет текст внутри прямоугольника",
+                "Текстовый объект — создаёт текст на сцене",
+                "Скрыть объект — делает невидимым и неклкабельным",
+                "Показать объект — делает видимым и кликабельным"
+            )) }
+            
+            item { HelpSection(Icons.Default.Lightbulb, "Примеры выражений", listOf(
+                "{x} + 50 — прибавить 50 к переменной x",
+                "\$screenWidth / 2 — половина ширины экрана",
+                "\$rand(-100, 100) — случайное число от -100 до 100",
+                "\$add({score}, 10) — увеличить счёт на 10",
+                "\$concat(\"Счёт: \", {score}) — текст со счётом"
+            )) }
+            
+            item { Spacer(Modifier.height(32.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun HelpSection(icon: ImageVector, title: String, items: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = Accent, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = Accent, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+        }
+        items.forEach { item ->
+            Row(verticalAlignment = Alignment.Top) {
+                Text("• ", color = TextSec, fontSize = 14.sp)
+                Text(item, color = TextPrim, fontSize = 14.sp, lineHeight = 20.sp)
+            }
+        }
     }
 }
 

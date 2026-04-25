@@ -17,7 +17,9 @@ import su.SkrinVex.SkriPts.ui.editor.EditorViewModel
 import su.SkrinVex.SkriPts.ui.home.HomeScreen
 import su.SkrinVex.SkriPts.ui.home.HomeViewModel
 import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
+import su.SkrinVex.SkriPts.ui.theme.AppTheme
 import su.SkrinVex.SkriPts.ui.theme.SkriPtsTheme
+import su.SkrinVex.SkriPts.ui.theme.ThemeManager
 
 class MainActivity : ComponentActivity() {
     private val homeVm: HomeViewModel by viewModels()
@@ -30,6 +32,8 @@ class MainActivity : ComponentActivity() {
         ExprEval.screenWidth = dm.widthPixels.toFloat()
         ExprEval.screenHeight = dm.heightPixels.toFloat()
         setContent {
+            var currentTheme by remember { mutableStateOf<AppTheme>(ThemeManager.getCurrentTheme()) }
+            
             SkriPtsTheme {
                 val editorState by editorVm.state.collectAsState()
                 var screen by remember { mutableStateOf("home") }
@@ -65,7 +69,8 @@ class MainActivity : ComponentActivity() {
                                 if (id != null) editorVm.loadProject(id)
                                 else editorVm.loadProject(homeVm.lastCreatedId)
                                 screen = "editor"
-                            }
+                            },
+                            onThemeChanged = { currentTheme = ThemeManager.getCurrentTheme() }
                         )
                         if (showExitDialog) {
                             AlertDialog(
