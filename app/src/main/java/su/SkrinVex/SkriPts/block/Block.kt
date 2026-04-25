@@ -33,7 +33,9 @@ data class BlockDef(
     val category: BlockCategory,
     val isAsync: Boolean = false,
     val params: Map<String, BlockParam> = emptyMap(),
-    val paramOrder: List<String> = emptyList()
+    val paramOrder: List<String> = emptyList(),
+    // Дочерние блоки для if_block: "then" и "else" ветки
+    val children: Map<String, List<BlockDef>> = emptyMap()
 ) {
     fun withParam(key: String, value: String): BlockDef =
         copy(params = params + (key to params[key]!!.copy(value = value)))

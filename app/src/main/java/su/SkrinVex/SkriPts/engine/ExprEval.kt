@@ -122,4 +122,46 @@ object ExprEval {
         if (expr.isBlank()) return null
         return eval(expr, vars).error
     }
+
+    /**
+     * Вычисляет условие: left op right
+     * Операторы: == != > < >= <=
+     * Сравнение числовое если оба — числа, иначе строковое.
+     */
+    fun evalCondition(left: String, op: String, right: String, vars: Map<String, String>): Pair<Boolean, String?> {
+        val lRes = eval(left, vars)
+        if (lRes.error != null) return false to lRes.error
+        val rRes = eval(right, vars)
+        if (rRes.error != null) return false to rRes.error
+
+        val lv = lRes.value
+        val rv = rRes.value
+
+        val ln = lv.toDoubleOrNull()
+        val rn = rv.toDoubleOrNull()
+
+        return if (ln != null && rn != null) {
+            val result = when (op) {
+                "==" -> ln == rn
+                "!=" -> ln != rn
+                ">"  -> ln > rn
+                "<"  -> ln < rn
+                ">=" -> ln >= rn
+                "<=" -> ln <= rn
+                else -> return false to "Неизвестный оператор «$op»"
+            }
+            result to null
+        } else {
+            val result = when (op) {
+                "==" -> lv == rv
+                "!=" -> lv != rv
+                ">"  -> lv > rv
+                "<"  -> lv < rv
+                ">=" -> lv >= rv
+                "<=" -> lv <= rv
+                else -> return false to "Неизвестный оператор «$op»"
+            }
+            result to null
+        }
+    }
 }

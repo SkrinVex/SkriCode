@@ -41,9 +41,10 @@ object SimEngine {
             // Локальные переменные — только для этого скрипта, не сохраняются
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
-            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
+            val cont = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
             // Сохраняем обновлённые глобальные
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
+            if (!cont) return@forEach
         }
 
         // Привязываем ON_TAP
@@ -74,7 +75,6 @@ object SimEngine {
 
         log += "Касание -> «${script.name}»"
         runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
-
         // Сохраняем обновлённые глобальные обратно в SimState
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
@@ -87,8 +87,8 @@ object SimEngine {
         objects: MutableMap<String, SimObject>,
         log: MutableList<String>,
         errors: MutableList<String>
-    ) {
-        blocks.forEachIndexed { idx, block ->
+    ): Boolean {  // returns false if sim_stop was hit
+        for ((idx, block) in blocks.withIndex()) {
             val num = idx + 1
 
             fun getStr(key: String, default: String = ""): String {
@@ -110,15 +110,37 @@ object SimEngine {
             when (block.type) {
                 "set_var" -> {
                     val name = block.params["name"]?.value?.trim() ?: ""
-                    if (name.isBlank()) { errors += "Блок $num «Переменная»: имя не заполнено"; return@forEachIndexed }
+                    if (name.isBlank()) { errors += "Блок $num «Переменная»: имя не заполнено"; continue }
                     val value = getStr("value")
                     vars[name] = value
                     log += "  $name = $value"
                 }
+                "sim_stop" -> {
+                    log += "  Симуляция остановлена"
+                    return false
+                }
+                "if_block" -> {
+                    val left  = block.params["left"]?.value ?: ""
+                    val op    = block.params["op"]?.value ?: "=="
+                    val right = block.params["right"]?.value ?: "0"
+                    android.util.Log.d("SkriPts", "if_block: left='$left' op='$op' right='$right' vars=$vars children=${block.children}")
+                    val (result, err) = ExprEval.evalCondition(left, op, right, vars)
+                    if (err != null) { errors += "Блок $num «Условие»: $err"; continue }
+                    val branch = if (result) "then" else "else"
+                    val branchBlocks = block.children[branch] ?: emptyList()
+                    val leftVal = ExprEval.eval(left, vars).value
+                    val rightVal = ExprEval.eval(right, vars).value
+                    log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
+                    android.util.Log.d("SkriPts", "if_block result=$result branch=$branch branchBlocks=${branchBlocks.size}")
+                    if (branchBlocks.isNotEmpty()) {
+                        val stopped = !runScript(branchBlocks, vars, objects, log, errors)
+                        if (stopped) return false
+                    }
+                }
                 "sim_create" -> {
                     val name = getStr("name")
-                    if (name.isBlank()) { errors += "Блок $num «Создать объект»: имя пустое"; return@forEachIndexed }
-                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; return@forEachIndexed }
+                    if (name.isBlank()) { errors += "Блок $num «Создать объект»: имя пустое"; continue }
+                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; continue }
                     objects[name] = SimObject(
                         name = name, x = getF("x"), y = getF("y"),
                         width = getF("width", 100f).coerceAtLeast(1f),
@@ -130,39 +152,43 @@ object SimEngine {
                 }
                 "sim_move" -> {
                     val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Переместить»: «$name» не найден"; return@forEachIndexed }
-                    objects[name] = obj.copy(x = getF("x"), y = getF("y"))
-                    log += "  «$name» -> (${getStr("x")}, ${getStr("y")})"
+                    val obj = objects[name] ?: run { errors += "Блок $num «Переместить»: «$name» не найден"; continue }
+                    val mode = block.params["mode"]?.value ?: "instant"
+                    val dx = getF("x"); val dy = getF("y")
+                    val (nx, ny) = if (mode == "step") (obj.x + dx) to (obj.y + dy) else dx to dy
+                    objects[name] = obj.copy(x = nx, y = ny)
+                    if (mode == "step") log += "  «$name» шаг (+$dx, +$dy) -> ($nx, $ny)"
+                    else log += "  «$name» -> ($nx, $ny)"
                 }
                 "sim_resize" -> {
                     val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Размер»: «$name» не найден"; return@forEachIndexed }
+                    val obj = objects[name] ?: run { errors += "Блок $num «Размер»: «$name» не найден"; continue }
                     objects[name] = obj.copy(width = getF("width", 100f).coerceAtLeast(1f), height = getF("height", 60f).coerceAtLeast(1f))
                     log += "  «$name» размер ${getStr("width")}x${getStr("height")}"
                 }
                 "sim_color" -> {
                     val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Цвет»: «$name» не найден"; return@forEachIndexed }
+                    val obj = objects[name] ?: run { errors += "Блок $num «Цвет»: «$name» не найден"; continue }
                     objects[name] = obj.copy(color = parseColor(getStr("color", "#4F8EF7")))
                     log += "  «$name» цвет -> ${getStr("color")}"
                 }
                 "sim_label" -> {
                     val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Текст»: «$name» не найден"; return@forEachIndexed }
+                    val obj = objects[name] ?: run { errors += "Блок $num «Текст»: «$name» не найден"; continue }
                     objects[name] = obj.copy(label = getStr("text"))
                     log += "  «$name» текст: «${getStr("text")}»"
                 }
                 "sim_update_text" -> {
                     val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Обновить текст»: «$name» не найден"; return@forEachIndexed }
+                    val obj = objects[name] ?: run { errors += "Блок $num «Обновить текст»: «$name» не найден"; continue }
                     val text = getStr("text")
                     objects[name] = obj.copy(label = text)
                     log += "  «$name» текст обновлён: «$text»"
                 }
                 "sim_text" -> {
                     val name = getStr("name")
-                    if (name.isBlank()) { errors += "Блок $num «Текстовый объект»: имя пустое"; return@forEachIndexed }
-                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; return@forEachIndexed }
+                    if (name.isBlank()) { errors += "Блок $num «Текстовый объект»: имя пустое"; continue }
+                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; continue }
                     objects[name] = SimObject(
                         name = name, x = getF("x"), y = getF("y"),
                         width = getF("width", 200f).coerceAtLeast(1f),
@@ -176,6 +202,7 @@ object SimEngine {
                 }
             }
         }
+        return true
     }
 
     fun parseColor(hex: String): Color = runCatching {

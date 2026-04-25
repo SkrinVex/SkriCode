@@ -39,8 +39,9 @@ object BlockFactory {
 
         "sim_move" -> build("sim_move", "Переместить объект", "Изменяет позицию объекта на сцене", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект"),
-            "x"    to p("0", "X", "Новая X позиция", ParamType.NUMBER),
-            "y"    to p("0", "Y", "Новая Y позиция", ParamType.NUMBER)))
+            "mode" to p("instant", "Режим", "instant = в позицию, step = шаг", ParamType.SELECT),
+            "x"    to p("0", "X", "Позиция или шаг по X", ParamType.NUMBER),
+            "y"    to p("0", "Y", "Позиция или шаг по Y", ParamType.NUMBER)))
 
         "sim_resize" -> build("sim_resize", "Изменить размер", "Меняет ширину и высоту объекта", BlockCategory.SIMULATION, listOf(
             "name"   to p("rect1", "Имя объекта", "Какой объект"),
@@ -68,6 +69,13 @@ object BlockFactory {
             "height" to p("40", "Высота", "Высота области", ParamType.NUMBER),
             "size"   to p("16", "Размер шрифта", "В пикселях", ParamType.NUMBER),
             "bold"   to p("false", "Жирный", "true или false")))
+
+        "if_block" -> build("if_block", "Условие (если)", "Выполняет блоки если условие истинно", BlockCategory.CONTROL, listOf(
+            "left"  to p("", "Левое значение", "Переменная или число, напр. {score}"),
+            "op"    to p("==", "Оператор", "== != > < >= <=", ParamType.SELECT),
+            "right" to p("0", "Правое значение", "С чем сравниваем")))
+
+        "sim_stop" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
 
         else -> null
     }

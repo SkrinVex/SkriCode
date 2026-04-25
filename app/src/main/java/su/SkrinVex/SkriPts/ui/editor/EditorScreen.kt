@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -37,7 +38,7 @@ import su.SkrinVex.SkriPts.data.VarScope
 import su.SkrinVex.SkriPts.ui.expr.ExpressionEditorScreen
 import su.SkrinVex.SkriPts.ui.theme.*
 
-data class ExprEditTarget(val blockIndex: Int, val paramKey: String, val paramLabel: String, val currentValue: String, val isIdentifier: Boolean = false)
+data class ExprEditTarget(val blockIndex: Int, val paramKey: String, val paramLabel: String, val currentValue: String, val isIdentifier: Boolean = false, val branch: String? = null, val childIndex: Int = -1)
 
 private val DIRECT_PARAM_KEYS = setOf("name", "color")
 
@@ -57,7 +58,14 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             paramLabel = target.paramLabel,
             variables = state.visibleVars,
             isIdentifier = target.isIdentifier,
-            onConfirm = { value -> vm.updateParam(target.blockIndex, target.paramKey, value); exprTarget = null },
+            onConfirm = { value ->
+                if (target.branch != null && target.childIndex >= 0) {
+                    vm.updateChildParam(target.blockIndex, target.branch, target.childIndex, target.paramKey, value)
+                } else {
+                    vm.updateParam(target.blockIndex, target.paramKey, value)
+                }
+                exprTarget = null
+            },
             onCreateVar = { name, scope -> vm.addVariable(name, scope) },
             onBack = { exprTarget = null }
         )
@@ -179,7 +187,11 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         onMoveUp = { if (index > 0) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
-                        onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) }
+                        onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
+                        onAddChild = { branch, type -> vm.addChildBlock(index, branch, type) },
+                        onRemoveChild = { branch, ci -> vm.removeChildBlock(index, branch, ci) },
+                        onChildParamChange = { branch, ci, k, v -> vm.updateChildParam(index, branch, ci, k, v) },
+                        onOpenChildExpr = { branch, ci, key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId, branch, ci) }
                     )
                 }
             }
@@ -432,7 +444,11 @@ private fun BlockCard(
     onToggleCollapse: () -> Unit,
     onRemove: () -> Unit, onMoveUp: () -> Unit, onMoveDown: () -> Unit,
     onParamChange: (String, String) -> Unit,
-    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
+    onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
+    onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> }
 ) {
     val accent = categoryColor(block.category)
 
@@ -464,26 +480,303 @@ private fun BlockCard(
                         onClick = onToggleCollapse)
                     SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(alpha = 0.8f), onClick = onRemove)
                 }
-                if (!collapsed && block.params.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    HorizontalDivider(color = Surface3)
-                    Spacer(Modifier.height(10.dp))
-                    block.paramOrder.forEach { key ->
-                        val param = block.params[key] ?: return@forEach
-                        when {
-                            block.type == "set_var" && key == "name" ->
-                                VarNameChip(value = param.value, label = param.label,
-                                    onClick = { onOpenExpr(key, param.label, param.value, true) })
-                            key == "color" ->
-                                ColorField(param = param, onChange = { onParamChange(key, it) })
-                            key in DIRECT_PARAM_KEYS ->
-                                DirectInputField(param = param, onChange = { onParamChange(key, it) })
-                            else ->
-                                ExprChip(param = param, variables = variables,
-                                    onClick = { onOpenExpr(key, param.label, param.value, false) })
+                if (!collapsed) {
+                    when (block.type) {
+                        "if_block" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            IfBlockContent(
+                                block = block, variables = variables,
+                                onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                                onAddChild = onAddChild, onRemoveChild = onRemoveChild,
+                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+                            )
                         }
-                        Spacer(Modifier.height(6.dp))
+                        "sim_stop" -> {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "⚠ Останавливает выполнение скрипта. Блоки после этого не выполнятся.",
+                                color = Warning.copy(alpha = 0.8f), fontSize = 11.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Warning.copy(alpha = 0.08f))
+                                    .padding(8.dp)
+                            )
+                        }
+                        else -> {
+                            if (block.params.isNotEmpty()) {
+                                Spacer(Modifier.height(10.dp))
+                                HorizontalDivider(color = Surface3)
+                                Spacer(Modifier.height(10.dp))
+                                block.paramOrder.forEach { key ->
+                                    val param = block.params[key] ?: return@forEach
+                                    when {
+                                        block.type == "set_var" && key == "name" ->
+                                            VarNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        key == "color" ->
+                                            ColorField(param = param, onChange = { onParamChange(key, it) })
+                                        block.type == "sim_move" && key == "mode" ->
+                                            MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                                        key in DIRECT_PARAM_KEYS ->
+                                            DirectInputField(param = param, onChange = { onParamChange(key, it) })
+                                        else ->
+                                            ExprChip(param = param, variables = variables,
+                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                }
+                            }
+                        }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoveModeToggle(value: String, onChange: (String) -> Unit) {
+    val isStep = value == "step"
+    Column {
+        Text("Режим перемещения", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            listOf("instant" to "Моментальный", "step" to "Шаг").forEach { (mode, label) ->
+                val active = value == mode
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) Accent.copy(0.2f) else Color.Transparent)
+                        .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onChange(mode) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (active) Accent else TextSec, fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+        val hint = if (isStep)
+            "Шаг: каждый раз прибавляет X/Y к текущей позиции"
+        else
+            "Моментальный: перемещает объект точно в указанную позицию"
+        Text(hint, color = TextSec.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun IfBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onAddChild: (branch: String, type: String) -> Unit,
+    onRemoveChild: (branch: String, childIndex: Int) -> Unit,
+    onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    val ops = listOf("==", "!=", ">", "<", ">=", "<=")
+    val opLabels = mapOf("==" to "равно", "!=" to "≠", ">" to "больше", "<" to "меньше", ">=" to "≥", "<=" to "≤")
+
+    // Левое значение
+    val leftParam = block.params["left"]!!
+    ExprChip(param = leftParam, variables = variables,
+        onClick = { onOpenExpr("left", leftParam.label, leftParam.value, false) })
+    Spacer(Modifier.height(6.dp))
+
+    // Оператор
+    val currentOp = block.params["op"]?.value ?: "=="
+    Column {
+        Text("Оператор", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ops.forEach { op ->
+                val active = currentOp == op
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) Warning.copy(0.2f) else Surface3)
+                        .border(1.dp, if (active) Warning else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onParamChange("op", op) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(op, color = if (active) Warning else TextPrim, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text(opLabels[op] ?: "", color = if (active) Warning.copy(0.8f) else TextSec, fontSize = 9.sp)
+                    }
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+
+    // Правое значение
+    val rightParam = block.params["right"]!!
+    ExprChip(param = rightParam, variables = variables,
+        onClick = { onOpenExpr("right", rightParam.label, rightParam.value, false) })
+    Spacer(Modifier.height(10.dp))
+
+    // Ветки
+    IfBranchSection(
+        label = "Если истина",
+        color = Color(0xFF4ADE80),
+        branch = "then",
+        blocks = block.children["then"] ?: emptyList(),
+        variables = variables,
+        onAddChild = onAddChild, onRemoveChild = onRemoveChild,
+        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+    )
+    Spacer(Modifier.height(6.dp))
+    IfBranchSection(
+        label = "Если ложь",
+        color = TextSec,
+        branch = "else",
+        blocks = block.children["else"] ?: emptyList(),
+        variables = variables,
+        onAddChild = onAddChild, onRemoveChild = onRemoveChild,
+        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IfBranchSection(
+    label: String,
+    color: Color,
+    branch: String,
+    blocks: List<BlockDef>,
+    variables: List<ProjectVar>,
+    onAddChild: (branch: String, type: String) -> Unit,
+    onRemoveChild: (branch: String, childIndex: Int) -> Unit,
+    onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    var showPicker by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(Surface3)
+            .border(1.dp, color.copy(0.35f), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(14.dp).clip(RoundedCornerShape(2.dp)).background(color))
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            IconButton(onClick = { showPicker = true }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Default.Add, "Добавить блок", tint = TextSec, modifier = Modifier.size(16.dp))
+            }
+        }
+        if (blocks.isEmpty()) {
+            Text("Нет блоков — нажми +", color = TextSec.copy(0.5f), fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp, start = 11.dp))
+        } else {
+            Spacer(Modifier.height(6.dp))
+            blocks.forEachIndexed { ci, child ->
+                ChildBlockRow(
+                    block = child, childIndex = ci, branch = branch,
+                    variables = variables,
+                    accentColor = color,
+                    onRemove = { onRemoveChild(branch, ci) },
+                    onParamChange = { k, v -> onChildParamChange(branch, ci, k, v) },
+                    onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) }
+                )
+                if (ci < blocks.size - 1) Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+
+    if (showPicker) {
+        ModalBottomSheet(onDismissRequest = { showPicker = false }, containerColor = Surface1,
+            dragHandle = {
+                Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface3))
+                }
+            }
+        ) {
+            Text("Добавить в «$label»", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            // Показываем только блоки без вложенности (не if_block внутри if_block)
+            val allowed = BlockRegistry.all().filter { it.type != "if_block" }
+            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                items(allowed.size) { i ->
+                    val meta = allowed[i]
+                    val c = categoryColor(meta.category)
+                    Card(onClick = { onAddChild(branch, meta.type); showPicker = false },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Surface2)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(0.15f)),
+                                contentAlignment = Alignment.Center) {
+                                Icon(categoryIcon(meta.category), null, tint = c, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text(meta.description, color = TextSec, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChildBlockRow(
+    block: BlockDef, childIndex: Int, branch: String,
+    variables: List<ProjectVar>,
+    accentColor: Color,
+    onRemove: () -> Unit,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    var expanded by remember { mutableStateOf(true) }
+    val accent = categoryColor(block.category)
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(Surface2)
+            .border(1.dp, accent.copy(0.2f), RoundedCornerShape(8.dp))
+    ) {
+        Box(Modifier.fillMaxWidth().height(2.dp).background(accent))
+        Column(Modifier.padding(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(block.displayName, color = TextPrim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                SmallBtn(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, onClick = { expanded = !expanded })
+                SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = onRemove)
+            }
+            if (expanded && block.params.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                block.paramOrder.forEach { key ->
+                    val param = block.params[key] ?: return@forEach
+                    when {
+                        block.type == "set_var" && key == "name" ->
+                            VarNameChip(value = param.value, label = param.label,
+                                onClick = { onOpenExpr(key, param.label, param.value, true) })
+                        key == "color" ->
+                            ColorField(param = param, onChange = { onParamChange(key, it) })
+                        block.type == "sim_move" && key == "mode" ->
+                            MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                        key in DIRECT_PARAM_KEYS ->
+                            DirectInputField(param = param, onChange = { onParamChange(key, it) })
+                        else ->
+                            ExprChip(param = param, variables = variables,
+                                onClick = { onOpenExpr(key, param.label, param.value, false) })
+                    }
+                    Spacer(Modifier.height(4.dp))
                 }
             }
         }

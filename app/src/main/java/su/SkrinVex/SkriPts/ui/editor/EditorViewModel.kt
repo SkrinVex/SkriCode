@@ -129,6 +129,45 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Добавить блок в ветку if_block (branch = "then" или "else") */
+    fun addChildBlock(blockIndex: Int, branch: String, type: String) = modifyActiveBlocks { list ->
+        list.toMutableList().also { mutable ->
+            val serialized = mutable[blockIndex]
+            android.util.Log.d("SkriPts", "addChildBlock: serialized.children=${serialized.children}")
+            val block = serialized.deserialize() ?: return@also
+            android.util.Log.d("SkriPts", "addChildBlock: block.children=${block.children}")
+            val child = BlockRegistry.create(type) ?: return@also
+            val newChildren = block.children.toMutableMap()
+            newChildren[branch] = (newChildren[branch] ?: emptyList()) + child
+            val updated = block.copy(children = newChildren).serialize()
+            android.util.Log.d("SkriPts", "addChildBlock: updated.children=${updated.children}")
+            mutable[blockIndex] = updated
+        }
+    }
+
+    /** Удалить дочерний блок из ветки if_block */
+    fun removeChildBlock(blockIndex: Int, branch: String, childIndex: Int) = modifyActiveBlocks { list ->
+        list.toMutableList().also { mutable ->
+            val block = mutable[blockIndex].deserialize() ?: return@also
+            val newChildren = block.children.toMutableMap()
+            newChildren[branch] = (newChildren[branch] ?: emptyList()).toMutableList().also { it.removeAt(childIndex) }
+            mutable[blockIndex] = block.copy(children = newChildren).serialize()
+        }
+    }
+
+    /** Обновить параметр дочернего блока */
+    fun updateChildParam(blockIndex: Int, branch: String, childIndex: Int, key: String, value: String) = modifyActiveBlocks { list ->
+        list.toMutableList().also { mutable ->
+            val block = mutable[blockIndex].deserialize() ?: return@also
+            val newChildren = block.children.toMutableMap()
+            val branchList = (newChildren[branch] ?: emptyList()).toMutableList()
+            val child = branchList[childIndex]
+            branchList[childIndex] = child.withParam(key, value)
+            newChildren[branch] = branchList
+            mutable[blockIndex] = block.copy(children = newChildren).serialize()
+        }
+    }
+
     private fun modifyActiveBlocks(transform: (List<SerializedBlock>) -> List<SerializedBlock>) {
         updateScript(_state.value.activeScriptId) { it.copy(blocks = transform(it.blocks)) }
     }
