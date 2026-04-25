@@ -67,6 +67,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 exprTarget = null
             },
             onCreateVar = { name, scope -> vm.addVariable(name, scope) },
+            onDeleteVar = { name, scope -> vm.deleteVariable(name, scope) },
             onBack = { exprTarget = null }
         )
         return

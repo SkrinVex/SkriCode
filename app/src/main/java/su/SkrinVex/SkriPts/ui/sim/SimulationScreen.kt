@@ -37,7 +37,8 @@ import su.SkrinVex.SkriPts.ui.theme.*
 fun SimulationScreen(
     state: SimState,
     onTap: (objectName: String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onClearLogs: () -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
 
@@ -137,7 +138,7 @@ fun SimulationScreen(
                     }
                     HorizontalDivider(color = Color(0x33FFFFFF), modifier = Modifier.padding(vertical = 6.dp))
                     when (panelTab) {
-                        0 -> LogPanel(state)
+                        0 -> LogPanel(state, onClearLogs)
                         1 -> ObjectsPanel(state.objects.values.toList(), onHighlight = { highlightedObj = it })
                     }
                 }
@@ -167,13 +168,28 @@ private fun PanelBtn(label: String, active: Boolean, color: Color, onClick: () -
 }
 
 @Composable
-private fun LogPanel(state: SimState) {
-    Text(
-        if (state.errors.isNotEmpty()) "Ошибки" else "Лог выполнения",
-        color = if (state.errors.isNotEmpty()) Danger else TextSec,
-        fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-        modifier = Modifier.padding(bottom = 6.dp)
-    )
+private fun LogPanel(state: SimState, onClearLogs: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            if (state.errors.isNotEmpty()) "Ошибки" else "Лог выполнения",
+            color = if (state.errors.isNotEmpty()) Danger else TextSec,
+            fontWeight = FontWeight.SemiBold, fontSize = 13.sp
+        )
+        if (state.log.isNotEmpty() || state.errors.isNotEmpty()) {
+            TextButton(
+                onClick = onClearLogs,
+                modifier = Modifier.height(28.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("Очистить", color = TextSec, fontSize = 11.sp)
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
     LazyColumn {
         items(state.errors) { e ->
             Text("! $e", color = Danger, fontFamily = FontFamily.Monospace, fontSize = 12.sp,

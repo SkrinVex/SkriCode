@@ -45,6 +45,7 @@ fun ExpressionEditorScreen(
     isIdentifier: Boolean = false,
     onConfirm: (String) -> Unit,
     onCreateVar: (name: String, scope: VarScope) -> Unit,
+    onDeleteVar: ((name: String, scope: VarScope) -> Unit)? = null,
     onBack: () -> Unit
 ) {
     var value by remember { mutableStateOf(initialValue) }
@@ -52,6 +53,7 @@ fun ExpressionEditorScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var showCreateVar by remember { mutableStateOf(false) }
     var createVarScope by remember { mutableStateOf(VarScope.GLOBAL) }
+    var showDeleteVar by remember { mutableStateOf<ProjectVar?>(null) }
 
     val globalVars = variables.filter { it.scope == VarScope.GLOBAL }
     val localVars  = variables.filter { it.scope == VarScope.LOCAL }
@@ -173,7 +175,11 @@ fun ExpressionEditorScreen(
                             }
                         }
                         items(currentVars, key = { it.name }) { v ->
-                            VarRow(variable = v, onClick = { insertVar(v.name) })
+                            VarRow(
+                                variable = v, 
+                                onClick = { insertVar(v.name) },
+                                onDelete = if (onDeleteVar != null) { { showDeleteVar = v } } else null
+                            )
                         }
                     }
                 }
@@ -190,6 +196,35 @@ fun ExpressionEditorScreen(
                 onCreateVar(name, scope)
                 showCreateVar = false
                 insertVar(name)
+            }
+        )
+    }
+
+    showDeleteVar?.let { variable ->
+        AlertDialog(
+            onDismissRequest = { showDeleteVar = null },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить переменную?", color = TextPrim) },
+            text = { 
+                Text(
+                    "Переменная «${variable.name}» будет удалена. Это может сломать блоки, которые её используют.",
+                    color = TextSec
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        onDeleteVar?.invoke(variable.name, variable.scope)
+                        showDeleteVar = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteVar = null }) {
+                    Text("Отмена", color = TextSec)
+                }
             }
         )
     }
@@ -246,7 +281,7 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
 }
 
 @Composable
-private fun VarRow(variable: ProjectVar, onClick: () -> Unit) {
+private fun VarRow(variable: ProjectVar, onClick: () -> Unit, onDelete: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
@@ -273,7 +308,16 @@ private fun VarRow(variable: ProjectVar, onClick: () -> Unit) {
             )
             Text("= ${variable.value.ifBlank { "0" }}", color = TextSec, fontSize = 11.sp)
         }
-        Icon(Icons.Default.AddCircleOutline, null, tint = Accent, modifier = Modifier.size(18.dp))
+        if (onDelete != null) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Default.DeleteOutline, "Удалить", tint = Danger, modifier = Modifier.size(16.dp))
+            }
+        } else {
+            Icon(Icons.Default.AddCircleOutline, null, tint = Accent, modifier = Modifier.size(18.dp))
+        }
     }
 }
 

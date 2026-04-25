@@ -184,6 +184,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun deleteVariable(name: String, scope: VarScope) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                it.copy(globalVars = it.globalVars.filter { v -> v.name != name })
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    script.copy(localVars = script.localVars.orEmpty().filter { v -> v.name != name })
+                }
+            }
+        }
+    }
+
     // --- Симуляция ---
     fun runSim() {
         val state = _state.value
@@ -201,6 +215,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val newSim = SimEngine.runTap(scriptId, state.scripts, state.simState!!)
             _state.update { it.copy(simState = newSim) }
+        }
+    }
+
+    fun clearSimLogs() {
+        _state.update { 
+            it.copy(simState = it.simState?.copy(log = emptyList(), errors = emptyList()))
         }
     }
 

@@ -23,7 +23,8 @@ data class SimState(
     val objects: Map<String, SimObject> = emptyMap(),
     val globalVars: Map<String, String> = emptyMap(),  // живые глобальные — накапливаются между касаниями
     val log: List<String> = emptyList(),
-    val errors: List<String> = emptyList()
+    val errors: List<String> = emptyList(),
+    val isStopped: Boolean = false
 )
 
 object SimEngine {
@@ -57,11 +58,14 @@ object SimEngine {
             }
         }
 
-        return SimState(objects = objects, globalVars = globalVars, log = log, errors = errors)
+        return SimState(objects = objects, globalVars = globalVars, log = log, errors = errors, isStopped = false)
     }
 
     /** ON_TAP: использует актуальные globalVars из SimState, локальные берёт из скрипта */
     fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
+        // Если симуляция остановлена, не выполняем касания
+        if (currentState.isStopped) return currentState
+        
         val script = scripts.find { it.id == scriptId } ?: return currentState
         val objects = currentState.objects.toMutableMap()
         val log = currentState.log.toMutableList()
@@ -74,11 +78,17 @@ object SimEngine {
         val vars = (globalVars + localVars).toMutableMap()
 
         log += "Касание -> «${script.name}»"
-        runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
+        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
         // Сохраняем обновлённые глобальные обратно в SimState
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
-        return currentState.copy(objects = objects, globalVars = globalVars, log = log, errors = errors)
+        return currentState.copy(
+            objects = objects, 
+            globalVars = globalVars, 
+            log = log, 
+            errors = errors,
+            isStopped = !continued
+        )
     }
 
     private fun runScript(

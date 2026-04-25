@@ -46,7 +46,8 @@ class MainActivity : ComponentActivity() {
                     "sim" -> SimulationScreen(
                         state = editorState.simState!!,
                         onTap = { objName -> editorVm.handleTap(objName) },
-                        onBack = { screen = "editor" }
+                        onBack = { screen = "editor" },
+                        onClearLogs = { editorVm.clearSimLogs() }
                     )
                     "editor" -> {
                         BackHandler { screen = "home"; homeVm.refresh() }
