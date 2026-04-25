@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.SkriPts" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

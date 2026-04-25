@@ -1,0 +1,48 @@
+package su.SkrinVex.SkriPts.block
+
+import com.google.gson.JsonObject
+
+enum class BlockCategory(val label: String) {
+    OUTPUT("Вывод"),
+    CONTROL("Управление"),
+    MATH("Математика"),
+    LOGIC("Логика"),
+    STRING("Строки"),
+    VARIABLE("Переменные"),
+    SIMULATION("Симуляция"),
+}
+
+enum class ParamType { TEXT, NUMBER, SELECT }
+
+data class BlockParam(
+    val value: String,
+    val label: String,
+    val hint: String = "",
+    val type: ParamType = ParamType.TEXT
+)
+
+/**
+ * Блок полностью immutable — params хранятся в data class,
+ * изменение = копия через withParam().
+ */
+data class BlockDef(
+    val id: String,           // уникальный id экземпляра
+    val type: String,
+    val displayName: String,
+    val description: String,
+    val category: BlockCategory,
+    val isAsync: Boolean = false,
+    val params: Map<String, BlockParam> = emptyMap(),
+    val paramOrder: List<String> = emptyList()
+) {
+    fun withParam(key: String, value: String): BlockDef =
+        copy(params = params + (key to params[key]!!.copy(value = value)))
+
+    fun toJson(): JsonObject = JsonObject().apply {
+        addProperty("type", type)
+        addProperty("async", isAsync)
+        val p = JsonObject()
+        paramOrder.forEach { k -> p.addProperty(k, params[k]!!.value) }
+        add("params", p)
+    }
+}
