@@ -1,5 +1,8 @@
 package su.SkrinVex.SkriPts.ui.home
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,9 +27,15 @@ import su.SkrinVex.SkriPts.ui.theme.*
 @Composable
 fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChanged: () -> Unit = {}) {
     val projects by vm.projects.collectAsState()
+    val importError by vm.importError.collectAsState()
     var showNewDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+
+    // Лаунчер для выбора файла импорта
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? -> uri?.let { vm.importProject(it) } }
 
     LaunchedEffect(Unit) { vm.refresh() }
 
@@ -43,6 +52,9 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                         Text("SkriPts", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrim)
                         Text("Визуальный конструктор программ", fontSize = 12.sp, color = TextSec)
                     }
+                    IconButton(onClick = { importLauncher.launch(arrayOf("*/*", "application/json")) }) {
+                        Icon(Icons.Default.FileDownload, "Импорт проекта", tint = TextSec)
+                    }
                     IconButton(onClick = { showHelp = true }) {
                         Icon(Icons.Default.Help, "Справка", tint = TextSec)
                     }
@@ -58,6 +70,15 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                         Icon(Icons.Default.FolderOpen, null, tint = TextSec, modifier = Modifier.size(64.dp))
                         Text("Нет проектов", color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 18.sp)
                         Text("Нажми + чтобы создать первый", color = TextSec, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(
+                            onClick = { importLauncher.launch(arrayOf("*/*", "application/json")) },
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(0.5f))
+                        ) {
+                            Icon(Icons.Default.FileDownload, null, tint = Accent, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Импортировать проект", color = Accent)
+                        }
                     }
                 }
             } else {
@@ -69,7 +90,8 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                         ProjectCard(
                             project = project,
                             onOpen = { onOpenProject(project.id) },
-                            onDelete = { vm.delete(project.id) }
+                            onDelete = { vm.delete(project.id) },
+                            onExport = { uri -> vm.exportProject(project, uri) }
                         )
                     }
                 }
@@ -83,6 +105,23 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
         ) {
             Icon(Icons.Default.Add, "Новый проект", tint = Navy900)
         }
+    }
+
+    // Диалог ошибки импорта/экспорта
+    importError?.let { err ->
+        AlertDialog(
+            onDismissRequest = vm::clearImportError,
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.ErrorOutline, null, tint = Danger) },
+            title = { Text("Ошибка", color = TextPrim) },
+            text = { Text(err, color = TextSec) },
+            confirmButton = {
+                Button(onClick = vm::clearImportError,
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
+                    Text("OK", color = Navy900)
+                }
+            }
+        )
     }
 
     if (showNewDialog) {
@@ -105,8 +144,18 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
 }
 
 @Composable
-private fun ProjectCard(project: ScriptProject, onOpen: () -> Unit, onDelete: () -> Unit) {
+private fun ProjectCard(
+    project: ScriptProject,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    onExport: (Uri) -> Unit
+) {
     var showConfirm by remember { mutableStateOf(false) }
+
+    // Лаунчер для сохранения файла экспорта
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri: Uri? -> uri?.let { onExport(it) } }
 
     Card(
         onClick = onOpen,
@@ -123,6 +172,13 @@ private fun ProjectCard(project: ScriptProject, onOpen: () -> Unit, onDelete: ()
                 Text(project.name, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 val blockCount = project.scripts?.sumOf { it.blocks.size } ?: 0
                 Text("${project.scripts?.size ?: 0} скриптов · $blockCount блоков", color = TextSec, fontSize = 13.sp)
+            }
+            // Кнопка экспорта
+            IconButton(onClick = {
+                val safeName = project.name.replace(Regex("[^a-zA-Zа-яА-Я0-9_\\- ]"), "_")
+                exportLauncher.launch("$safeName.skripts")
+            }) {
+                Icon(Icons.Default.FileUpload, "Экспорт", tint = TextSec.copy(alpha = 0.7f))
             }
             IconButton(onClick = { showConfirm = true }) {
                 Icon(Icons.Default.DeleteOutline, "Удалить", tint = Danger.copy(alpha = 0.7f))
