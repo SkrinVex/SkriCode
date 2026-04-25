@@ -77,6 +77,28 @@ object BlockFactory {
 
         "sim_stop" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
 
+        // Циклы
+        "for_loop" -> build("for_loop", "Цикл (повторить)", "Повторяет блоки указанное количество раз", BlockCategory.CONTROL, listOf(
+            "count" to p("5", "Количество", "Сколько раз повторить", ParamType.NUMBER))).copy(
+            children = mapOf("body" to emptyList()))
+
+        "while_loop" -> build("while_loop", "Цикл (пока)", "Повторяет блоки пока условие истинно", BlockCategory.CONTROL, listOf(
+            "left"  to p("", "Левое значение", "Переменная или число"),
+            "op"    to p("<=", "Оператор", "== != > < >= <=", ParamType.SELECT),
+            "right" to p("10", "Правое значение", "С чем сравниваем"))).copy(
+            children = mapOf("body" to emptyList()))
+
+        // Таймер
+        "wait" -> build("wait", "Ждать", "Приостанавливает выполнение на время", BlockCategory.CONTROL, listOf(
+            "seconds" to p("1", "Секунды", "Время ожидания", ParamType.NUMBER)))
+
+        // Видимость объектов
+        "sim_hide" -> build("sim_hide", "Скрыть объект", "Делает объект невидимым и неклкабельным", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Какой объект скрыть")))
+
+        "sim_show" -> build("sim_show", "Показать объект", "Делает объект видимым и кликабельным", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Какой объект показать")))
+
         else -> null
     }
 }

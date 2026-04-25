@@ -511,6 +511,17 @@ private fun BlockCard(
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
                             )
                         }
+                        "for_loop", "while_loop" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            LoopBlockContent(
+                                block = block, variables = variables,
+                                onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                                onAddChild = onAddChild, onRemoveChild = onRemoveChild,
+                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+                            )
+                        }
                         "sim_stop" -> {
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -538,6 +549,8 @@ private fun BlockCard(
                                             ColorField(param = param, onChange = { onParamChange(key, it) })
                                         block.type == "sim_move" && key == "mode" ->
                                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                                        key == "op" || key == "op1" || key == "op2" ->
+                                            OperatorSelector(param = param, onChange = { onParamChange(key, it) })
                                         key in DIRECT_PARAM_KEYS ->
                                             DirectInputField(param = param, onChange = { onParamChange(key, it) })
                                         else ->
@@ -584,6 +597,43 @@ private fun MoveModeToggle(value: String, onChange: (String) -> Unit) {
         else
             "Моментальный: перемещает объект точно в указанную позицию"
         Text(hint, color = TextSec.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
+    val operators = listOf(
+        "==" to "равно",
+        "!=" to "не равно", 
+        ">" to "больше",
+        "<" to "меньше",
+        ">=" to "больше или равно",
+        "<=" to "меньше или равно"
+    )
+    
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            operators.forEach { (op, label) ->
+                val active = param.value == op
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (active) Accent.copy(0.2f) else Surface3)
+                        .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(6.dp))
+                        .clickable { onChange(op) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(op, color = if (active) Accent else TextSec, fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+        if (param.hint.isNotBlank()) {
+            Text(param.hint, color = TextSec.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
@@ -980,4 +1030,40 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
     ScriptEvent.ON_START -> Icons.Default.PlayArrow
     ScriptEvent.ON_TAP   -> Icons.Default.TouchApp
+}
+
+@Composable
+private fun LoopBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onAddChild: (branch: String, type: String) -> Unit,
+    onRemoveChild: (branch: String, childIndex: Int) -> Unit,
+    onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    // Параметры цикла
+    block.paramOrder.forEach { key ->
+        val param = block.params[key] ?: return@forEach
+        ExprChip(param = param, variables = variables,
+            onClick = { onOpenExpr(key, param.label, param.value, false) })
+        Spacer(Modifier.height(6.dp))
+    }
+    
+    Spacer(Modifier.height(8.dp))
+    
+    // Тело цикла
+    val bodyBlocks = block.children["body"] ?: emptyList()
+    IfBranchSection(
+        label = "Тело цикла",
+        color = categoryColor(BlockCategory.CONTROL),
+        branch = "body",
+        blocks = bodyBlocks,
+        variables = variables,
+        onAddChild = onAddChild,
+        onRemoveChild = onRemoveChild,
+        onChildParamChange = onChildParamChange,
+        onOpenChildExpr = onOpenChildExpr
+    )
 }

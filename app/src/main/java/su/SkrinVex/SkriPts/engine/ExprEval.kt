@@ -71,17 +71,33 @@ object ExprEval {
     private fun resolveBuiltin(expr: String, start: Int): Triple<String, Int, String?> {
         val sub = expr.substring(start + 1) // после $
 
-        // $rand(min, max)
-        if (sub.startsWith("rand(")) {
-            val close = sub.indexOf(')')
-            if (close == -1) return Triple("", 1, "Незакрытая скобка в \$rand()")
-            val args = sub.substring(5, close).split(",")
-            if (args.size != 2) return Triple("", 1, "\$rand() требует два аргумента: \$rand(min, max)")
-            val min = args[0].trim().toIntOrNull() ?: return Triple("", 1, "\$rand(): «${args[0].trim()}» не число")
-            val max = args[1].trim().toIntOrNull() ?: return Triple("", 1, "\$rand(): «${args[1].trim()}» не число")
-            if (min > max) return Triple("", 1, "\$rand(): min > max")
-            val consumed = 1 + 5 + close + 1  // $ + "rand(" + content + ")"
-            return Triple(Random.nextInt(min, max + 1).toString(), consumed, null)
+        // Функции с аргументами
+        val funcPatterns = listOf(
+            "rand(" to ::handleRand,
+            "add(" to ::handleAdd,
+            "sub(" to ::handleSub,
+            "mul(" to ::handleMul,
+            "div(" to ::handleDiv,
+            "abs(" to ::handleAbs,
+            "min(" to ::handleMin,
+            "max(" to ::handleMax,
+            "and(" to ::handleAnd,
+            "or(" to ::handleOr,
+            "not(" to ::handleNot,
+            "concat(" to ::handleConcat,
+            "length(" to ::handleLength,
+            "upper(" to ::handleUpper,
+            "lower(" to ::handleLower
+        )
+        
+        for ((pattern, handler) in funcPatterns) {
+            if (sub.startsWith(pattern)) {
+                val close = sub.indexOf(')')
+                if (close == -1) return Triple("", 1, "Незакрытая скобка в \$${pattern.dropLast(1)}()")
+                val args = sub.substring(pattern.length, close).split(",").map { it.trim() }
+                val consumed = 1 + close + 1 // $ + функция до )
+                return handler(args, consumed)
+            }
         }
 
         // Константы
@@ -101,6 +117,103 @@ object ExprEval {
 
         // Неизвестный идентификатор — оставляем как есть (не ломаем строку)
         return Triple("$", 1, null)
+    }
+
+    private fun handleRand(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$rand() требует два аргумента: \$rand(min, max)")
+        val min = args[0].toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[0]}» не число")
+        val max = args[1].toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[1]}» не число")
+        if (min > max) return Triple("", consumed, "\$rand(): min > max")
+        return Triple(Random.nextInt(min, max + 1).toString(), consumed, null)
+    }
+
+    private fun handleAdd(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$add() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[1]}» не число")
+        return Triple(fmt(a + b), consumed, null)
+    }
+
+    private fun handleSub(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$sub() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[1]}» не число")
+        return Triple(fmt(a - b), consumed, null)
+    }
+
+    private fun handleMul(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$mul() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[1]}» не число")
+        return Triple(fmt(a * b), consumed, null)
+    }
+
+    private fun handleDiv(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$div() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[1]}» не число")
+        if (b == 0.0) return Triple("", consumed, "\$div(): деление на ноль")
+        return Triple(fmt(a / b), consumed, null)
+    }
+
+    private fun handleAbs(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$abs() требует один аргумент")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$abs(): «${args[0]}» не число")
+        return Triple(fmt(abs(a)), consumed, null)
+    }
+
+    private fun handleMin(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$min() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[1]}» не число")
+        return Triple(fmt(minOf(a, b)), consumed, null)
+    }
+
+    private fun handleMax(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$max() требует два аргумента")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[0]}» не число")
+        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[1]}» не число")
+        return Triple(fmt(maxOf(a, b)), consumed, null)
+    }
+
+    private fun handleAnd(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$and() требует два аргумента")
+        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[0]}» не логическое значение")
+        val b = args[1].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[1]}» не логическое значение")
+        return Triple((a && b).toString(), consumed, null)
+    }
+
+    private fun handleOr(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$or() требует два аргумента")
+        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[0]}» не логическое значение")
+        val b = args[1].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[1]}» не логическое значение")
+        return Triple((a || b).toString(), consumed, null)
+    }
+
+    private fun handleNot(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$not() требует один аргумент")
+        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$not(): «${args[0]}» не логическое значение")
+        return Triple((!a).toString(), consumed, null)
+    }
+
+    private fun handleConcat(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$concat() требует два аргумента")
+        return Triple(args[0] + args[1], consumed, null)
+    }
+
+    private fun handleLength(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$length() требует один аргумент")
+        return Triple(args[0].length.toString(), consumed, null)
+    }
+
+    private fun handleUpper(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$upper() требует один аргумент")
+        return Triple(args[0].uppercase(), consumed, null)
+    }
+
+    private fun handleLower(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$lower() требует один аргумент")
+        return Triple(args[0].lowercase(), consumed, null)
     }
 
     private fun tryArith(expr: String): String? {

@@ -62,7 +62,7 @@ fun SimulationScreen(
                     detectTapGestures { offset ->
                         val cx = canvasSize.first / 2f
                         val cy = canvasSize.second / 2f
-                        val hit = state.objects.values.lastOrNull { obj ->
+                        val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
                             val left = cx + obj.x - obj.width / 2f
                             val top  = cy - obj.y - obj.height / 2f
                             offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
@@ -75,7 +75,9 @@ fun SimulationScreen(
             val cx = size.width / 2f
             val cy = size.height / 2f
             drawGrid(cx, cy)
-            state.objects.values.forEach { drawSimObject(it, cx, cy, it.name == highlightedObj) }
+            state.objects.values.forEach { 
+                if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj) 
+            }
         }
 
         // Кнопка закрыть

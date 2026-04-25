@@ -16,7 +16,8 @@ data class SimObject(
     val label: String = "",
     val fontSize: Float = 14f,
     val bold: Boolean = false,
-    val tapScriptId: String? = null
+    val tapScriptId: String? = null,
+    val visible: Boolean = true
 )
 
 data class SimState(
@@ -207,6 +208,50 @@ object SimEngine {
                         bold = getStr("bold", "false") == "true"
                     )
                     log += "  Текст «$name»: «${getStr("text")}»"
+                }
+                "sim_hide" -> {
+                    val name = getStr("name")
+                    val obj = objects[name] ?: run { errors += "Блок $num «Скрыть»: «$name» не найден"; continue }
+                    objects[name] = obj.copy(visible = false)
+                    log += "  «$name» скрыт"
+                }
+                "sim_show" -> {
+                    val name = getStr("name")
+                    val obj = objects[name] ?: run { errors += "Блок $num «Показать»: «$name» не найден"; continue }
+                    objects[name] = obj.copy(visible = true)
+                    log += "  «$name» показан"
+                }
+                "for_loop" -> {
+                    val count = getF("count").toInt().coerceAtLeast(0)
+                    val bodyBlocks = block.children["body"] ?: emptyList()
+                    log += "  Цикл: $count раз"
+                    repeat(count) { i ->
+                        vars["i"] = i.toString()
+                        val stopped = !runScript(bodyBlocks, vars, objects, log, errors)
+                        if (stopped) return false
+                    }
+                    vars.remove("i")
+                }
+                "while_loop" -> {
+                    val left = block.params["left"]?.value ?: ""
+                    val op = block.params["op"]?.value ?: "<="
+                    val right = block.params["right"]?.value ?: "10"
+                    val bodyBlocks = block.children["body"] ?: emptyList()
+                    log += "  Цикл пока: $left $op $right"
+                    var iterations = 0
+                    while (iterations < 1000) { // защита от бесконечного цикла
+                        val (result, err) = ExprEval.evalCondition(left, op, right, vars)
+                        if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
+                        if (!result) break
+                        iterations++
+                        val stopped = !runScript(bodyBlocks, vars, objects, log, errors)
+                        if (stopped) return false
+                    }
+                    if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
+                }
+                "wait" -> {
+                    val seconds = getF("seconds", 1f)
+                    log += "  Ждём ${seconds}с (симуляция не поддерживает реальные задержки)"
                 }
             }
         }

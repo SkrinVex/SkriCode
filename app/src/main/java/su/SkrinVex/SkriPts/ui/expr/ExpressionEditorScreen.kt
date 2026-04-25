@@ -234,6 +234,9 @@ fun ExpressionEditorScreen(
 private fun FunctionsTab(onInsert: (String) -> Unit) {
     val screenColor = Color(0xFF60A5FA)
     val randColor   = Color(0xFFA78BFA)
+    val mathColor   = Color(0xFF34D399)
+    val logicColor  = Color(0xFFF472B6)
+    val stringColor = Color(0xFFFB923C)
 
     val fns = listOf(
         BuiltinFn("\$screenWidth",  "Ширина экрана",        "Ширина экрана в пикселях",          Icons.Default.PhoneAndroid, screenColor),
@@ -243,6 +246,26 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$screenRight",  "Правая точка",         "X правого края (screenWidth / 2)",  Icons.Default.ChevronRight, screenColor),
         BuiltinFn("\$screenLeft",   "Левая точка",          "X левого края (-screenWidth / 2)",  Icons.Default.ChevronLeft,  screenColor),
         BuiltinFn("\$rand(0, 100)", "Случайное число",      "Целое число в диапазоне [min, max]", Icons.Default.Casino,       randColor),
+        
+        // Математические функции
+        BuiltinFn("\$add(5, 3)",    "Сложение",             "Складывает два числа",               Icons.Default.Add,          mathColor),
+        BuiltinFn("\$sub(10, 3)",   "Вычитание",            "Вычитает второе из первого",         Icons.Default.Remove,       mathColor),
+        BuiltinFn("\$mul(4, 5)",    "Умножение",            "Умножает два числа",                 Icons.Default.Close,        mathColor),
+        BuiltinFn("\$div(20, 4)",   "Деление",              "Делит первое на второе",             Icons.Default.Percent,      mathColor),
+        BuiltinFn("\$abs(-5)",      "Модуль числа",         "Абсолютное значение числа",          Icons.Default.Functions,    mathColor),
+        BuiltinFn("\$min(3, 7)",    "Минимум",              "Меньшее из двух чисел",              Icons.Default.KeyboardArrowDown, mathColor),
+        BuiltinFn("\$max(3, 7)",    "Максимум",             "Большее из двух чисел",              Icons.Default.KeyboardArrowUp,   mathColor),
+        
+        // Логические функции
+        BuiltinFn("\$and(true, false)", "Логическое И",     "true если оба условия истинны",      Icons.Default.AccountTree,  logicColor),
+        BuiltinFn("\$or(true, false)",  "Логическое ИЛИ",   "true если хотя бы одно истинно",     Icons.Default.AccountTree,  logicColor),
+        BuiltinFn("\$not(true)",        "Логическое НЕ",    "Инвертирует логическое значение",    Icons.Default.NotInterested, logicColor),
+        
+        // Строковые функции
+        BuiltinFn("\$concat(\"a\", \"b\")", "Соединить",    "Объединяет два текста",              Icons.Default.Link,         stringColor),
+        BuiltinFn("\$length(\"text\")",     "Длина текста", "Количество символов в тексте",       Icons.Default.Straighten,   stringColor),
+        BuiltinFn("\$upper(\"text\")",      "В верхний регистр", "Преобразует в заглавные буквы", Icons.Default.KeyboardArrowUp, stringColor),
+        BuiltinFn("\$lower(\"TEXT\")",      "В нижний регистр",  "Преобразует в строчные буквы",  Icons.Default.KeyboardArrowDown, stringColor),
     )
 
     LazyColumn(
