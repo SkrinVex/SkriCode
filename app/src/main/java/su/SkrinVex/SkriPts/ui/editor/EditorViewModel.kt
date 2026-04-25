@@ -132,16 +132,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Добавить блок в ветку if_block (branch = "then" или "else") */
     fun addChildBlock(blockIndex: Int, branch: String, type: String) = modifyActiveBlocks { list ->
         list.toMutableList().also { mutable ->
-            val serialized = mutable[blockIndex]
-            android.util.Log.d("SkriPts", "addChildBlock: serialized.children=${serialized.children}")
-            val block = serialized.deserialize() ?: return@also
-            android.util.Log.d("SkriPts", "addChildBlock: block.children=${block.children}")
+            val block = mutable[blockIndex].deserialize() ?: return@also
             val child = BlockRegistry.create(type) ?: return@also
             val newChildren = block.children.toMutableMap()
             newChildren[branch] = (newChildren[branch] ?: emptyList()) + child
-            val updated = block.copy(children = newChildren).serialize()
-            android.util.Log.d("SkriPts", "addChildBlock: updated.children=${updated.children}")
-            mutable[blockIndex] = updated
+            mutable[blockIndex] = block.copy(children = newChildren).serialize()
         }
     }
 

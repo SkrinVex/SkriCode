@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -24,8 +26,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.VarScope
-import androidx.compose.ui.graphics.Color
 import su.SkrinVex.SkriPts.ui.theme.*
+
+private data class BuiltinFn(
+    val insert: String,       // что вставляется в поле
+    val label: String,        // название
+    val description: String,  // подсказка
+    val icon: ImageVector,
+    val color: Color
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +42,7 @@ fun ExpressionEditorScreen(
     initialValue: String,
     paramLabel: String,
     variables: List<ProjectVar>,
-    isIdentifier: Boolean = false,   // true = поле имени переменной, вставляем без {}
+    isIdentifier: Boolean = false,
     onConfirm: (String) -> Unit,
     onCreateVar: (name: String, scope: VarScope) -> Unit,
     onBack: () -> Unit
@@ -48,8 +57,8 @@ fun ExpressionEditorScreen(
     val localVars  = variables.filter { it.scope == VarScope.LOCAL }
 
     fun push(v: String) { if (history.lastOrNull() != v) history.add(v) }
-    // Для идентификатора — просто имя, для выражения — {name}
     fun insertVar(name: String) { push(value); value = if (isIdentifier) name else value + "{$name}" }
+    fun insertFn(insert: String) { push(value); value = value + insert }
 
     Box(Modifier.fillMaxSize().background(Navy900)) {
         Column(Modifier.fillMaxSize()) {
@@ -81,14 +90,13 @@ fun ExpressionEditorScreen(
                 }
             }
 
-            // Поле ввода с подсветкой {переменных}
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 OutlinedTextField(
                     value = value,
                     onValueChange = { push(value); value = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Выражение") },
-                    placeholder = { Text("100, {x} + 50, Привет {name}!", color = TextSec) },
+                    placeholder = { Text("100, {x} + 50, \$screenWidth - 100", color = TextSec) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
@@ -98,20 +106,17 @@ fun ExpressionEditorScreen(
                     textStyle = LocalTextStyle.current.copy(fontSize = 18.sp, fontFamily = FontFamily.Monospace)
                 )
                 Spacer(Modifier.height(4.dp))
-                // Подсказка синтаксиса
                 Text(
                     buildAnnotatedString {
-                        append("Синтаксис: ")
                         withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
-                        append(" — переменная,  ")
-                        withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("{x} + 50") }
-                        append(" — арифметика")
+                        append(" — переменная  ")
+                        withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$константа") }
+                        append(" — встроенная")
                     },
                     color = TextSec, fontSize = 11.sp
                 )
             }
 
-            // Вкладки
             TabRow(selectedTabIndex = selectedTab, containerColor = Surface1, contentColor = Accent) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                     Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -127,38 +132,50 @@ fun ExpressionEditorScreen(
                         Text("Локальные (${localVars.size})", fontSize = 13.sp)
                     }
                 }
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
+                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Functions, null, modifier = Modifier.size(14.dp))
+                        Text("Функции", fontSize = 13.sp)
+                    }
+                }
             }
 
-            val currentVars = if (selectedTab == 0) globalVars else localVars
-
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                item {
-                    // Кнопка создать — тип берётся из текущей вкладки, без лишнего диалога
-                    OutlinedButton(
-                        onClick = { createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL; showCreateVar = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(alpha = 0.5f))
+            when (selectedTab) {
+                2 -> FunctionsTab(onInsert = { insertFn(it) })
+                else -> {
+                    val currentVars = if (selectedTab == 0) globalVars else localVars
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Создать ${if (selectedTab == 0) "глобальную" else "локальную"} переменную")
-                    }
-                }
-                if (currentVars.isEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
-                            Text("Нет переменных", color = TextSec, fontSize = 14.sp)
+                        if (!isIdentifier) {
+                            item {
+                                OutlinedButton(
+                                    onClick = { createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL; showCreateVar = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Создать ${if (selectedTab == 0) "глобальную" else "локальную"} переменную")
+                                }
+                            }
+                        }
+                        if (currentVars.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
+                                    Text("Нет переменных", color = TextSec, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                        items(currentVars, key = { it.name }) { v ->
+                            VarRow(variable = v, onClick = { insertVar(v.name) })
                         }
                     }
-                }
-                items(currentVars, key = { it.name }) { v ->
-                    VarRow(variable = v, onClick = { insertVar(v.name) })
                 }
             }
         }
@@ -175,6 +192,56 @@ fun ExpressionEditorScreen(
                 insertVar(name)
             }
         )
+    }
+}
+
+@Composable
+private fun FunctionsTab(onInsert: (String) -> Unit) {
+    val screenColor = Color(0xFF60A5FA)
+    val randColor   = Color(0xFFA78BFA)
+
+    val fns = listOf(
+        BuiltinFn("\$screenWidth",  "Ширина экрана",        "Ширина экрана в пикселях",          Icons.Default.PhoneAndroid, screenColor),
+        BuiltinFn("\$screenHeight", "Высота экрана",        "Высота экрана в пикселях",          Icons.Default.PhoneAndroid, screenColor),
+        BuiltinFn("\$screenTop",    "Верхняя точка",        "Y верхнего края (screenHeight / 2)", Icons.Default.VerticalAlignTop,    screenColor),
+        BuiltinFn("\$screenBottom", "Нижняя точка",         "Y нижнего края (-screenHeight / 2)", Icons.Default.VerticalAlignBottom, screenColor),
+        BuiltinFn("\$screenRight",  "Правая точка",         "X правого края (screenWidth / 2)",  Icons.Default.ChevronRight, screenColor),
+        BuiltinFn("\$screenLeft",   "Левая точка",          "X левого края (-screenWidth / 2)",  Icons.Default.ChevronLeft,  screenColor),
+        BuiltinFn("\$rand(0, 100)", "Случайное число",      "Целое число в диапазоне [min, max]", Icons.Default.Casino,       randColor),
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(fns) { fn ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
+                    .clickable { onInsert(fn.insert) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(fn.color.copy(0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(fn.icon, null, tint = fn.color, modifier = Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(color = fn.color, fontFamily = FontFamily.Monospace)) {
+                                append(fn.insert)
+                            }
+                        },
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium
+                    )
+                    Text(fn.description, color = TextSec, fontSize = 11.sp)
+                }
+                Icon(Icons.Default.AddCircleOutline, null, tint = fn.color.copy(0.7f), modifier = Modifier.size(18.dp))
+            }
+        }
     }
 }
 
@@ -210,6 +277,7 @@ private fun VarRow(variable: ProjectVar, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateVarDialog(
     scope: VarScope,

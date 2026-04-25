@@ -123,7 +123,6 @@ object SimEngine {
                     val left  = block.params["left"]?.value ?: ""
                     val op    = block.params["op"]?.value ?: "=="
                     val right = block.params["right"]?.value ?: "0"
-                    android.util.Log.d("SkriPts", "if_block: left='$left' op='$op' right='$right' vars=$vars children=${block.children}")
                     val (result, err) = ExprEval.evalCondition(left, op, right, vars)
                     if (err != null) { errors += "Блок $num «Условие»: $err"; continue }
                     val branch = if (result) "then" else "else"
@@ -131,7 +130,6 @@ object SimEngine {
                     val leftVal = ExprEval.eval(left, vars).value
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
-                    android.util.Log.d("SkriPts", "if_block result=$result branch=$branch branchBlocks=${branchBlocks.size}")
                     if (branchBlocks.isNotEmpty()) {
                         val stopped = !runScript(branchBlocks, vars, objects, log, errors)
                         if (stopped) return false

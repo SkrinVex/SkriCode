@@ -11,6 +11,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.ui.editor.EditorScreen
 import su.SkrinVex.SkriPts.ui.editor.EditorViewModel
 import su.SkrinVex.SkriPts.ui.home.HomeScreen
@@ -24,6 +25,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Устанавливаем размеры экрана для встроенных констант
+        val dm = resources.displayMetrics
+        ExprEval.screenWidth = dm.widthPixels.toFloat()
+        ExprEval.screenHeight = dm.heightPixels.toFloat()
         setContent {
             SkriPtsTheme {
                 val editorState by editorVm.state.collectAsState()

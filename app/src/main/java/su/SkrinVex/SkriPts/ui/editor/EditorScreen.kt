@@ -173,6 +173,23 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 }
                 itemsIndexed(activeBlocks, key = { _, b -> b.id }) { index, block ->
                     val collapsed = collapsedState[block.id] ?: vm.isBlockCollapsed(activeScriptId, block.id)
+                    var showDeleteConfirm by remember { mutableStateOf(false) }
+                    if (showDeleteConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirm = false },
+                            containerColor = Surface2,
+                            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+                            title = { Text("Удалить блок?", color = TextPrim) },
+                            text = { Text("«${block.displayName}»${if (block.children.isNotEmpty()) " и все вложенные блоки" else ""} будут удалены.", color = TextSec) },
+                            confirmButton = {
+                                Button(onClick = { vm.removeBlock(index); showDeleteConfirm = false },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Danger)) {
+                                    Text("Удалить")
+                                }
+                            },
+                            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Отмена", color = TextSec) } }
+                        )
+                    }
                     BlockCard(
                         block = block,
                         index = index,
@@ -183,7 +200,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                             val next = vm.toggleBlockCollapsed(activeScriptId, block.id)
                             collapsedState[block.id] = next
                         },
-                        onRemove = { vm.removeBlock(index) },
+                        onRemove = { showDeleteConfirm = true },
                         onMoveUp = { if (index > 0) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
