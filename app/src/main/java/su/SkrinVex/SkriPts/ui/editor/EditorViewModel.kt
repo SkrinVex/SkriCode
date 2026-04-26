@@ -119,6 +119,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         list.toMutableList().also { it.removeAt(index) }
     }
 
+    fun duplicateBlock(index: Int) = modifyActiveBlocks { list ->
+        val block = list[index].deserialize() ?: return@modifyActiveBlocks list
+        
+        fun BlockDef.withNewIds(): BlockDef {
+            val newChildren = children.mapValues { (_, blocks) -> 
+                blocks.map { it.withNewIds() }
+            }
+            return copy(id = java.util.UUID.randomUUID().toString(), children = newChildren)
+        }
+        
+        val duplicated = block.withNewIds().serialize()
+        list.toMutableList().also { it.add(index + 1, duplicated) }
+    }
+
     fun moveBlock(from: Int, to: Int) = modifyActiveBlocks { list ->
         list.toMutableList().also {
             val item = it.removeAt(from)

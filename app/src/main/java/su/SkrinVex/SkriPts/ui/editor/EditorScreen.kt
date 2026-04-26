@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +37,7 @@ import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.VarScope
+import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.ui.expr.ExpressionEditorScreen
 import su.SkrinVex.SkriPts.ui.theme.*
 
@@ -50,6 +53,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
     var exprTarget by remember { mutableStateOf<ExprEditTarget?>(null) }
     var showScriptMenu by remember { mutableStateOf<String?>(null) }
     var showAddScriptDialog by remember { mutableStateOf(false) }
+    var positionPickerBlock by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
 
     // Редактор выражений — полноэкранный
     exprTarget?.let { target ->
@@ -69,6 +73,46 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             onCreateVar = { name, scope -> vm.addVariable(name, scope) },
             onDeleteVar = { name, scope -> vm.deleteVariable(name, scope) },
             onBack = { exprTarget = null }
+        )
+        return
+    }
+
+    // Визуальный позиционировщик — полноэкранный
+    positionPickerBlock?.let { (blockIndex, block) ->
+        val vars = emptyMap<String, String>()
+        fun evalF(key: String, default: Float): Float {
+            val raw = block.params[key]?.value ?: return default
+            return ExprEval.eval(raw, vars).value.toFloatOrNull() ?: default
+        }
+        PositionPickerScreen(
+            objectName = block.params["name"]?.value ?: block.displayName,
+            objectWidth = evalF("width", 100f).coerceAtLeast(10f),
+            objectHeight = evalF("height", 60f).coerceAtLeast(10f),
+            objectRadius = evalF("radius", 8f).coerceAtLeast(0f),
+            objectColor = block.params["color"]?.value?.let {
+                runCatching {
+                    val c = it.trim().trimStart('#').toLong(16)
+                    if (it.trim().trimStart('#').length == 6) androidx.compose.ui.graphics.Color(0xFF000000 or c)
+                    else androidx.compose.ui.graphics.Color(c)
+                }.getOrNull()
+            } ?: block.params["baseColor"]?.value?.let {
+                runCatching {
+                    val c = it.trim().trimStart('#').toLong(16)
+                    androidx.compose.ui.graphics.Color(0xFF000000 or c)
+                }.getOrNull()
+            } ?: androidx.compose.ui.graphics.Color(0xFF4F8EF7),
+            initialX = evalF("x", 0f),
+            initialY = evalF("y", 0f),
+            showOtherObjects = ThemeManager.showObjectsInPicker,
+            otherBlocks = if (ThemeManager.showObjectsInPicker)
+                state.activeBlocks.filter { it.id != block.id && it.params.containsKey("x") && it.params.containsKey("y") }
+            else emptyList(),
+            onConfirm = { xExpr, yExpr ->
+                vm.updateParam(blockIndex, "x", xExpr)
+                vm.updateParam(blockIndex, "y", yExpr)
+                positionPickerBlock = null
+            },
+            onDismiss = { positionPickerBlock = null }
         )
         return
     }
@@ -211,8 +255,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         onRemove = { showDeleteConfirm = true },
                         onMoveUp = { if (index > 0) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
+                        onDuplicate = { vm.duplicateBlock(index) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
                         onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
+                        onOpenPositionPicker = { b -> positionPickerBlock = index to b },
                         onAddChild = { branch, type -> vm.addChildBlock(index, branch, type) },
                         onRemoveChild = { branch, ci -> vm.removeChildBlock(index, branch, ci) },
                         onChildParamChange = { branch, ci, k, v -> vm.updateChildParam(index, branch, ci, k, v) },
@@ -467,19 +513,29 @@ private fun BlockCard(
     variables: List<ProjectVar>,
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
-    onRemove: () -> Unit, onMoveUp: () -> Unit, onMoveDown: () -> Unit,
+    onRemove: () -> Unit, 
+    onMoveUp: () -> Unit, 
+    onMoveDown: () -> Unit,
+    onDuplicate: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenPositionPicker: ((block: BlockDef) -> Unit)? = null,
     onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
     onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> }
 ) {
     val accent = categoryColor(block.category)
+    var showContextMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize()
-            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
+            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { showContextMenu = true }
+                )
+            },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2)
     ) {
@@ -501,9 +557,15 @@ private fun BlockCard(
                     }
                     SmallBtn(Icons.Default.KeyboardArrowUp, enabled = index > 0, onClick = onMoveUp)
                     SmallBtn(Icons.Default.KeyboardArrowDown, enabled = index < total - 1, onClick = onMoveDown)
-                    SmallBtn(if (!collapsed) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        onClick = onToggleCollapse)
-                    SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(alpha = 0.8f), onClick = onRemove)
+                    val hasPosition = block.params.containsKey("x") && block.params.containsKey("y")
+                    if (hasPosition && onOpenPositionPicker != null) {
+                        SmallBtn(Icons.Default.OpenWith, tint = Color(0xFF00E5FF), onClick = { onOpenPositionPicker(block) })
+                    }
+                    SmallBtn(
+                        if (collapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        tint = accent.copy(alpha = 0.7f),
+                        onClick = onToggleCollapse
+                    )
                 }
                 if (!collapsed) {
                     when (block.type) {
@@ -576,6 +638,41 @@ private fun BlockCard(
                 }
             }
         }
+    }
+
+    if (showContextMenu) {
+        AlertDialog(
+            onDismissRequest = { showContextMenu = false },
+            containerColor = Surface2,
+            title = { Text("Действия с блоком", color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onDuplicate(); showContextMenu = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Дублировать блок")
+                    }
+                    Button(
+                        onClick = { onRemove(); showContextMenu = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Удалить блок")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showContextMenu = false }) {
+                    Text("Отмена", color = TextSec)
+                }
+            }
+        )
     }
 }
 
@@ -1137,32 +1234,43 @@ private fun LoopBlockContent(
 private fun SimSettingsDialog(onDismiss: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var debugMode by remember { mutableStateOf(ThemeManager.debugMode) }
+    var showObjectsInPicker by remember { mutableStateOf(ThemeManager.showObjectsInPicker) }
+
+    @Composable
+    fun SettingRow(title: String, subtitle: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+                .clickable { onToggle(!checked) }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextPrim, fontSize = 14.sp)
+                Text(subtitle, color = TextSec, fontSize = 12.sp)
+            }
+            Switch(checked = checked, onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(checkedThumbColor = Navy900, checkedTrackColor = Accent))
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
         icon = { Icon(Icons.Default.Settings, null, tint = Accent) },
         title = { Text("Настройки симуляции", color = TextPrim) },
         text = {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
-                    .clickable { debugMode = !debugMode }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Режим отладки", color = TextPrim, fontSize = 14.sp)
-                    Text("Сетка, логи, кнопка закрытия", color = TextSec, fontSize = 12.sp)
-                }
-                Switch(
-                    checked = debugMode,
-                    onCheckedChange = { debugMode = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Navy900, checkedTrackColor = Accent)
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingRow("Режим отладки", "Сетка, логи, кнопка закрытия", debugMode) { debugMode = it }
+                SettingRow("Объекты в позиционировщике", "Показывать все объекты при перемещении", showObjectsInPicker) { showObjectsInPicker = it }
             }
         },
         confirmButton = {
             Button(
-                onClick = { ThemeManager.setDebugMode(ctx, debugMode); onDismiss() },
+                onClick = {
+                    ThemeManager.setDebugMode(ctx, debugMode)
+                    ThemeManager.setShowObjectsInPicker(ctx, showObjectsInPicker)
+                    onDismiss()
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = Accent)
             ) { Text("OK", color = Navy900) }
         },
