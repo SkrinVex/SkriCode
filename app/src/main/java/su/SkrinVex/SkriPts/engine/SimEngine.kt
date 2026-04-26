@@ -71,40 +71,63 @@ object SimEngine {
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
         }
 
+        // Привязываем ON_TAP/ON_HOLD только к объектам, уже существующим после ON_START.
+        // Объекты, созданные позже (в ON_TAP/ON_HOLD скриптах), будут привязаны динамически
+        // через bindEventScripts при каждом обновлении состояния.
+        bindEventScripts(scripts, objects, errors, warnMissing = false)
+
+        return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars, log = log, errors = errors, isStopped = false)
+    }
+
+    /**
+     * Привязывает ON_TAP/ON_HOLD скрипты к объектам, которые уже существуют в [objects].
+     * Вызывается после ON_START и после каждого выполнения скрипта, чтобы подхватить
+     * объекты, созданные динамически (например, Button создаётся в ON_TAP Button_start).
+     * [warnMissing] — добавлять ли ошибку если объект ещё не создан.
+     */
+    fun bindEventScripts(
+        scripts: List<Script>,
+        objects: MutableMap<String, SimObject>,
+        errors: MutableList<String>,
+        warnMissing: Boolean = false
+    ) {
         scripts.filter { it.event == ScriptEvent.ON_TAP }.forEach { script ->
             val target = script.eventTarget.trim()
             if (target.isNotBlank()) {
                 val obj = objects[target]
-                if (obj != null) objects[target] = obj.copy(tapScriptId = script.id)
-                else errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_TAP"
+                if (obj != null) {
+                    if (obj.tapScriptId != script.id) objects[target] = obj.copy(tapScriptId = script.id)
+                } else if (warnMissing) {
+                    errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_TAP"
+                }
             }
         }
-
         scripts.filter { it.event == ScriptEvent.ON_HOLD }.forEach { script ->
             val target = script.eventTarget.trim()
             if (target.isNotBlank()) {
                 val obj = objects[target]
-                if (obj != null) objects[target] = obj.copy(holdScriptId = script.id)
-                else errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_HOLD"
+                if (obj != null) {
+                    if (obj.holdScriptId != script.id) objects[target] = obj.copy(holdScriptId = script.id)
+                } else if (warnMissing) {
+                    errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_HOLD"
+                }
             }
         }
-
-        return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars, log = log, errors = errors, isStopped = false)
     }
 
     suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, currentState)
+        return runScriptOnState(script, scripts, currentState)
     }
 
     suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, currentState)
+        return runScriptOnState(script, scripts, currentState)
     }
 
-    private suspend fun runScriptOnState(script: Script, currentState: SimState): SimState {
+    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState): SimState {
         val objects = currentState.objects.toMutableMap()
         val joysticks = currentState.joysticks.toMutableMap()
         val log = currentState.log.toMutableList()
@@ -116,6 +139,9 @@ object SimEngine {
         log += "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, log, errors, allowDelay = true)
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
+
+        // Привязываем события к объектам, которые могли быть созданы этим скриптом
+        bindEventScripts(scripts, objects, errors, warnMissing = false)
 
         return currentState.copy(
             objects = objects,
