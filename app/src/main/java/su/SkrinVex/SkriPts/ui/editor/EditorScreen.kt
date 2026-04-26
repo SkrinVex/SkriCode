@@ -249,6 +249,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         index = index,
                         total = activeBlocks.size,
                         variables = state.visibleVars,
+                        allBlocks = activeBlocks,
                         collapsed = collapsed,
                         onToggleCollapse = {
                             val next = vm.toggleBlockCollapsed(activeScriptId, block.id)
@@ -513,6 +514,7 @@ private fun EmptyState() {
 private fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
+    allBlocks: List<BlockDef> = emptyList(),
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
     onRemove: () -> Unit, 
@@ -588,6 +590,18 @@ private fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             LoopBlockContent(
                                 block = block, variables = variables,
+                                onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                                onAddChild = onAddChild, onRemoveChild = onRemoveChild,
+                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+                            )
+                        }
+                        "sim_modify" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            ModifyBlockContent(
+                                block = block, variables = variables,
+                                allBlocks = allBlocks,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
@@ -1369,6 +1383,207 @@ private fun LoopBlockContent(
         onChildParamChange = onChildParamChange,
         onOpenChildExpr = onOpenChildExpr
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModifyBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    allBlocks: List<BlockDef>,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onAddChild: (branch: String, type: String) -> Unit,
+    onRemoveChild: (branch: String, childIndex: Int) -> Unit,
+    onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    // Имя объекта
+    val nameParam = block.params["name"]!!
+    ObjectNameChip(param = nameParam, variables = variables,
+        onClick = { onOpenExpr("name", nameParam.label, nameParam.value, false) })
+    Spacer(Modifier.height(10.dp))
+
+    // Список свойств
+    val props = block.children["props"] ?: emptyList()
+    var showPropPicker by remember { mutableStateOf(false) }
+    
+    // Определяем доступные свойства на основе имени объекта
+    val objectName = nameParam.value.trim()
+    val availableProps = remember(objectName, allBlocks) {
+        when {
+            objectName.isBlank() -> emptyList()
+            else -> {
+                // Ищем блок создания этого объекта
+                val creationBlock = allBlocks.find { 
+                    (it.type == "sim_create" || it.type == "sim_text" || it.type == "sim_joystick") &&
+                    it.params["name"]?.value == objectName
+                }
+                
+                when (creationBlock?.type) {
+                    "sim_create" -> listOf(
+                        "x" to "X позиция", "y" to "Y позиция",
+                        "width" to "Ширина", "height" to "Высота",
+                        "radius" to "Скругление", "color" to "Цвет",
+                        "visible" to "Видимость", "rotation" to "Вращение"
+                    )
+                    "sim_text" -> listOf(
+                        "x" to "X позиция", "y" to "Y позиция",
+                        "width" to "Ширина", "height" to "Высота",
+                        "visible" to "Видимость", "rotation" to "Вращение",
+                        "label" to "Текст", "fontSize" to "Размер шрифта",
+                        "bold" to "Жирный", "textColor" to "Цвет текста"
+                    )
+                    "sim_joystick" -> listOf(
+                        "x" to "X позиция", "y" to "Y позиция",
+                        "baseRadius" to "Радиус базы", "knobRadius" to "Радиус ручки",
+                        "baseColor" to "Цвет базы", "knobColor" to "Цвет ручки",
+                        "speed" to "Скорость", "directional" to "Поворот по направлению"
+                    )
+                    else -> emptyList() // Объект не найден
+                }
+            }
+        }
+    }
+    
+    val usedProps = props.mapNotNull { it.params["prop"]?.value }.toSet()
+    val selectableProps = availableProps.filter { it.first !in usedProps }
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(Surface3)
+            .border(1.dp, Accent.copy(0.35f), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Tune, null, tint = Accent, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Свойства (${props.size})", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            if (selectableProps.isNotEmpty()) {
+                IconButton(onClick = { showPropPicker = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Add, "Добавить свойство", tint = Accent, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        
+        when {
+            objectName.isBlank() -> {
+                Text("Сначала укажи имя объекта", color = Warning.copy(0.7f), fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+            availableProps.isEmpty() -> {
+                Text("Объект «$objectName» не найден в скрипте", color = Danger.copy(0.7f), fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+            props.isEmpty() -> {
+                Text("Нет свойств — нажми + чтобы добавить", color = TextSec.copy(0.5f), fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+            else -> {
+                Spacer(Modifier.height(6.dp))
+                props.forEachIndexed { ci, prop ->
+                    ModifyPropRow(
+                        prop = prop, childIndex = ci,
+                        variables = variables,
+                        onRemove = { onRemoveChild("props", ci) },
+                        onParamChange = { k, v -> onChildParamChange("props", ci, k, v) },
+                        onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr("props", ci, k, lbl, cur, isId) }
+                    )
+                    if (ci < props.size - 1) Spacer(Modifier.height(4.dp))
+                }
+            }
+        }
+    }
+
+    if (showPropPicker) {
+        ModalBottomSheet(onDismissRequest = { showPropPicker = false }, containerColor = Surface1,
+            dragHandle = {
+                Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface3))
+                }
+            }
+        ) {
+            Text("Выбери свойство", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                items(selectableProps.size) { i ->
+                    val (propKey, propLabel) = selectableProps[i]
+                    Card(onClick = {
+                        onAddChild("props", "modify_prop")
+                        onChildParamChange("props", props.size, "prop", propKey)
+                        showPropPicker = false
+                    },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Surface2)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Tune, null, tint = Accent, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(propLabel, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModifyPropRow(
+    prop: BlockDef, childIndex: Int,
+    variables: List<ProjectVar>,
+    onRemove: () -> Unit,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    val propKey = prop.params["prop"]?.value ?: ""
+    val propLabel = when (propKey) {
+        "x" -> "X позиция"
+        "y" -> "Y позиция"
+        "width" -> "Ширина"
+        "height" -> "Высота"
+        "radius" -> "Скругление"
+        "color" -> "Цвет"
+        "visible" -> "Видимость"
+        "rotation" -> "Вращение"
+        "label" -> "Текст"
+        "fontSize" -> "Размер шрифта"
+        "bold" -> "Жирный"
+        "textColor" -> "Цвет текста"
+        "baseRadius" -> "Радиус базы"
+        "knobRadius" -> "Радиус ручки"
+        "baseColor" -> "Цвет базы"
+        "knobColor" -> "Цвет ручки"
+        "speed" -> "Скорость"
+        "directional" -> "Поворот по направлению"
+        else -> propKey
+    }
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .background(Surface2)
+            .border(1.dp, Accent.copy(0.2f), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Tune, null, tint = Accent, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(propLabel, color = TextPrim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = onRemove)
+        }
+        Spacer(Modifier.height(6.dp))
+        
+        val valueParam = prop.params["value"] ?: BlockParam("", "Значение", "")
+        when (propKey) {
+            "color", "baseColor", "knobColor", "textColor" ->
+                ColorField(param = valueParam, onChange = { onParamChange("value", it) })
+            "visible", "bold", "directional" ->
+                BoolToggle(param = valueParam.copy(label = "Значение"), onChange = { onParamChange("value", it) })
+            else ->
+                ExprChip(param = valueParam.copy(label = "Значение"), variables = variables,
+                    onClick = { onOpenExpr("value", "Значение", valueParam.value, false) })
+        }
+    }
 }
 
 @Composable

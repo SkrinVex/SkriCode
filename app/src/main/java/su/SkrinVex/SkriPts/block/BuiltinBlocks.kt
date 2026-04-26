@@ -117,6 +117,14 @@ object BlockFactory {
             "speed"       to p("8", "Скорость", "Пикселей за тик", ParamType.NUMBER),
             "directional" to p("false", "Поворот по направлению", "true = объект поворачивается")))
 
+        "sim_modify" -> build("sim_modify", "Изменить свойства", "Универсальное изменение свойств объекта", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Какой объект изменить"))).copy(
+            children = mapOf("props" to emptyList()))
+
+        "modify_prop" -> build("modify_prop", "Свойство", "Свойство для изменения", BlockCategory.SIMULATION, listOf(
+            "prop" to p("", "Свойство", ""),
+            "value" to p("", "Значение", "")))
+
         else -> null
     }
 }

@@ -387,6 +387,59 @@ object SimEngine {
                     )
                     log += "  Джойстик «$name» создан"
                 }
+                "sim_modify" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Изменить свойства»: «$nameOrTag» не найден"; continue }
+                    val props = block.children["props"] ?: emptyList()
+                    targets.forEach { (name, obj) ->
+                        var modified = obj
+                        props.forEach { prop ->
+                            val propName = prop.params["prop"]?.value ?: return@forEach
+                            val propValue = prop.params["value"]?.value ?: return@forEach
+                            val resolved = ExprEval.eval(propValue, vars).value
+                            modified = when (propName) {
+                                "x" -> modified.copy(x = resolved.toFloatOrNull() ?: modified.x)
+                                "y" -> modified.copy(y = resolved.toFloatOrNull() ?: modified.y)
+                                "width" -> modified.copy(width = (resolved.toFloatOrNull() ?: modified.width).coerceAtLeast(1f))
+                                "height" -> modified.copy(height = (resolved.toFloatOrNull() ?: modified.height).coerceAtLeast(1f))
+                                "radius" -> modified.copy(radius = (resolved.toFloatOrNull() ?: modified.radius).coerceAtLeast(0f))
+                                "color" -> modified.copy(color = parseColor(resolved))
+                                "visible" -> modified.copy(visible = resolved == "true")
+                                "rotation" -> modified.copy(rotation = (resolved.toFloatOrNull() ?: modified.rotation) % 360f)
+                                "label" -> modified.copy(label = resolved)
+                                "fontSize" -> modified.copy(fontSize = (resolved.toFloatOrNull() ?: modified.fontSize).coerceAtLeast(6f))
+                                "bold" -> modified.copy(bold = resolved == "true")
+                                "textColor" -> modified.copy(textColor = if (resolved.isNotBlank()) parseColor(resolved) else null)
+                                else -> modified
+                            }
+                        }
+                        objects[name] = modified
+                    }
+                    // Для джойстиков
+                    val joyTargets = if (nameOrTag.startsWith("#")) emptyList() else listOfNotNull(joysticks[nameOrTag]?.let { nameOrTag to it })
+                    joyTargets.forEach { (name, joy) ->
+                        var modified = joy
+                        props.forEach { prop ->
+                            val propName = prop.params["prop"]?.value ?: return@forEach
+                            val propValue = prop.params["value"]?.value ?: return@forEach
+                            val resolved = ExprEval.eval(propValue, vars).value
+                            modified = when (propName) {
+                                "x" -> modified.copy(x = resolved.toFloatOrNull() ?: modified.x)
+                                "y" -> modified.copy(y = resolved.toFloatOrNull() ?: modified.y)
+                                "baseRadius" -> modified.copy(baseRadius = (resolved.toFloatOrNull() ?: modified.baseRadius).coerceAtLeast(20f))
+                                "knobRadius" -> modified.copy(knobRadius = (resolved.toFloatOrNull() ?: modified.knobRadius).coerceAtLeast(10f))
+                                "baseColor" -> modified.copy(baseColor = parseColor(resolved))
+                                "knobColor" -> modified.copy(knobColor = parseColor(resolved))
+                                "speed" -> modified.copy(speed = (resolved.toFloatOrNull() ?: modified.speed).coerceAtLeast(1f))
+                                "directional" -> modified.copy(directional = resolved == "true")
+                                else -> modified
+                            }
+                        }
+                        joysticks[name] = modified
+                    }
+                    log += "  «$nameOrTag» свойства изменены (${props.size})"
+                }
             }
         }
         return true
