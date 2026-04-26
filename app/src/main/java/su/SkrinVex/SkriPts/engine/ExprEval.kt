@@ -2,6 +2,7 @@ package su.SkrinVex.SkriPts.engine
 
 import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
@@ -97,7 +98,8 @@ object ExprEval {
             "lower(" to ::handleLower,
             "objX(" to ::handleObjX,
             "objY(" to ::handleObjY,
-            "objRot(" to ::handleObjRot
+            "objRot(" to ::handleObjRot,
+            "sqrt(" to ::handleSqrt
         )
         
         for ((pattern, handler) in funcPatterns) {
@@ -251,6 +253,13 @@ object ExprEval {
         val name = args[0]
         objects[name]?.let { return Triple(fmt(it.rotation.toDouble()), consumed, null) }
         return Triple("", consumed, "\$objRot(): объект «$name» не найден")
+    }
+
+    private fun handleSqrt(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$sqrt() требует один аргумент")
+        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$sqrt(): «${args[0]}» не число")
+        if (a < 0) return Triple("", consumed, "\$sqrt(): нельзя извлечь корень из отрицательного числа")
+        return Triple(fmt(sqrt(a)), consumed, null)
     }
 
     private fun tryArith(expr: String): String? {

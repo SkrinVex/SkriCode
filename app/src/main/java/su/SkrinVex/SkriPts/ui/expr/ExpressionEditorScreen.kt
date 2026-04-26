@@ -322,6 +322,7 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$mul(4, 5)",    "Умножение",            "Умножает два числа",                 Icons.Default.Close,        mathColor),
         BuiltinFn("\$div(20, 4)",   "Деление",              "Делит первое на второе",             Icons.Default.Percent,      mathColor),
         BuiltinFn("\$abs(-5)",      "Модуль числа",         "Абсолютное значение числа",          Icons.Default.Functions,    mathColor),
+        BuiltinFn("\$sqrt(9)",      "Квадратный корень",    "Извлекает квадратный корень числа",  Icons.Default.Functions,    mathColor),
         BuiltinFn("\$min(3, 7)",    "Минимум",              "Меньшее из двух чисел",              Icons.Default.KeyboardArrowDown, mathColor),
         BuiltinFn("\$max(3, 7)",    "Максимум",             "Большее из двух чисел",              Icons.Default.KeyboardArrowUp,   mathColor),
         
