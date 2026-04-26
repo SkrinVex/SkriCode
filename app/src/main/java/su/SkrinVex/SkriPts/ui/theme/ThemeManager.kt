@@ -37,10 +37,13 @@ object ThemeManager {
     private const val KEY_THEME = "theme"
     private const val KEY_DEBUG = "debug_mode"
     private const val KEY_PICKER_OBJECTS = "picker_objects"
+    private const val KEY_SHOW_HITBOXES = "show_hitboxes"
 
     var debugMode: Boolean = true
         private set
     var showObjectsInPicker: Boolean = false
+        private set
+    var showHitboxes: Boolean = false
         private set
 
     fun init(ctx: android.content.Context) {
@@ -49,6 +52,7 @@ object ThemeManager {
         currentTheme = AppTheme.entries.find { it.name == name } ?: AppTheme.BLUE
         debugMode = prefs.getBoolean(KEY_DEBUG, true)
         showObjectsInPicker = prefs.getBoolean(KEY_PICKER_OBJECTS, false)
+        showHitboxes = prefs.getBoolean(KEY_SHOW_HITBOXES, false)
     }
 
     fun getCurrentTheme() = currentTheme
@@ -69,6 +73,12 @@ object ThemeManager {
         showObjectsInPicker = enabled
         ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_PICKER_OBJECTS, enabled).apply()
+    }
+
+    fun setShowHitboxes(ctx: android.content.Context, enabled: Boolean) {
+        showHitboxes = enabled
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SHOW_HITBOXES, enabled).apply()
     }
 
     fun getAccent() = currentTheme.accent

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.engine.JoystickState
 import su.SkrinVex.SkriPts.engine.SimObject
 import su.SkrinVex.SkriPts.engine.SimState
+import su.SkrinVex.SkriPts.engine.HitboxType
 import su.SkrinVex.SkriPts.ui.theme.*
 import kotlin.math.*
 
@@ -46,7 +47,8 @@ fun SimulationScreen(
     onJoystickRelease: (pointerId: Long) -> Unit = {},
     onBack: () -> Unit,
     onClearLogs: () -> Unit = {},
-    debugMode: Boolean = true
+    debugMode: Boolean = true,
+    showHitboxes: Boolean = false
 ) {
     BackHandler(onBack = onBack)
 
@@ -127,6 +129,9 @@ fun SimulationScreen(
             if (debugMode) drawGrid(cx, cy)
             state.objects.values.forEach {
                 if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj)
+            }
+            if (showHitboxes) {
+                state.objects.values.forEach { if (it.visible) drawHitbox(it, cx, cy) }
             }
             state.joysticks.values.forEach { drawJoystick(it, cx, cy) }
         }
@@ -322,6 +327,36 @@ private fun DrawScope.drawJoystick(joy: JoystickState, cx: Float, cy: Float) {
     val kx = jx + joy.knobDx * (joy.baseRadius - joy.knobRadius)
     val ky = jy - joy.knobDy * (joy.baseRadius - joy.knobRadius)
     drawCircle(color = joy.knobColor, radius = joy.knobRadius, center = Offset(kx, ky))
+}
+
+private fun DrawScope.drawHitbox(obj: SimObject, cx: Float, cy: Float) {
+    val body = obj.physicsBody ?: return
+    val left = cx + obj.x - obj.width / 2f
+    val top  = cy - obj.y - obj.height / 2f
+    val centerX = left + obj.width / 2f
+    val centerY = top + obj.height / 2f
+    val hitboxColor = if (body.isStatic) Color(0xFF00FF88) else Color(0xFFFF4444)
+
+    rotate(obj.rotation, Offset(centerX, centerY)) {
+        if (obj.hitbox.type == su.SkrinVex.SkriPts.engine.HitboxType.MANUAL && obj.hitbox.points.size >= 2) {
+            val pts = obj.hitbox.points
+            for (i in pts.indices) {
+                val a = pts[i]; val b = pts[(i + 1) % pts.size]
+                drawLine(hitboxColor,
+                    Offset(centerX + a.first, centerY - a.second),
+                    Offset(centerX + b.first, centerY - b.second),
+                    strokeWidth = 2f)
+            }
+        } else {
+            drawRoundRect(
+                color = hitboxColor,
+                topLeft = Offset(left, top),
+                size = Size(obj.width, obj.height),
+                cornerRadius = CornerRadius(obj.radius, obj.radius),
+                style = Stroke(width = 2f)
+            )
+        }
+    }
 }
 
 private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean) {

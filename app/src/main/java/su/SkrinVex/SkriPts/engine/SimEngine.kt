@@ -9,6 +9,27 @@ import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.data.deserialize
 
+/** Тип хитбокса */
+enum class HitboxType { AUTO, MANUAL }
+
+/** Хитбокс объекта */
+data class Hitbox(
+    val type: HitboxType = HitboxType.AUTO,
+    /** Для MANUAL — список точек в локальных координатах объекта (относительно центра) */
+    val points: List<Pair<Float, Float>> = emptyList()
+)
+
+/** Физическое тело объекта */
+data class PhysicsBody(
+    val enabled: Boolean = true,
+    val gravity: Float = -9.8f,   // px/tick² (отрицательное = вниз)
+    val isStatic: Boolean = false, // статик нельзя двигать физикой/джойстиком
+    val velocityX: Float = 0f,
+    val velocityY: Float = 0f,
+    val mass: Float = 1f,
+    val bounciness: Float = 0f    // 0..1
+)
+
 data class SimObject(
     val name: String,
     val x: Float, val y: Float,
@@ -23,7 +44,9 @@ data class SimObject(
     val holdScriptId: String? = null,
     val visible: Boolean = true,
     val rotation: Float = 0f,
-    val tags: Set<String> = emptySet()
+    val tags: Set<String> = emptySet(),
+    val physicsBody: PhysicsBody? = null,
+    val hitbox: Hitbox = Hitbox()
 )
 
 data class JoystickState(
@@ -49,7 +72,8 @@ data class SimState(
     val tables: Map<String, Map<String, String>> = emptyMap(),
     val log: List<String> = emptyList(),
     val errors: List<String> = emptyList(),
-    val isStopped: Boolean = false
+    val isStopped: Boolean = false,
+    val physicsEnabled: Boolean = true
 )
 
 object SimEngine {
@@ -65,9 +89,9 @@ object SimEngine {
         val log = mutableListOf<String>()
         val errors = mutableListOf<String>()
         val globalVars = globalVarDefs.associate { it.name to it.value }.toMutableMap()
-        // Таблицы: глобальные + локальные скрипта объединяются при выполнении
         val globalTables = globalTableDefs.associate { it.name to it.entries.toMutableMap() }
             .mapValues { it.value }.toMutableMap<String, MutableMap<String, String>>()
+        var physicsEnabled = true
 
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
             log += "Скрипт «${script.name}»"
@@ -76,19 +100,17 @@ object SimEngine {
             val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
             val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
             runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
-                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList())) })
+                allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
+                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled)) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
-            // Синхронизируем изменения таблиц обратно в глобальные
             globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
         }
 
-        // Привязываем ON_TAP/ON_HOLD только к объектам, уже существующим после ON_START.
-        // Объекты, созданные позже (в ON_TAP/ON_HOLD скриптах), будут привязаны динамически
-        // через bindEventScripts при каждом обновлении состояния.
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
-            tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false)
+            tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
+            physicsEnabled = physicsEnabled)
     }
 
     /**
@@ -139,6 +161,84 @@ object SimEngine {
         return runScriptOnState(script, scripts, currentState, onUpdate)
     }
 
+    /** Применяет один тик физики ко всем объектам с physicsBody */
+    fun physicsTick(state: SimState): SimState {
+        if (!state.physicsEnabled) return state
+        val objects = state.objects.toMutableMap()
+
+        // 1. Применяем гравитацию и интегрируем позиции
+        val dynamics = objects.entries.filter { (_, obj) ->
+            val b = obj.physicsBody; b != null && b.enabled && !b.isStatic
+        }
+        if (dynamics.isEmpty()) return state
+
+        dynamics.forEach { (name, obj) ->
+            val body = obj.physicsBody!!
+            val vy = body.velocityY + body.gravity * 0.016f
+            objects[name] = obj.copy(
+                x = obj.x + body.velocityX,
+                y = obj.y + vy,
+                physicsBody = body.copy(velocityY = vy)
+            )
+        }
+
+        // 2. Коллизии: dynamic vs static и dynamic vs dynamic
+        val allPhysics = objects.values.filter { it.physicsBody != null }
+
+        repeat(3) { // несколько итераций для стабильности
+            for (i in allPhysics.indices) {
+                for (j in i + 1 until allPhysics.size) {
+                    val a = objects[allPhysics[i].name] ?: continue
+                    val b = objects[allPhysics[j].name] ?: continue
+                    val aBody = a.physicsBody ?: continue
+                    val bBody = b.physicsBody ?: continue
+                    if (aBody.isStatic && bBody.isStatic) continue
+                    if (!aBody.enabled && !bBody.enabled) continue
+
+                    // AABB overlap
+                    val overlapX = (a.width / 2f + b.width / 2f) - kotlin.math.abs(a.x - b.x)
+                    val overlapY = (a.height / 2f + b.height / 2f) - kotlin.math.abs(a.y - b.y)
+                    if (overlapX <= 0f || overlapY <= 0f) continue
+
+                    val totalMass = aBody.mass + bBody.mass
+                    val aRatio = if (aBody.isStatic) 0f else if (bBody.isStatic) 1f else bBody.mass / totalMass
+                    val bRatio = if (bBody.isStatic) 0f else if (aBody.isStatic) 1f else aBody.mass / totalMass
+
+                    if (overlapX < overlapY) {
+                        // Разрешаем по X
+                        val sign = if (a.x < b.x) -1f else 1f
+                        val push = overlapX + 0.5f
+                        var newAx = a.x + sign * push * aRatio
+                        var newBx = b.x - sign * push * bRatio
+                        // Отскок по X
+                        val bounce = (aBody.bounciness + bBody.bounciness) / 2f
+                        val relVx = aBody.velocityX - bBody.velocityX
+                        val impulse = relVx * (1f + bounce) / (1f / aBody.mass + 1f / bBody.mass)
+                        val newAVx = if (!aBody.isStatic) aBody.velocityX - impulse / aBody.mass else aBody.velocityX
+                        val newBVx = if (!bBody.isStatic) bBody.velocityX + impulse / bBody.mass else bBody.velocityX
+                        if (!aBody.isStatic) objects[a.name] = a.copy(x = newAx, physicsBody = aBody.copy(velocityX = newAVx * 0.5f))
+                        if (!bBody.isStatic) objects[b.name] = b.copy(x = newBx, physicsBody = bBody.copy(velocityX = newBVx * 0.5f))
+                    } else {
+                        // Разрешаем по Y
+                        val sign = if (a.y < b.y) -1f else 1f
+                        val push = overlapY + 0.5f
+                        val newAy = a.y + sign * push * aRatio
+                        val newBy = b.y - sign * push * bRatio
+                        val bounce = (aBody.bounciness + bBody.bounciness) / 2f
+                        val relVy = aBody.velocityY - bBody.velocityY
+                        val impulse = relVy * (1f + bounce) / (1f / aBody.mass + 1f / bBody.mass)
+                        val newAVy = if (!aBody.isStatic) aBody.velocityY - impulse / aBody.mass else aBody.velocityY
+                        val newBVy = if (!bBody.isStatic) bBody.velocityY + impulse / bBody.mass else bBody.velocityY
+                        if (!aBody.isStatic) objects[a.name] = a.copy(y = newAy, physicsBody = aBody.copy(velocityY = newAVy * 0.5f))
+                        if (!bBody.isStatic) objects[b.name] = b.copy(y = newBy, physicsBody = bBody.copy(velocityY = newBVy * 0.5f))
+                    }
+                }
+            }
+        }
+
+        return state.copy(objects = objects)
+    }
+
     private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
         val objects = currentState.objects.toMutableMap()
         val joysticks = currentState.joysticks.toMutableMap()
@@ -149,11 +249,13 @@ object SimEngine {
         val vars = (globalVars + localVars).toMutableMap()
         val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
         val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
+        var physicsEnabled = currentState.physicsEnabled
 
         log += "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
+            physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList())) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled)) }
             } else null
         )
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
@@ -167,7 +269,8 @@ object SimEngine {
             tables = allTables.mapValues { it.value.toMap() },
             log = log,
             errors = errors,
-            isStopped = !continued
+            isStopped = !continued,
+            physicsEnabled = physicsEnabled
         )
     }
 
@@ -180,6 +283,8 @@ object SimEngine {
         log: MutableList<String>,
         errors: MutableList<String>,
         allowDelay: Boolean = true,
+        physicsEnabledRef: () -> Boolean = { true },
+        setPhysicsEnabled: (Boolean) -> Unit = {},
         onUpdate: (() -> Unit)? = null
     ): Boolean {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
@@ -253,7 +358,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -350,7 +455,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -366,7 +471,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -430,6 +535,14 @@ object SimEngine {
                                 "fontSize" -> modified.copy(fontSize = (resolved.toFloatOrNull() ?: modified.fontSize).coerceAtLeast(6f))
                                 "bold" -> modified.copy(bold = resolved == "true")
                                 "textColor" -> modified.copy(textColor = if (resolved.isNotBlank()) parseColor(resolved) else null)
+                                // Физические свойства
+                                "physics_enabled" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(enabled = resolved == "true"))
+                                "physics_gravity" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(gravity = resolved.toFloatOrNull() ?: (modified.physicsBody?.gravity ?: -9.8f)))
+                                "physics_static" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(isStatic = resolved == "true"))
+                                "physics_bounciness" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(bounciness = (resolved.toFloatOrNull() ?: (modified.physicsBody?.bounciness ?: 0f)).coerceIn(0f, 1f)))
+                                "physics_mass" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(mass = (resolved.toFloatOrNull() ?: (modified.physicsBody?.mass ?: 1f)).coerceAtLeast(0.01f)))
+                                "physics_vx" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(velocityX = resolved.toFloatOrNull() ?: (modified.physicsBody?.velocityX ?: 0f)))
+                                "physics_vy" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(velocityY = resolved.toFloatOrNull() ?: (modified.physicsBody?.velocityY ?: 0f)))
                                 else -> modified
                             }
                         }
@@ -458,6 +571,40 @@ object SimEngine {
                         joysticks[name] = modified
                     }
                     log += "  «$nameOrTag» свойства изменены (${props.size})"
+                }
+                "sim_physics" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Физика объекта»: «$nameOrTag» не найден"; continue }
+                    val gravity = getF("gravity", -9.8f)
+                    val isStatic = getStr("static", "false") == "true"
+                    val bounciness = getF("bounciness", 0f).coerceIn(0f, 1f)
+                    val mass = getF("mass", 1f).coerceAtLeast(0.01f)
+                    targets.forEach { (name, obj) ->
+                        objects[name] = obj.copy(physicsBody = PhysicsBody(
+                            enabled = true, gravity = gravity, isStatic = isStatic,
+                            bounciness = bounciness, mass = mass
+                        ))
+                    }
+                    log += "  «$nameOrTag» физика: g=$gravity static=$isStatic (хитбокс AUTO по умолчанию)"
+                }
+                "sim_hitbox" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Хитбокс»: «$nameOrTag» не найден"; continue }
+                    val typeStr = block.params["type"]?.value ?: "auto"
+                    val pointsStr = block.params["points"]?.value ?: ""
+                    val hbType = if (typeStr == "manual" && pointsStr.isNotBlank()) HitboxType.MANUAL else HitboxType.AUTO
+                    val pts = if (hbType == HitboxType.MANUAL) parseHitboxPoints(pointsStr) else emptyList()
+                    targets.forEach { (name, obj) ->
+                        objects[name] = obj.copy(hitbox = Hitbox(type = hbType, points = pts))
+                    }
+                    log += "  «$nameOrTag» хитбокс: $hbType (${pts.size} точек)"
+                }
+                "physics_toggle" -> {
+                    val enabled = getStr("enabled", "true") == "true"
+                    setPhysicsEnabled(enabled)
+                    log += "  Физика: ${if (enabled) "включена" else "выключена"}"
                 }
                 "table_set" -> {
                     val tableName = block.params["table"]?.value?.trim() ?: ""
@@ -494,4 +641,16 @@ object SimEngine {
             else -> Color(0xFF4F8EF7)
         }
     }.getOrDefault(Color(0xFF4F8EF7))
+
+    /** Парсит строку вида "x1,y1;x2,y2;..." в список точек */
+    fun parseHitboxPoints(s: String): List<Pair<Float, Float>> = runCatching {
+        s.trim().split(";").mapNotNull { part ->
+            val xy = part.trim().split(",")
+            if (xy.size == 2) Pair(xy[0].trim().toFloat(), xy[1].trim().toFloat()) else null
+        }
+    }.getOrDefault(emptyList())
+
+    /** Сериализует список точек в строку */
+    fun serializeHitboxPoints(pts: List<Pair<Float, Float>>): String =
+        pts.joinToString(";") { "${it.first},${it.second}" }
 }

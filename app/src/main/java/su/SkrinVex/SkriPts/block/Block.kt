@@ -10,6 +10,7 @@ enum class BlockCategory(val label: String) {
     STRING("Строки"),
     VARIABLE("Переменные"),
     SIMULATION("Симуляция"),
+    PHYSICS("Физика"),
 }
 
 enum class ParamType { TEXT, NUMBER, SELECT }

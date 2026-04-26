@@ -54,6 +54,44 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
     var showScriptMenu by remember { mutableStateOf<String?>(null) }
     var showAddScriptDialog by remember { mutableStateOf(false) }
     var positionPickerBlock by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
+    // blockIndex -> sim_hitbox block
+    var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
+
+    // Редактор хитбоксов — полноэкранный
+    hitboxEditorTarget?.let { (blockIndex, block) ->
+        val objName = block.params["name"]?.value ?: ""
+        val simObj = state.activeBlocks.find {
+            (it.type == "sim_create" || it.type == "sim_text") && it.params["name"]?.value == objName
+        }
+        val fakeObj = simObj?.let {
+            su.SkrinVex.SkriPts.engine.SimObject(
+                name = objName,
+                x = 0f, y = 0f,
+                width = it.params["width"]?.value?.toFloatOrNull() ?: 100f,
+                height = it.params["height"]?.value?.toFloatOrNull() ?: 60f,
+                radius = it.params["radius"]?.value?.toFloatOrNull() ?: 8f,
+                color = su.SkrinVex.SkriPts.engine.SimEngine.parseColor(it.params["color"]?.value ?: "#4F8EF7")
+            )
+        } ?: su.SkrinVex.SkriPts.engine.SimObject(
+            name = objName, x = 0f, y = 0f, width = 100f, height = 60f, radius = 8f,
+            color = androidx.compose.ui.graphics.Color(0xFF4F8EF7)
+        )
+        val existingPoints = su.SkrinVex.SkriPts.engine.SimEngine.parseHitboxPoints(
+            block.params["points"]?.value ?: ""
+        )
+        HitboxEditorScreen(
+            obj = fakeObj,
+            initialPoints = existingPoints,
+            onConfirm = { pts ->
+                val serialized = su.SkrinVex.SkriPts.engine.SimEngine.serializeHitboxPoints(pts)
+                vm.updateParam(blockIndex, "type", if (pts.isEmpty()) "auto" else "manual")
+                vm.updateParam(blockIndex, "points", serialized)
+                hitboxEditorTarget = null
+            },
+            onDismiss = { hitboxEditorTarget = null }
+        )
+        return
+    }
 
     // Редактор выражений — полноэкранный
     exprTarget?.let { target ->
@@ -271,6 +309,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
                         onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
                         onOpenPositionPicker = { b -> positionPickerBlock = index to b },
+                        onOpenHitboxEditor = { b -> hitboxEditorTarget = index to b },
                         onAddChild = { branch, type -> vm.addChildBlock(index, branch, type) },
                         onRemoveChild = { branch, ci -> vm.removeChildBlock(index, branch, ci) },
                         onChildParamChange = { branch, ci, k, v -> vm.updateChildParam(index, branch, ci, k, v) },
@@ -536,6 +575,7 @@ private fun BlockCard(
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onOpenPositionPicker: ((block: BlockDef) -> Unit)? = null,
+    onOpenHitboxEditor: ((block: BlockDef) -> Unit)? = null,
     onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
     onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
@@ -624,6 +664,30 @@ private fun BlockCard(
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
                             )
+                        }
+                        "sim_physics" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            PhysicsBlockContent(block = block, variables = variables,
+                                onParamChange = onParamChange, onOpenExpr = onOpenExpr)
+                        }
+                        "sim_hitbox" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            HitboxBlockContent(
+                                block = block, variables = variables,
+                                onOpenExpr = onOpenExpr,
+                                onOpenHitboxEditor = if (onOpenHitboxEditor != null) {{ onOpenHitboxEditor(block) }} else null
+                            )
+                        }
+                        "physics_toggle" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            val param = block.params["enabled"]!!
+                            BoolToggle(param = param.copy(label = "Физика включена"), onChange = { onParamChange("enabled", it) })
                         }
                         "sim_stop" -> {
                             Spacer(Modifier.height(8.dp))
@@ -1418,6 +1482,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.STRING     -> Color(0xFF34D399)
     BlockCategory.VARIABLE   -> Color(0xFFFB923C)
     BlockCategory.SIMULATION -> Color(0xFFF472B6)
+    BlockCategory.PHYSICS    -> Color(0xFF22D3EE)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -1428,6 +1493,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.STRING     -> Icons.Default.TextFields
     BlockCategory.VARIABLE   -> Icons.Default.DataObject
     BlockCategory.SIMULATION -> Icons.Default.Widgets
+    BlockCategory.PHYSICS    -> Icons.Default.Science
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
@@ -1474,6 +1540,94 @@ private fun LoopBlockContent(
     )
 }
 
+@Composable
+private fun PhysicsBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    val nameParam = block.params["name"]!!
+    ObjectNameChip(param = nameParam, variables = variables,
+        onClick = { onOpenExpr("name", nameParam.label, nameParam.value, false) })
+    Spacer(Modifier.height(8.dp))
+
+    // Гравитация
+    val gravParam = block.params["gravity"]!!
+    ExprChip(param = gravParam, variables = variables,
+        onClick = { onOpenExpr("gravity", gravParam.label, gravParam.value, false) })
+    Spacer(Modifier.height(6.dp))
+
+    // Статический
+    val staticParam = block.params["static"]!!
+    BoolToggle(param = staticParam.copy(label = "Статический (нельзя двигать)"), onChange = { onParamChange("static", it) })
+    Spacer(Modifier.height(6.dp))
+
+    // Упругость
+    val bounceParam = block.params["bounciness"]!!
+    ExprChip(param = bounceParam, variables = variables,
+        onClick = { onOpenExpr("bounciness", bounceParam.label, bounceParam.value, false) })
+    Spacer(Modifier.height(6.dp))
+
+    // Масса
+    val massParam = block.params["mass"]!!
+    ExprChip(param = massParam, variables = variables,
+        onClick = { onOpenExpr("mass", massParam.label, massParam.value, false) })
+}
+
+@Composable
+private fun HitboxBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenHitboxEditor: (() -> Unit)? = null
+) {
+    val nameParam = block.params["name"]!!
+    ObjectNameChip(param = nameParam, variables = variables,
+        onClick = { onOpenExpr("name", nameParam.label, nameParam.value, false) })
+    Spacer(Modifier.height(8.dp))
+
+    val typeVal = block.params["type"]?.value ?: "auto"
+    val pointsVal = block.params["points"]?.value ?: ""
+    val pointCount = if (pointsVal.isBlank()) 0 else pointsVal.split(";").count { it.isNotBlank() }
+    val physicsColor = Color(0xFF22D3EE)
+
+    if (typeVal == "manual" && pointCount > 0) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                .background(physicsColor.copy(0.1f))
+                .border(1.dp, physicsColor.copy(0.4f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Hexagon, null, tint = physicsColor, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Ручной хитбокс: $pointCount точек", color = physicsColor, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            if (onOpenHitboxEditor != null) {
+                TextButton(onClick = onOpenHitboxEditor, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("Изменить", color = physicsColor, fontSize = 12.sp)
+                }
+            }
+        }
+    } else {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                .background(physicsColor.copy(0.08f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.CropFree, null, tint = physicsColor.copy(0.7f), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Авто (по размеру объекта)", color = physicsColor.copy(0.8f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+            if (onOpenHitboxEditor != null) {
+                TextButton(onClick = onOpenHitboxEditor, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("Нарисовать", color = physicsColor, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModifyBlockContent(
@@ -1514,7 +1668,14 @@ private fun ModifyBlockContent(
                         "x" to "X позиция", "y" to "Y позиция",
                         "width" to "Ширина", "height" to "Высота",
                         "radius" to "Скругление", "color" to "Цвет",
-                        "visible" to "Видимость", "rotation" to "Вращение"
+                        "visible" to "Видимость", "rotation" to "Вращение",
+                        "physics_enabled" to "Физика вкл/выкл",
+                        "physics_gravity" to "Гравитация",
+                        "physics_static" to "Статический",
+                        "physics_bounciness" to "Упругость",
+                        "physics_mass" to "Масса",
+                        "physics_vx" to "Скорость X",
+                        "physics_vy" to "Скорость Y"
                     )
                     "sim_text" -> listOf(
                         "x" to "X позиция", "y" to "Y позиция",
@@ -1645,6 +1806,13 @@ private fun ModifyPropRow(
         "knobColor" -> "Цвет ручки"
         "speed" -> "Скорость"
         "directional" -> "Поворот по направлению"
+        "physics_enabled" -> "Физика вкл/выкл"
+        "physics_gravity" -> "Гравитация"
+        "physics_static" -> "Статический"
+        "physics_bounciness" -> "Упругость"
+        "physics_mass" -> "Масса"
+        "physics_vx" -> "Скорость X"
+        "physics_vy" -> "Скорость Y"
         else -> propKey
     }
 
@@ -1666,7 +1834,7 @@ private fun ModifyPropRow(
         when (propKey) {
             "color", "baseColor", "knobColor", "textColor" ->
                 ColorField(param = valueParam, onChange = { onParamChange("value", it) })
-            "visible", "bold", "directional" ->
+            "visible", "bold", "directional", "physics_enabled", "physics_static" ->
                 BoolToggle(param = valueParam.copy(label = "Значение"), onChange = { onParamChange("value", it) })
             else ->
                 ExprChip(param = valueParam.copy(label = "Значение"), variables = variables,
@@ -1680,6 +1848,7 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var debugMode by remember { mutableStateOf(ThemeManager.debugMode) }
     var showObjectsInPicker by remember { mutableStateOf(ThemeManager.showObjectsInPicker) }
+    var showHitboxes by remember { mutableStateOf(ThemeManager.showHitboxes) }
 
     @Composable
     fun SettingRow(title: String, subtitle: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
@@ -1707,6 +1876,7 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SettingRow("Режим отладки", "Сетка, логи, кнопка закрытия", debugMode) { debugMode = it }
                 SettingRow("Объекты в позиционировщике", "Показывать все объекты при перемещении", showObjectsInPicker) { showObjectsInPicker = it }
+                SettingRow("Показать хитбоксы", "Отображать хитбоксы объектов в симуляции", showHitboxes) { showHitboxes = it }
             }
         },
         confirmButton = {
@@ -1714,6 +1884,7 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
                 onClick = {
                     ThemeManager.setDebugMode(ctx, debugMode)
                     ThemeManager.setShowObjectsInPicker(ctx, showObjectsInPicker)
+                    ThemeManager.setShowHitboxes(ctx, showHitboxes)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Accent)

@@ -125,6 +125,21 @@ object BlockFactory {
             "prop" to p("", "Свойство", ""),
             "value" to p("", "Значение", "")))
 
+        "sim_physics" -> build("sim_physics", "Физика объекта", "Устанавливает физическое тело объекта", BlockCategory.PHYSICS, listOf(
+            "name"       to p("rect1", "Имя объекта", "Какому объекту"),
+            "gravity"    to p("-9.8", "Гравитация", "px/тик² (0 = нет гравитации)", ParamType.NUMBER),
+            "static"     to p("false", "Статический", "true = нельзя двигать физикой"),
+            "bounciness" to p("0", "Упругость", "0..1 (0 = нет отскока)", ParamType.NUMBER),
+            "mass"       to p("1", "Масса", "Масса объекта", ParamType.NUMBER)))
+
+        "sim_hitbox" -> build("sim_hitbox", "Хитбокс", "Настраивает хитбокс объекта", BlockCategory.PHYSICS, listOf(
+            "name"   to p("rect1", "Имя объекта", "Какому объекту"),
+            "type"   to p("auto", "Тип", "auto / manual"),
+            "points" to p("", "Точки", "JSON точек (авто = пусто")))
+
+        "physics_toggle" -> build("physics_toggle", "Переключить физику", "Включает или выключает физику симуляции", BlockCategory.PHYSICS, listOf(
+            "enabled" to p("true", "Физика", "true = вкл, false = выкл")))
+
         "table_set" -> build("table_set", "Таблица: записать", "Записывает значение по ключу в таблицу", BlockCategory.VARIABLE, listOf(
             "table" to p("", "Таблица", "Нажми чтобы выбрать"),
             "key"   to p("", "Ключ", "Строка или выражение"),

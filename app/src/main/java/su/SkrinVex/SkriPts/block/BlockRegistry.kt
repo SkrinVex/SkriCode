@@ -13,7 +13,8 @@ object BlockRegistry {
         "if_block", "sim_stop",
         "for_loop", "while_loop", "wait",
         "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",
-        "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify"
+        "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify",
+        "sim_physics", "sim_hitbox", "physics_toggle"
     )
 
     fun create(type: String) = BlockFactory.create(type)

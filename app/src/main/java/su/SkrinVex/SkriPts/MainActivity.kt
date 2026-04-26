@@ -65,9 +65,10 @@ class MainActivity : ComponentActivity() {
                         onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },
                         onJoystickMove = { name, dx, dy, pid -> editorVm.handleJoystickMove(name, dx, dy, pid) },
                         onJoystickRelease = { pid -> editorVm.handleJoystickRelease(pid) },
-                        onBack = { screen = "editor" },
+                        onBack = { editorVm.stopPhysics(); screen = "editor" },
                         onClearLogs = { editorVm.clearSimLogs() },
-                        debugMode = ThemeManager.debugMode
+                        debugMode = ThemeManager.debugMode,
+                        showHitboxes = ThemeManager.showHitboxes
                     )
                     "editor" -> {
                         BackHandler { screen = "home"; homeVm.refresh() }

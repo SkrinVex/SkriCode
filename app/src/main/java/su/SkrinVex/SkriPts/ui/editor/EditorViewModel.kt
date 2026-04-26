@@ -327,21 +327,34 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --- Симуляция ---
+    private var _physicsJob: kotlinx.coroutines.Job? = null
+
     fun runSim() {
         val state = _state.value
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
-        // Сразу показываем экран симуляции с пустым состоянием
         val initial = SimState()
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
-        // ON_START выполняется уже после открытия экрана
         viewModelScope.launch {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables) { liveState ->
                 _state.update { it.copy(simState = liveState) }
             }
             _state.update { it.copy(simState = result) }
         }
+        // Запускаем физический тик ~60fps
+        _physicsJob?.cancel()
+        _physicsJob = viewModelScope.launch {
+            while (true) {
+                delay(16)
+                _state.update { s ->
+                    val sim = s.simState ?: return@update s
+                    s.copy(simState = SimEngine.physicsTick(sim))
+                }
+            }
+        }
     }
+
+    fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null }
 
     fun handleTap(objectName: String) {
         val state = _state.value
@@ -397,13 +410,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     val target = sim.objects[joy.targetObject] ?: run { delay(16); continue }
                     val len = hypot(joy.knobDx, joy.knobDy)
                     if (len > 0.05f) {
+                        val body = target.physicsBody
+                        // Статический — джойстик не двигает никогда
+                        if (body != null && body.isStatic) { delay(16); continue }
+                        // Физика выключена И у объекта есть тело — не двигать
+                        if (body != null && !sim.physicsEnabled) { delay(16); continue }
+
                         val moveX = joy.knobDx * joy.speed
                         val moveY = joy.knobDy * joy.speed
                         val newRotation = if (joy.directional)
                             (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
                         else target.rotation
                         val newTarget = if (joy.directional) {
-                            // движение по направлению поворота
                             val rad = Math.toRadians(newRotation.toDouble() - 90.0)
                             target.copy(
                                 x = target.x + (cos(rad) * len * joy.speed).toFloat(),
@@ -411,7 +429,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                                 rotation = newRotation
                             )
                         } else {
-                            target.copy(x = target.x + moveX, y = target.y + moveY)
+                            // Если у объекта физика — двигаем через velocity (физический тик применит)
+                            if (body != null && body.enabled) {
+                                target.copy(physicsBody = body.copy(velocityX = moveX, velocityY = moveY))
+                            } else {
+                                target.copy(x = target.x + moveX, y = target.y + moveY)
+                            }
                         }
                         _state.update { s ->
                             val st = s.simState ?: return@update s
