@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.block.*
 import su.SkrinVex.SkriPts.data.ProjectVar
+import su.SkrinVex.SkriPts.data.ProjectTag
 import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.VarScope
@@ -263,6 +264,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 item {
                     ScriptEventHeader(
                         script = state.activeScript,
+                        variables = state.visibleVars,
+                        tags = state.visibleTags,
                         onChangeEvent = { event, target -> vm.setScriptEvent(state.activeScript.id, event, target) }
                     )
                 }
@@ -421,24 +424,24 @@ private fun ScriptTabsRow(
 }
 
 @Composable
-private fun ScriptEventHeader(script: Script, onChangeEvent: (ScriptEvent, String) -> Unit) {
+private fun ScriptEventHeader(script: Script, variables: List<ProjectVar>, tags: List<ProjectTag>, onChangeEvent: (ScriptEvent, String) -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
 
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface2)
-            .clickable { showDialog = true }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface2)
+            .clickable { showDialog = true }.padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(eventIcon(script.event), null, tint = Accent, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(script.event.label, color = Accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            if (script.event == ScriptEvent.ON_TAP && script.eventTarget.isNotBlank()) {
-                Text("Объект: ${script.eventTarget}", color = TextSec, fontSize = 11.sp)
+            if (script.event != ScriptEvent.ON_START && script.eventTarget.isNotBlank()) {
+                Text(
+                    if (script.eventTarget.startsWith("#")) "Тег: ${script.eventTarget}"
+                    else "Объект: ${script.eventTarget}",
+                    color = TextSec, fontSize = 11.sp
+                )
             }
         }
         Icon(Icons.Default.Edit, null, tint = TextSec, modifier = Modifier.size(14.dp))
@@ -448,6 +451,8 @@ private fun ScriptEventHeader(script: Script, onChangeEvent: (ScriptEvent, Strin
         EventPickerDialog(
             current = script.event,
             currentTarget = script.eventTarget,
+            variables = variables,
+            tags = tags,
             onConfirm = { event, target -> onChangeEvent(event, target); showDialog = false },
             onDismiss = { showDialog = false }
         )
@@ -458,6 +463,8 @@ private fun ScriptEventHeader(script: Script, onChangeEvent: (ScriptEvent, Strin
 private fun EventPickerDialog(
     current: ScriptEvent,
     currentTarget: String,
+    variables: List<ProjectVar>,
+    tags: List<ProjectTag>,
     onConfirm: (ScriptEvent, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -472,12 +479,9 @@ private fun EventPickerDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ScriptEvent.entries.forEach { event ->
                     Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                             .background(if (selected == event) Accent.copy(0.15f) else Surface3)
-                            .clickable { selected = event }
-                            .padding(12.dp),
+                            .clickable { selected = event }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(eventIcon(event), null, tint = if (selected == event) Accent else TextSec,
@@ -486,9 +490,11 @@ private fun EventPickerDialog(
                         Text(event.label, color = if (selected == event) Accent else TextPrim, fontSize = 14.sp)
                     }
                 }
-                if (selected == ScriptEvent.ON_TAP || selected == ScriptEvent.ON_HOLD) {
+                if (selected != ScriptEvent.ON_START) {
+                    HorizontalDivider(color = Surface3)
+                    // Поле ввода имени объекта
                     OutlinedTextField(
-                        value = target,
+                        value = if (target.startsWith("#")) "" else target,
                         onValueChange = { target = it },
                         label = { Text("Имя объекта") },
                         placeholder = { Text("rect1", color = TextSec) },
@@ -499,6 +505,36 @@ private fun EventPickerDialog(
                             cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
                         )
                     )
+                    // Список тегов
+                    if (tags.isNotEmpty()) {
+                        Text("или выбери тег:", color = TextSec, fontSize = 11.sp)
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            tags.forEach { tag ->
+                                val tagVal = "#${tag.name}"
+                                val active = target == tagVal
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(6.dp))
+                                        .background(if (active) Color(0xFFFF6B6B).copy(0.2f) else Surface3)
+                                        .border(1.dp, if (active) Color(0xFFFF6B6B) else Color.Transparent, RoundedCornerShape(6.dp))
+                                        .clickable { target = if (active) "" else tagVal }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text("#${tag.name}", color = if (active) Color(0xFFFF6B6B) else TextSec, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                    // Показываем что выбрано
+                    if (target.isNotBlank()) {
+                        Text(
+                            "Выбрано: $target",
+                            color = Accent, fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             }
         },
@@ -1497,9 +1533,11 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
-    ScriptEvent.ON_START -> Icons.Default.PlayArrow
-    ScriptEvent.ON_TAP   -> Icons.Default.TouchApp
-    ScriptEvent.ON_HOLD  -> Icons.Default.PanTool
+    ScriptEvent.ON_START         -> Icons.Default.PlayArrow
+    ScriptEvent.ON_TAP           -> Icons.Default.TouchApp
+    ScriptEvent.ON_HOLD          -> Icons.Default.PanTool
+    ScriptEvent.ON_COLLISION     -> Icons.Default.Bolt
+    ScriptEvent.ON_COLLISION_END -> Icons.Default.CallMissed
 }
 
 @Composable

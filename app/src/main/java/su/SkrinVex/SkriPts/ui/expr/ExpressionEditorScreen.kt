@@ -81,7 +81,7 @@ fun ExpressionEditorScreen(
         if (isIdentifier) { onConfirm(tfv.text); return }
         val unknown = Regex("\\{([^}]+)\\}").findAll(tfv.text.trim())
             .map { it.groupValues[1].trim() }
-            .filter { it.isNotBlank() && it !in knownVarNames }
+            .filter { it.isNotBlank() && it !in knownVarNames && it !in su.SkrinVex.SkriPts.engine.ExprEval.SYSTEM_VARS }
             .toSet()
         if (unknown.isNotEmpty()) {
             validationWarning = unknown.joinToString(", ") { "{$it}" }
@@ -452,6 +452,20 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$tableSize(scores)", "Размер таблицы",  "Количество записей в таблице",                    Icons.Default.TableChart, TableAccent),
         BuiltinFn("\$tableKey(scores, 0)", "Ключ по индексу", "Ключ записи по индексу (0, 1, 2, ...)",         Icons.Default.TableChart, TableAccent),
         BuiltinFn("\$tableVal(scores, 0)", "Значение по индексу", "Значение записи по индексу (0, 1, 2, ...)", Icons.Default.TableChart, TableAccent),
+
+        // Коллизия
+        BuiltinFn("{collision_self}",          "Я (инициатор)",            "Имя объекта которому принадлежит этот скрипт",   Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_other}",         "Другой объект",            "Имя объекта с которым произошло столкновение",   Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_x}",             "X другого объекта",        "Позиция X другого объекта",                      Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_y}",             "Y другого объекта",        "Позиция Y другого объекта",                      Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_width}",         "Ширина другого объекта",   "Ширина другого объекта",                         Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_height}",        "Высота другого объекта",   "Высота другого объекта",                         Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_rotation}",      "Поворот другого объекта",  "Угол поворота другого объекта",                  Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_self_x}",        "X моего объекта",          "Позиция X объекта-инициатора",                   Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_self_y}",        "Y моего объекта",          "Позиция Y объекта-инициатора",                   Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_self_width}",    "Ширина моего объекта",     "Ширина объекта-инициатора",                      Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_self_height}",   "Высота моего объекта",     "Высота объекта-инициатора",                      Icons.Default.Bolt, Color(0xFFFF6B6B)),
+        BuiltinFn("{collision_self_rotation}", "Поворот моего объекта",    "Угол поворота объекта-инициатора",               Icons.Default.Bolt, Color(0xFFFF6B6B)),
     )
 
     LazyColumn(
@@ -544,6 +558,7 @@ private fun CreateVarDialog(
         name.isBlank() -> null
         !name.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*")) -> "Только латинские буквы, цифры и _"
         name in existingNames -> "Переменная с таким именем уже существует"
+        name in su.SkrinVex.SkriPts.engine.ExprEval.SYSTEM_VARS -> "Это системная переменная, нельзя переопределить"
         else -> null
     }
 

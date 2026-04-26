@@ -346,9 +346,39 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _physicsJob = viewModelScope.launch {
             while (true) {
                 delay(16)
-                _state.update { s ->
-                    val sim = s.simState ?: return@update s
-                    s.copy(simState = SimEngine.physicsTick(sim))
+                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
+                _state.update { it.copy(simState = newSim) }
+
+                // Запускаем ON_COLLISION для новых коллизий
+                for ((nameA, nameB) in newCols) {
+                    val sim = _state.value.simState ?: break
+                    val scripts = _state.value.scripts
+                    val logMsg = "Коллизия: «$nameA» ↔ «$nameB»"
+                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + logMsg) }) }
+                    sim.objects[nameA]?.collisionScriptId?.let { sid ->
+                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
+                        _state.update { it.copy(simState = result) }
+                    }
+                    sim.objects[nameB]?.collisionScriptId?.let { sid ->
+                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
+                        _state.update { it.copy(simState = result) }
+                    }
+                }
+
+                // Запускаем ON_COLLISION_END для завершённых коллизий
+                for ((nameA, nameB) in endedCols) {
+                    val sim = _state.value.simState ?: break
+                    val scripts = _state.value.scripts
+                    val logMsg = "Конец коллизии: «$nameA» ↔ «$nameB»"
+                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + logMsg) }) }
+                    sim.objects[nameA]?.collisionEndScriptId?.let { sid ->
+                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
+                        _state.update { it.copy(simState = result) }
+                    }
+                    sim.objects[nameB]?.collisionEndScriptId?.let { sid ->
+                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
+                        _state.update { it.copy(simState = result) }
+                    }
                 }
             }
         }
@@ -522,8 +552,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     "sim_create", "sim_text" -> {
                         val name = block.params["name"]?.value?.trim() ?: ""
                         if (name.isBlank()) errors += "$prefix: имя объекта не заполнено"
-                        else if (name in simNames) errors += "$prefix: объект «$name» уже создан"
-                        simNames += name
                     }
                     "set_var" -> {
                         if ((block.params["name"]?.value?.trim() ?: "").isBlank())
@@ -548,7 +576,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         errors += "$prefix [${param.label}]: незакрытая скобка [ в «$v»"
                     Regex("\\{([^}]+)\\}").findAll(v).forEach { m ->
                         val ref = m.groupValues[1].trim()
-                        if (ref !in allVisible)
+                        if (ref !in allVisible && ref !in su.SkrinVex.SkriPts.engine.ExprEval.SYSTEM_VARS)
                             errors += "$prefix [${param.label}]: переменная «$ref» не объявлена"
                     }
                     Regex("\\[([^\\]]+)\\]").findAll(v).forEach { m ->

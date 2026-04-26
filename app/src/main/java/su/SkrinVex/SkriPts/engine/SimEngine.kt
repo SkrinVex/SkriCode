@@ -42,6 +42,8 @@ data class SimObject(
     val textColor: Color? = null,
     val tapScriptId: String? = null,
     val holdScriptId: String? = null,
+    val collisionScriptId: String? = null,
+    val collisionEndScriptId: String? = null,
     val visible: Boolean = true,
     val rotation: Float = 0f,
     val tags: Set<String> = emptySet(),
@@ -73,7 +75,9 @@ data class SimState(
     val log: List<String> = emptyList(),
     val errors: List<String> = emptyList(),
     val isStopped: Boolean = false,
-    val physicsEnabled: Boolean = true
+    val physicsEnabled: Boolean = true,
+    /** Пары имён объектов которые сейчас соприкасаются */
+    val activeCollisions: Set<Pair<String, String>> = emptySet()
 )
 
 object SimEngine {
@@ -125,28 +129,23 @@ object SimEngine {
         errors: MutableList<String>,
         warnMissing: Boolean = false
     ) {
-        scripts.filter { it.event == ScriptEvent.ON_TAP }.forEach { script ->
-            val target = script.eventTarget.trim()
-            if (target.isNotBlank()) {
-                val obj = objects[target]
-                if (obj != null) {
-                    if (obj.tapScriptId != script.id) objects[target] = obj.copy(tapScriptId = script.id)
-                } else if (warnMissing) {
-                    errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_TAP"
-                }
+        fun bindToObjects(event: ScriptEvent, assign: SimObject.(String) -> SimObject) {
+            scripts.filter { it.event == event }.forEach { script ->
+                val target = script.eventTarget.trim()
+                if (target.isBlank()) return@forEach
+                val targets = if (target.startsWith("#")) {
+                    val tag = target.substring(1)
+                    objects.filter { (_, o) -> tag in o.tags }.keys.toList()
+                } else listOfNotNull(target.takeIf { objects.containsKey(it) })
+                if (targets.isEmpty() && warnMissing)
+                    errors += "Скрипт «${script.name}»: объект/тег «$target» не найден для ${event.name}"
+                targets.forEach { name -> objects[name] = objects[name]!!.assign(script.id) }
             }
         }
-        scripts.filter { it.event == ScriptEvent.ON_HOLD }.forEach { script ->
-            val target = script.eventTarget.trim()
-            if (target.isNotBlank()) {
-                val obj = objects[target]
-                if (obj != null) {
-                    if (obj.holdScriptId != script.id) objects[target] = obj.copy(holdScriptId = script.id)
-                } else if (warnMissing) {
-                    errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_HOLD"
-                }
-            }
-        }
+        bindToObjects(ScriptEvent.ON_TAP)          { id -> if (tapScriptId != id) copy(tapScriptId = id) else this }
+        bindToObjects(ScriptEvent.ON_HOLD)         { id -> if (holdScriptId != id) copy(holdScriptId = id) else this }
+        bindToObjects(ScriptEvent.ON_COLLISION)    { id -> if (collisionScriptId != id) copy(collisionScriptId = id) else this }
+        bindToObjects(ScriptEvent.ON_COLLISION_END){ id -> if (collisionEndScriptId != id) copy(collisionEndScriptId = id) else this }
     }
 
     suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
@@ -161,31 +160,33 @@ object SimEngine {
         return runScriptOnState(script, scripts, currentState, onUpdate)
     }
 
-    /** Применяет один тик физики ко всем объектам с physicsBody */
-    fun physicsTick(state: SimState): SimState {
-        if (!state.physicsEnabled) return state
+    suspend fun runCollision(scriptId: String, scripts: List<Script>, currentState: SimState, otherName: String = "", selfName: String = ""): SimState {
+        if (currentState.isStopped) return currentState
+        val script = scripts.find { it.id == scriptId } ?: return currentState
+        return runScriptOnState(script, scripts, currentState, collisionTarget = otherName, collisionSelf = selfName)
+    }
+
+    /** Применяет один тик физики. Возвращает новое состояние + пары новых/завершённых коллизий. */
+    fun physicsTick(state: SimState): Triple<SimState, Set<Pair<String,String>>, Set<Pair<String,String>>> {
+        if (!state.physicsEnabled) return Triple(state, emptySet(), emptySet())
         val objects = state.objects.toMutableMap()
 
-        // 1. Применяем гравитацию и интегрируем позиции
         val dynamics = objects.entries.filter { (_, obj) ->
             val b = obj.physicsBody; b != null && b.enabled && !b.isStatic
         }
-        if (dynamics.isEmpty()) return state
+        if (dynamics.isEmpty()) return Triple(state, emptySet(), emptySet())
 
         dynamics.forEach { (name, obj) ->
             val body = obj.physicsBody!!
             val vy = body.velocityY + body.gravity * 0.016f
-            objects[name] = obj.copy(
-                x = obj.x + body.velocityX,
-                y = obj.y + vy,
-                physicsBody = body.copy(velocityY = vy)
-            )
+            objects[name] = obj.copy(x = obj.x + body.velocityX, y = obj.y + vy,
+                physicsBody = body.copy(velocityY = vy))
         }
 
-        // 2. Коллизии: dynamic vs static и dynamic vs dynamic
         val allPhysics = objects.values.filter { it.physicsBody != null }
+        val currentCollisions = mutableSetOf<Pair<String, String>>()
 
-        repeat(3) { // несколько итераций для стабильности
+        repeat(3) {
             for (i in allPhysics.indices) {
                 for (j in i + 1 until allPhysics.size) {
                     val a = objects[allPhysics[i].name] ?: continue
@@ -195,51 +196,46 @@ object SimEngine {
                     if (aBody.isStatic && bBody.isStatic) continue
                     if (!aBody.enabled && !bBody.enabled) continue
 
-                    // AABB overlap
                     val overlapX = (a.width / 2f + b.width / 2f) - kotlin.math.abs(a.x - b.x)
                     val overlapY = (a.height / 2f + b.height / 2f) - kotlin.math.abs(a.y - b.y)
                     if (overlapX <= 0f || overlapY <= 0f) continue
+
+                    // Записываем коллизию (имена в алфавитном порядке для уникальности)
+                    val pair = if (a.name < b.name) a.name to b.name else b.name to a.name
+                    currentCollisions += pair
 
                     val totalMass = aBody.mass + bBody.mass
                     val aRatio = if (aBody.isStatic) 0f else if (bBody.isStatic) 1f else bBody.mass / totalMass
                     val bRatio = if (bBody.isStatic) 0f else if (aBody.isStatic) 1f else aBody.mass / totalMass
 
                     if (overlapX < overlapY) {
-                        // Разрешаем по X
                         val sign = if (a.x < b.x) -1f else 1f
                         val push = overlapX + 0.5f
-                        var newAx = a.x + sign * push * aRatio
-                        var newBx = b.x - sign * push * bRatio
-                        // Отскок по X
                         val bounce = (aBody.bounciness + bBody.bounciness) / 2f
                         val relVx = aBody.velocityX - bBody.velocityX
                         val impulse = relVx * (1f + bounce) / (1f / aBody.mass + 1f / bBody.mass)
-                        val newAVx = if (!aBody.isStatic) aBody.velocityX - impulse / aBody.mass else aBody.velocityX
-                        val newBVx = if (!bBody.isStatic) bBody.velocityX + impulse / bBody.mass else bBody.velocityX
-                        if (!aBody.isStatic) objects[a.name] = a.copy(x = newAx, physicsBody = aBody.copy(velocityX = newAVx * 0.5f))
-                        if (!bBody.isStatic) objects[b.name] = b.copy(x = newBx, physicsBody = bBody.copy(velocityX = newBVx * 0.5f))
+                        if (!aBody.isStatic) objects[a.name] = (objects[a.name] ?: a).let { it.copy(x = it.x + sign * push * aRatio, physicsBody = it.physicsBody!!.copy(velocityX = (aBody.velocityX - impulse / aBody.mass) * 0.5f)) }
+                        if (!bBody.isStatic) objects[b.name] = (objects[b.name] ?: b).let { it.copy(x = it.x - sign * push * bRatio, physicsBody = it.physicsBody!!.copy(velocityX = (bBody.velocityX + impulse / bBody.mass) * 0.5f)) }
                     } else {
-                        // Разрешаем по Y
                         val sign = if (a.y < b.y) -1f else 1f
                         val push = overlapY + 0.5f
-                        val newAy = a.y + sign * push * aRatio
-                        val newBy = b.y - sign * push * bRatio
                         val bounce = (aBody.bounciness + bBody.bounciness) / 2f
                         val relVy = aBody.velocityY - bBody.velocityY
                         val impulse = relVy * (1f + bounce) / (1f / aBody.mass + 1f / bBody.mass)
-                        val newAVy = if (!aBody.isStatic) aBody.velocityY - impulse / aBody.mass else aBody.velocityY
-                        val newBVy = if (!bBody.isStatic) bBody.velocityY + impulse / bBody.mass else bBody.velocityY
-                        if (!aBody.isStatic) objects[a.name] = a.copy(y = newAy, physicsBody = aBody.copy(velocityY = newAVy * 0.5f))
-                        if (!bBody.isStatic) objects[b.name] = b.copy(y = newBy, physicsBody = bBody.copy(velocityY = newBVy * 0.5f))
+                        if (!aBody.isStatic) objects[a.name] = (objects[a.name] ?: a).let { it.copy(y = it.y + sign * push * aRatio, physicsBody = it.physicsBody!!.copy(velocityY = (aBody.velocityY - impulse / aBody.mass) * 0.5f)) }
+                        if (!bBody.isStatic) objects[b.name] = (objects[b.name] ?: b).let { it.copy(y = it.y - sign * push * bRatio, physicsBody = it.physicsBody!!.copy(velocityY = (bBody.velocityY + impulse / bBody.mass) * 0.5f)) }
                     }
                 }
             }
         }
 
-        return state.copy(objects = objects)
+        val newCollisions = currentCollisions - state.activeCollisions
+        val endedCollisions = state.activeCollisions - currentCollisions
+        val newState = state.copy(objects = objects, activeCollisions = currentCollisions)
+        return Triple(newState, newCollisions, endedCollisions)
     }
 
-    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
+    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, collisionTarget: String = "", collisionSelf: String = ""): SimState {
         val objects = currentState.objects.toMutableMap()
         val joysticks = currentState.joysticks.toMutableMap()
         val log = currentState.log.toMutableList()
@@ -247,11 +243,33 @@ object SimEngine {
         val globalVars = currentState.globalVars.toMutableMap()
         val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
         val vars = (globalVars + localVars).toMutableMap()
+
+        // Заполняем collision_* переменные если это скрипт коллизии
+        if (collisionTarget.isNotBlank()) {
+            val other = objects[collisionTarget]
+            val self  = if (collisionSelf.isNotBlank()) objects[collisionSelf] else null
+            // Другой объект
+            vars["collision_other"]    = collisionTarget
+            vars["collision_name"]     = collisionTarget  // алиас
+            vars["collision_x"]        = other?.x?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_y"]        = other?.y?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_width"]    = other?.width?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_height"]   = other?.height?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_rotation"] = other?.rotation?.let { "%.1f".format(it) } ?: "0"
+            // Свой объект
+            vars["collision_self"]          = collisionSelf
+            vars["collision_self_x"]        = self?.x?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_self_y"]        = self?.y?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_self_width"]    = self?.width?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_self_height"]   = self?.height?.let { "%.1f".format(it) } ?: "0"
+            vars["collision_self_rotation"] = self?.rotation?.let { "%.1f".format(it) } ?: "0"
+        }
+
         val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
         val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = currentState.physicsEnabled
 
-        log += "Касание -> «${script.name}»"
+        log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             onUpdate = if (onUpdate != null) {
@@ -263,14 +281,9 @@ object SimEngine {
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
         return currentState.copy(
-            objects = objects,
-            joysticks = joysticks,
-            globalVars = globalVars,
+            objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = allTables.mapValues { it.value.toMap() },
-            log = log,
-            errors = errors,
-            isStopped = !continued,
-            physicsEnabled = physicsEnabled
+            log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled
         )
     }
 
@@ -364,15 +377,23 @@ object SimEngine {
                 "sim_create" -> {
                     val name = getStr("name")
                     if (name.isBlank()) { errors += "Блок $num «Создать объект»: имя пустое"; continue }
-                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; continue }
+                    val existing = objects[name]
                     objects[name] = SimObject(
                         name = name, x = getF("x"), y = getF("y"),
                         width = getF("width", 100f).coerceAtLeast(1f),
                         height = getF("height", 60f).coerceAtLeast(1f),
                         radius = getF("radius", 8f).coerceAtLeast(0f),
-                        color = parseColor(getStr("color", "#4F8EF7"))
+                        color = parseColor(getStr("color", "#4F8EF7")),
+                        // Сохраняем скрипты и физику если объект уже существовал
+                        tapScriptId = existing?.tapScriptId,
+                        holdScriptId = existing?.holdScriptId,
+                        collisionScriptId = existing?.collisionScriptId,
+                        collisionEndScriptId = existing?.collisionEndScriptId,
+                        physicsBody = existing?.physicsBody,
+                        hitbox = existing?.hitbox ?: Hitbox()
                     )
-                    log += "  Создан «$name» (${getStr("x")}, ${getStr("y")}) ${getStr("width")}x${getStr("height")}"
+                    if (existing != null) log += "  Обновлён «$name» (${getStr("x")}, ${getStr("y")})"
+                    else log += "  Создан «$name» (${getStr("x")}, ${getStr("y")}) ${getStr("width")}x${getStr("height")}"
                 }
                 "sim_move" -> {
                     val nameOrTag = getStr("name")
@@ -421,7 +442,7 @@ object SimEngine {
                 "sim_text" -> {
                     val name = getStr("name")
                     if (name.isBlank()) { errors += "Блок $num «Текстовый объект»: имя пустое"; continue }
-                    if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; continue }
+                    val existing = objects[name]
                     val tcRaw = getStr("textColor", "")
                     objects[name] = SimObject(
                         name = name, x = getF("x"), y = getF("y"),
@@ -431,9 +452,15 @@ object SimEngine {
                         label = getStr("text"),
                         fontSize = getF("size", 16f).coerceAtLeast(6f),
                         bold = getStr("bold", "false") == "true",
-                        textColor = if (tcRaw.isNotBlank()) parseColor(tcRaw) else null
+                        textColor = if (tcRaw.isNotBlank()) parseColor(tcRaw) else null,
+                        tapScriptId = existing?.tapScriptId,
+                        holdScriptId = existing?.holdScriptId,
+                        collisionScriptId = existing?.collisionScriptId,
+                        collisionEndScriptId = existing?.collisionEndScriptId,
+                        physicsBody = existing?.physicsBody,
+                        hitbox = existing?.hitbox ?: Hitbox()
                     )
-                    log += "  Текст «$name»: «${getStr("text")}»"
+                    log += "  ${if (existing != null) "Обновлён" else "Создан"} текст «$name»: «${getStr("text")}»"
                 }
                 "sim_hide" -> {
                     val nameOrTag = getStr("name")
@@ -571,6 +598,14 @@ object SimEngine {
                         joysticks[name] = modified
                     }
                     log += "  «$nameOrTag» свойства изменены (${props.size})"
+                }
+                "sim_delete" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Удалить объект»: «$nameOrTag» не найден"; continue }
+                    targets.forEach { (name, _) -> objects.remove(name) }
+                    joysticks.remove(nameOrTag)
+                    log += "  Удалён «$nameOrTag» (${targets.size} объект(ов))"
                 }
                 "sim_physics" -> {
                     val nameOrTag = getStr("name")

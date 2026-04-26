@@ -125,6 +125,9 @@ object BlockFactory {
             "prop" to p("", "Свойство", ""),
             "value" to p("", "Значение", "")))
 
+        "sim_delete" -> build("sim_delete", "Удалить объект", "Удаляет объект или джойстик со сцены", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Имя, тег (#tag) или переменная")))
+
         "sim_physics" -> build("sim_physics", "Физика объекта", "Устанавливает физическое тело объекта", BlockCategory.PHYSICS, listOf(
             "name"       to p("rect1", "Имя объекта", "Какому объекту"),
             "gravity"    to p("-9.8", "Гравитация", "px/тик² (0 = нет гравитации)", ParamType.NUMBER),

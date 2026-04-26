@@ -31,6 +31,8 @@ enum class ScriptEvent(val label: String) {
     ON_START("При запуске"),
     ON_TAP("При касании объекта"),
     ON_HOLD("Пока зажат объект"),
+    ON_COLLISION("При столкновении"),
+    ON_COLLISION_END("При окончании столкновения"),
 }
 
 data class Script(

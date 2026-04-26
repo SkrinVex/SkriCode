@@ -16,6 +16,18 @@ import kotlin.random.Random
  */
 object ExprEval {
 
+    /** Системные переменные — всегда доступны, не требуют объявления */
+    val SYSTEM_VARS = setOf(
+        "collision_self",    // имя объекта которому принадлежит этот скрипт
+        "collision_other",   // имя другого объекта (с кем столкнулись)
+        // алиасы для удобства
+        "collision_name",    // = collision_other (устаревший, оставлен для совместимости)
+        "collision_x", "collision_y",
+        "collision_width", "collision_height", "collision_rotation",
+        "collision_self_x", "collision_self_y",
+        "collision_self_width", "collision_self_height", "collision_self_rotation"
+    )
+
     // Размеры экрана — устанавливаются из Activity при старте
     var screenWidth: Float = 1080f
     var screenHeight: Float = 1920f
@@ -65,7 +77,8 @@ object ExprEval {
                     val varName = expr.substring(i + 1, end).trim()
                     if (varName.isBlank()) return "" to "Пустое имя переменной {}"
                     val value = vars[varName]
-                        ?: return "" to "Переменная «$varName» не объявлена. Создай её через блок «Переменная»"
+                        ?: if (varName in SYSTEM_VARS) "" // системная переменная — пустая строка по умолчанию
+                        else return "" to "Переменная «$varName» не объявлена. Создай её через блок «Переменная»"
                     sb.append(value)
                     i = end + 1
                 }
