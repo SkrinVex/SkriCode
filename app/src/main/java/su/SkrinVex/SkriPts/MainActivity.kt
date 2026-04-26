@@ -32,6 +32,16 @@ class MainActivity : ComponentActivity() {
         val dm = resources.displayMetrics
         ExprEval.screenWidth = dm.widthPixels.toFloat()
         ExprEval.screenHeight = dm.heightPixels.toFloat()
+        
+        // Проверяем, открыт ли файл .skripts
+        val importUri = intent?.data
+        if (importUri != null && intent?.action == android.content.Intent.ACTION_VIEW) {
+            val fileName = importUri.lastPathSegment ?: ""
+            if (fileName.endsWith(".skripts", ignoreCase = true)) {
+                homeVm.importProject(importUri)
+            }
+        }
+        
         setContent {
             var currentTheme by remember { mutableStateOf<AppTheme>(ThemeManager.getCurrentTheme()) }
             
@@ -98,6 +108,17 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        val importUri = intent.data
+        if (importUri != null && intent.action == android.content.Intent.ACTION_VIEW) {
+            val fileName = importUri.lastPathSegment ?: ""
+            if (fileName.endsWith(".skripts", ignoreCase = true)) {
+                homeVm.importProject(importUri)
             }
         }
     }
