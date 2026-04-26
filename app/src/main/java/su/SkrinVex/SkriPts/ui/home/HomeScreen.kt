@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -94,6 +96,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                             project = project,
                             onOpen = { onOpenProject(project.id) },
                             onDelete = { vm.delete(project.id) },
+                            onRename = { name -> vm.rename(project.id, name) },
                             onExport = { uri -> vm.exportProject(project, uri) }
                         )
                     }
@@ -146,23 +149,28 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProjectCard(
     project: ScriptProject,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    onRename: (String) -> Unit,
     onExport: (Uri) -> Unit
 ) {
     var showConfirm by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
 
-    // Лаунчер для сохранения файла экспорта
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri: Uri? -> uri?.let { onExport(it) } }
 
     Card(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = onOpen,
+            onLongClick = { showMenu = true }
+        ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2)
     ) {
@@ -176,17 +184,72 @@ private fun ProjectCard(
                 val blockCount = project.scripts?.sumOf { it.blocks.size } ?: 0
                 Text("${project.scripts?.size ?: 0} скриптов · $blockCount блоков", color = TextSec, fontSize = 13.sp)
             }
-            // Кнопка экспорта
             IconButton(onClick = {
                 val safeName = project.name.replace(Regex("[^a-zA-Zа-яА-Я0-9_\\- ]"), "_")
                 exportLauncher.launch("$safeName.skripts")
             }) {
                 Icon(Icons.Default.FileUpload, "Экспорт", tint = TextSec.copy(alpha = 0.7f))
             }
-            IconButton(onClick = { showConfirm = true }) {
-                Icon(Icons.Default.DeleteOutline, "Удалить", tint = Danger.copy(alpha = 0.7f))
-            }
         }
+    }
+
+    if (showMenu) {
+        AlertDialog(
+            onDismissRequest = { showMenu = false },
+            containerColor = Surface2,
+            title = { Text(project.name, color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { showMenu = false; showRename = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) {
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Переименовать")
+                    }
+                    Button(onClick = { showMenu = false; showConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Удалить")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showMenu = false }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+
+    if (showRename) {
+        var newName by remember { mutableStateOf(project.name) }
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.Edit, null, tint = Accent) },
+            title = { Text("Переименовать", color = TextPrim) },
+            text = {
+                OutlinedTextField(
+                    value = newName, onValueChange = { newName = it },
+                    label = { Text("Название") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, focusedLabelColor = Accent,
+                        cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { if (newName.isNotBlank()) { onRename(newName.trim()); showRename = false } },
+                    enabled = newName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                ) { Text("Сохранить", color = Navy900) }
+            },
+            dismissButton = { TextButton(onClick = { showRename = false }) { Text("Отмена", color = TextSec) } }
+        )
     }
 
     if (showConfirm) {
@@ -288,7 +351,8 @@ private fun HelpDialog(onDismiss: () -> Unit) {
             item { HelpSection(Icons.Default.Info, "Основы", listOf(
                 "SkriPts — визуальный конструктор для создания интерактивных сцен",
                 "Создавайте скрипты из блоков, запускайте симуляцию и взаимодействуйте с объектами",
-                "Используйте переменные для хранения данных и выражения для вычислений"
+                "Используйте переменные для хранения данных и выражения для вычислений",
+                "Зажмите карточку проекта чтобы переименовать или удалить его"
             )) }
             
             item { HelpSection(Icons.Default.TouchApp, "Работа с блоками", listOf(

@@ -127,19 +127,19 @@ object SimEngine {
         }
     }
 
-    suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
+    suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, scripts, currentState)
+        return runScriptOnState(script, scripts, currentState, onUpdate)
     }
 
-    suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
+    suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, scripts, currentState)
+        return runScriptOnState(script, scripts, currentState, onUpdate)
     }
 
-    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState): SimState {
+    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
         val objects = currentState.objects.toMutableMap()
         val joysticks = currentState.joysticks.toMutableMap()
         val log = currentState.log.toMutableList()
@@ -151,10 +151,13 @@ object SimEngine {
         val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
 
         log += "Касание -> «${script.name}»"
-        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true)
+        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
+            onUpdate = if (onUpdate != null) {
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList())) }
+            } else null
+        )
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
-        // Привязываем события к объектам, которые могли быть созданы этим скриптом
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
         return currentState.copy(

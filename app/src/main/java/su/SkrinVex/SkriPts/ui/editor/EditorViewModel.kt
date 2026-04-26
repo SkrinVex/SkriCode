@@ -349,7 +349,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _tapMutex.withLock {
                 val currentSim = _state.value.simState ?: return@withLock
-                val newSim = SimEngine.runTap(scriptId, _state.value.scripts, currentSim)
+                val newSim = SimEngine.runTap(scriptId, _state.value.scripts, currentSim) { liveState ->
+                    _state.update { it.copy(simState = liveState) }
+                }
                 _state.update { it.copy(simState = newSim) }
             }
         }
@@ -461,7 +463,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleBlockCollapsed(scriptId: String, blockId: String): Boolean {
         val set = _collapsedBlocks.getOrPut(scriptId) { mutableSetOf() }
         val nowCollapsed = if (blockId in set) { set.remove(blockId); false } else { set.add(blockId); true }
-        // Не вызываем _state.update здесь — только помечаем для сохранения через дебаунс
         _pendingCollapsedSave = true
         return nowCollapsed
     }

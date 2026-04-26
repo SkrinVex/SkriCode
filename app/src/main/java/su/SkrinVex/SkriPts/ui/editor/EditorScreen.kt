@@ -257,10 +257,13 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         variables = state.visibleVars,
                         allBlocks = activeBlocks,
                         collapsed = collapsed,
+                        scriptId = activeScriptId,
                         onToggleCollapse = {
                             val next = vm.toggleBlockCollapsed(activeScriptId, block.id)
                             collapsedState[block.id] = next
                         },
+                        onToggleChildCollapsed = { childId -> vm.toggleBlockCollapsed(activeScriptId, childId) },
+                        isChildCollapsed = { childId -> vm.isBlockCollapsed(activeScriptId, childId) },
                         onRemove = { showDeleteConfirm = true },
                         onMoveUp = { if (index > 0) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
@@ -522,9 +525,12 @@ private fun BlockCard(
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
     collapsed: Boolean,
+    scriptId: String = "",
     onToggleCollapse: () -> Unit,
-    onRemove: () -> Unit, 
-    onMoveUp: () -> Unit, 
+    onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
+    isChildCollapsed: ((blockId: String) -> Boolean)? = null,
+    onRemove: () -> Unit,
+    onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDuplicate: () -> Unit,
     onParamChange: (String, String) -> Unit,
@@ -585,6 +591,9 @@ private fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             IfBlockContent(
                                 block = block, variables = variables,
+                                scriptId = scriptId,
+                                onToggleChildCollapsed = onToggleChildCollapsed,
+                                isChildCollapsed = isChildCollapsed,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
@@ -596,6 +605,9 @@ private fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             LoopBlockContent(
                                 block = block, variables = variables,
+                                scriptId = scriptId,
+                                onToggleChildCollapsed = onToggleChildCollapsed,
+                                isChildCollapsed = isChildCollapsed,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
@@ -836,6 +848,9 @@ private fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
 private fun IfBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
+    scriptId: String = "",
+    onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
+    isChildCollapsed: ((blockId: String) -> Boolean)? = null,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onAddChild: (branch: String, type: String) -> Unit,
@@ -894,6 +909,9 @@ private fun IfBlockContent(
         branch = "then",
         blocks = block.children["then"] ?: emptyList(),
         variables = variables,
+        scriptId = scriptId,
+        onToggleChildCollapsed = onToggleChildCollapsed,
+        isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
     )
@@ -904,6 +922,9 @@ private fun IfBlockContent(
         branch = "else",
         blocks = block.children["else"] ?: emptyList(),
         variables = variables,
+        scriptId = scriptId,
+        onToggleChildCollapsed = onToggleChildCollapsed,
+        isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
     )
@@ -917,6 +938,9 @@ private fun IfBranchSection(
     branch: String,
     blocks: List<BlockDef>,
     variables: List<ProjectVar>,
+    scriptId: String = "",
+    onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
+    isChildCollapsed: ((blockId: String) -> Boolean)? = null,
     onAddChild: (branch: String, type: String) -> Unit,
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
@@ -944,10 +968,16 @@ private fun IfBranchSection(
         } else {
             Spacer(Modifier.height(6.dp))
             blocks.forEachIndexed { ci, child ->
+                val collapsedState = remember(scriptId, child.id) { mutableStateOf(isChildCollapsed?.invoke(child.id) ?: false) }
                 ChildBlockRow(
                     block = child, childIndex = ci, branch = branch,
                     variables = variables,
                     accentColor = color,
+                    collapsed = collapsedState.value,
+                    onToggleCollapse = {
+                        val next = onToggleChildCollapsed?.invoke(child.id) ?: !collapsedState.value
+                        collapsedState.value = next
+                    },
                     onRemove = { onRemoveChild(branch, ci) },
                     onParamChange = { k, v -> onChildParamChange(branch, ci, k, v) },
                     onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) }
@@ -1000,12 +1030,14 @@ private fun ChildBlockRow(
     block: BlockDef, childIndex: Int, branch: String,
     variables: List<ProjectVar>,
     accentColor: Color,
+    collapsed: Boolean,
+    onToggleCollapse: () -> Unit,
     onRemove: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(true) }
     val accent = categoryColor(block.category)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
@@ -1018,10 +1050,10 @@ private fun ChildBlockRow(
                 Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(block.displayName, color = TextPrim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                SmallBtn(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, onClick = { expanded = !expanded })
-                SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = onRemove)
+                SmallBtn(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, onClick = onToggleCollapse)
+                SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = { showDeleteConfirm = true })
             }
-            if (expanded && block.params.isNotEmpty()) {
+            if (!collapsed && block.params.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 block.paramOrder.forEach { key ->
                     val param = block.params[key] ?: return@forEach
@@ -1045,6 +1077,24 @@ private fun ChildBlockRow(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить блок?", color = TextPrim) },
+            text = { Text("«${block.displayName}» будет удалён.", color = TextSec) },
+            confirmButton = {
+                Button(onClick = { onRemove(); showDeleteConfirm = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Отмена", color = TextSec) }
+            }
+        )
     }
 }
 
@@ -1390,6 +1440,9 @@ fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
 private fun LoopBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
+    scriptId: String = "",
+    onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
+    isChildCollapsed: ((blockId: String) -> Boolean)? = null,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onAddChild: (branch: String, type: String) -> Unit,
@@ -1397,17 +1450,13 @@ private fun LoopBlockContent(
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
 ) {
-    // Параметры цикла
     block.paramOrder.forEach { key ->
         val param = block.params[key] ?: return@forEach
         ExprChip(param = param, variables = variables,
             onClick = { onOpenExpr(key, param.label, param.value, false) })
         Spacer(Modifier.height(6.dp))
     }
-    
     Spacer(Modifier.height(8.dp))
-    
-    // Тело цикла
     val bodyBlocks = block.children["body"] ?: emptyList()
     IfBranchSection(
         label = "Тело цикла",
@@ -1415,6 +1464,9 @@ private fun LoopBlockContent(
         branch = "body",
         blocks = bodyBlocks,
         variables = variables,
+        scriptId = scriptId,
+        onToggleChildCollapsed = onToggleChildCollapsed,
+        isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild,
         onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange,

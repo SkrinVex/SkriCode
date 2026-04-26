@@ -41,6 +41,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
+    fun rename(id: String, newName: String) {
+        val project = ProjectRepository.load(getApplication(), id) ?: return
+        ProjectRepository.save(getApplication(), project.copy(name = newName))
+        refresh()
+    }
+
     fun exportProject(project: ScriptProject, uri: Uri) {
         viewModelScope.launch {
             runCatching { ProjectIO.export(getApplication(), project, uri) }
