@@ -19,6 +19,10 @@ object ExprEval {
     var screenWidth: Float = 1080f
     var screenHeight: Float = 1920f
 
+    // Объекты симуляции — обновляются из SimEngine перед каждым вычислением
+    var objects: Map<String, SimObject> = emptyMap()
+    var joysticks: Map<String, JoystickState> = emptyMap()
+
     data class EvalResult(val value: String, val error: String? = null)
 
     fun eval(expr: String, vars: Map<String, String>): EvalResult {
@@ -45,8 +49,7 @@ object ExprEval {
         while (i < expr.length) {
             when {
                 expr[i] == '$' -> {
-                    // Встроенная функция/константа
-                    val (result, consumed, err) = resolveBuiltin(expr, i)
+                    val (result, consumed, err) = resolveBuiltin(expr, i, vars)
                     if (err != null) return "" to err
                     sb.append(result)
                     i += consumed
@@ -72,7 +75,7 @@ object ExprEval {
     }
 
     /** Возвращает (подставленное значение, сколько символов потреблено, ошибка) */
-    private fun resolveBuiltin(expr: String, start: Int): Triple<String, Int, String?> {
+    private fun resolveBuiltin(expr: String, start: Int, vars: Map<String, String> = emptyMap()): Triple<String, Int, String?> {
         val sub = expr.substring(start + 1) // после $
 
         // Функции с аргументами
@@ -91,15 +94,22 @@ object ExprEval {
             "concat(" to ::handleConcat,
             "length(" to ::handleLength,
             "upper(" to ::handleUpper,
-            "lower(" to ::handleLower
+            "lower(" to ::handleLower,
+            "objX(" to ::handleObjX,
+            "objY(" to ::handleObjY,
+            "objRot(" to ::handleObjRot
         )
         
         for ((pattern, handler) in funcPatterns) {
             if (sub.startsWith(pattern)) {
                 val close = sub.indexOf(')')
                 if (close == -1) return Triple("", 1, "Незакрытая скобка в \$${pattern.dropLast(1)}()")
-                val args = sub.substring(pattern.length, close).split(",").map { it.trim() }
-                val consumed = 1 + close + 1 // $ + функция до )
+                // Раскрываем {переменные} внутри аргументов
+                val rawArgs = sub.substring(pattern.length, close)
+                val (resolvedArgs, argErr) = substitute(rawArgs, vars)
+                if (argErr != null) return Triple("", 1, argErr)
+                val args = resolvedArgs.split(",").map { it.trim() }
+                val consumed = 1 + close + 1
                 return handler(args, consumed)
             }
         }
@@ -218,6 +228,29 @@ object ExprEval {
     private fun handleLower(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$lower() требует один аргумент")
         return Triple(args[0].lowercase(), consumed, null)
+    }
+
+    private fun handleObjX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objX() требует один аргумент: имя объекта")
+        val name = args[0]
+        objects[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
+        joysticks[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
+        return Triple("", consumed, "\$objX(): объект «$name» не найден")
+    }
+
+    private fun handleObjY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objY() требует один аргумент: имя объекта")
+        val name = args[0]
+        objects[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
+        joysticks[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
+        return Triple("", consumed, "\$objY(): объект «$name» не найден")
+    }
+
+    private fun handleObjRot(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objRot() требует один аргумент: имя объекта")
+        val name = args[0]
+        objects[name]?.let { return Triple(fmt(it.rotation.toDouble()), consumed, null) }
+        return Triple("", consumed, "\$objRot(): объект «$name» не найден")
     }
 
     private fun tryArith(expr: String): String? {

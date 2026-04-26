@@ -356,12 +356,16 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
     // Текст — только если label задан явно
     if (obj.label.isNotBlank()) {
         val textSize = obj.fontSize * density
+        val tc = obj.textColor ?: Color.White
         drawContext.canvas.nativeCanvas.drawText(
             obj.label,
             left + obj.width / 2f,
             top + obj.height / 2f + textSize / 3f,
             android.graphics.Paint().apply {
-                color = android.graphics.Color.WHITE
+                color = android.graphics.Color.argb(
+                    (tc.alpha * 255).toInt(), (tc.red * 255).toInt(),
+                    (tc.green * 255).toInt(), (tc.blue * 255).toInt()
+                )
                 this.textSize = textSize
                 textAlign = android.graphics.Paint.Align.CENTER
                 isAntiAlias = true

@@ -43,7 +43,10 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
         Column(Modifier.fillMaxSize()) {
             Surface(color = Surface1, shadowElevation = 4.dp) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.Code, null, tint = Accent, modifier = Modifier.size(28.dp))
@@ -332,6 +335,15 @@ private fun HelpDialog(onDismiss: () -> Unit) {
                 "\$length(\"текст\") — длина строки: 5",
                 "\$upper(\"текст\") — в верхний регистр: \"ТЕКСТ\"",
                 "\$lower(\"ТЕКСТ\") — в нижний регистр: \"текст\""
+            )) }
+
+            item { HelpSection(Icons.Default.Widgets, "Функции объектов", listOf(
+                "\$objX(имя) — позиция объекта по X (горизонталь)",
+                "\$objY(имя) — позиция объекта по Y (вертикаль)",
+                "\$objRot(имя) — угол поворота объекта в градусах",
+                "Работает со всеми типами: sim_create, sim_text, sim_joystick",
+                "Пример: \$objX(Button) + 50 — правее кнопки на 50px",
+                "Пример: set_var score = \$objY(Player) — сохранить Y игрока"
             )) }
             
             item { HelpSection(Icons.Default.Tune, "Блоки управления", listOf(

@@ -17,11 +17,12 @@ data class SimObject(
     val label: String = "",
     val fontSize: Float = 14f,
     val bold: Boolean = false,
+    val textColor: Color? = null,        // null = белый по умолчанию
     val tapScriptId: String? = null,
     val holdScriptId: String? = null,
     val visible: Boolean = true,
-    val rotation: Float = 0f,  // градусы, по часовой стрелке
-    val tags: Set<String> = emptySet()  // теги объекта
+    val rotation: Float = 0f,
+    val tags: Set<String> = emptySet()
 )
 
 data class JoystickState(
@@ -163,6 +164,10 @@ object SimEngine {
         allowDelay: Boolean = true,
         onUpdate: (() -> Unit)? = null
     ): Boolean {
+        // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
+        ExprEval.objects = objects
+        ExprEval.joysticks = joysticks
+
         // Вспомогательная функция для получения объектов по имени или тегу
         fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
             // Вычисляем выражение (поддержка переменных)
@@ -286,7 +291,17 @@ object SimEngine {
                     val targets = getObjectsByNameOrTag(nameOrTag)
                     if (targets.isEmpty()) { errors += "Блок $num «Текст»: «$nameOrTag» не найден"; continue }
                     val text = getStr("text")
-                    targets.forEach { (name, obj) -> objects[name] = obj.copy(label = text) }
+                    val sizeRaw = getStr("size", "0").toFloatOrNull() ?: 0f
+                    val boldRaw = getStr("bold", "")
+                    val colorRaw = getStr("textColor", "")
+                    targets.forEach { (name, obj) ->
+                        objects[name] = obj.copy(
+                            label = text,
+                            fontSize = if (sizeRaw > 0f) sizeRaw else obj.fontSize,
+                            bold = if (boldRaw == "true") true else if (boldRaw == "false") false else obj.bold,
+                            textColor = if (colorRaw.isNotBlank()) parseColor(colorRaw) else obj.textColor
+                        )
+                    }
                     log += "  «$nameOrTag» текст: «$text»"
                 }
                 "sim_update_text" -> {
@@ -301,6 +316,7 @@ object SimEngine {
                     val name = getStr("name")
                     if (name.isBlank()) { errors += "Блок $num «Текстовый объект»: имя пустое"; continue }
                     if (objects.containsKey(name)) { errors += "Блок $num: объект «$name» уже существует"; continue }
+                    val tcRaw = getStr("textColor", "")
                     objects[name] = SimObject(
                         name = name, x = getF("x"), y = getF("y"),
                         width = getF("width", 200f).coerceAtLeast(1f),
@@ -308,7 +324,8 @@ object SimEngine {
                         radius = 0f, color = Color.Transparent,
                         label = getStr("text"),
                         fontSize = getF("size", 16f).coerceAtLeast(6f),
-                        bold = getStr("bold", "false") == "true"
+                        bold = getStr("bold", "false") == "true",
+                        textColor = if (tcRaw.isNotBlank()) parseColor(tcRaw) else null
                     )
                     log += "  Текст «$name»: «${getStr("text")}»"
                 }

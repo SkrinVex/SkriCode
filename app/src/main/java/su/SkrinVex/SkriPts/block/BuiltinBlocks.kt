@@ -57,22 +57,26 @@ object BlockFactory {
             "color" to p("#EF4444", "Цвет", "#RRGGBB")))
 
         "sim_label" -> build("sim_label", "Текст на объекте", "Устанавливает текст внутри прямоугольника", BlockCategory.SIMULATION, listOf(
-            "name" to p("rect1", "Имя объекта", "Какой объект"),
-            "text" to p("", "Текст", "Что написать")))
+            "name"      to p("rect1", "Имя объекта", "Какой объект"),
+            "text"      to p("", "Текст", "Что написать"),
+            "size"      to p("16", "Размер шрифта", "В пикселях (0 = не менять)", ParamType.NUMBER),
+            "bold"      to p("false", "Жирный", "true или false"),
+            "textColor" to p("", "Цвет текста", "#RRGGBB (пусто = не менять)")))
 
         "sim_update_text" -> build("sim_update_text", "Обновить текст", "Меняет текст текстового объекта", BlockCategory.SIMULATION, listOf(
             "name" to p("text1", "Имя объекта", "Имя sim_text объекта"),
             "text" to p("", "Новый текст", "Поддерживает {переменные}")))
 
         "sim_text" -> build("sim_text", "Текстовый объект", "Создаёт текст на сцене", BlockCategory.SIMULATION, listOf(
-            "name"   to p("text1", "Имя объекта", "Уникальное имя"),
-            "text"   to p("Привет!", "Текст", "Поддерживает {переменные}"),
-            "x"      to p("0", "X", "Позиция X", ParamType.NUMBER),
-            "y"      to p("0", "Y", "Позиция Y", ParamType.NUMBER),
-            "width"  to p("200", "Ширина", "Ширина области", ParamType.NUMBER),
-            "height" to p("40", "Высота", "Высота области", ParamType.NUMBER),
-            "size"   to p("16", "Размер шрифта", "В пикселях", ParamType.NUMBER),
-            "bold"   to p("false", "Жирный", "true или false")))
+            "name"      to p("text1", "Имя объекта", "Уникальное имя"),
+            "text"      to p("Привет!", "Текст", "Поддерживает {переменные}"),
+            "x"         to p("0", "X", "Позиция X", ParamType.NUMBER),
+            "y"         to p("0", "Y", "Позиция Y", ParamType.NUMBER),
+            "width"     to p("200", "Ширина", "Ширина области", ParamType.NUMBER),
+            "height"    to p("40", "Высота", "Высота области", ParamType.NUMBER),
+            "size"      to p("16", "Размер шрифта", "В пикселях", ParamType.NUMBER),
+            "bold"      to p("false", "Жирный", "true или false"),
+            "textColor" to p("#FFFFFF", "Цвет текста", "#RRGGBB")))
 
         "if_block" -> build("if_block", "Условие (если)", "Выполняет блоки если условие истинно", BlockCategory.CONTROL, listOf(
             "left"  to p("", "Левое значение", "Переменная или число, напр. {score}"),

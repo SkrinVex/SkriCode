@@ -62,6 +62,31 @@ fun ExpressionEditorScreen(
     var showDeleteVar by remember { mutableStateOf<ProjectVar?>(null) }
     var showDeleteTag by remember { mutableStateOf<ProjectTag?>(null) }
     var hasChanges by remember { mutableStateOf(false) }
+    var validationWarning by remember { mutableStateOf<String?>(null) }
+
+    val knownVarNames = remember(variables) { variables.map { it.name }.toSet() }
+
+    fun validateAndConfirm() {
+        if (isIdentifier) { onConfirm(value); return }
+        val trimmed = value.trim()
+        // Ищем необъявленные {varName}
+        val unknown = Regex("\\{([^}]+)\\}").findAll(trimmed)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotBlank() && it !in knownVarNames }
+            .toSet()
+        // Предупреждаем если выражение выглядит как имя переменной без скобок
+        val looksLikeBareVar = unknown.isEmpty()
+            && trimmed.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*"))
+            && trimmed !in knownVarNames
+            && trimmed.length > 1
+        when {
+            unknown.isNotEmpty() ->
+                validationWarning = unknown.joinToString(", ") { "{$it}" }
+            looksLikeBareVar ->
+                validationWarning = "«$trimmed» (без фигурных скобок)"
+            else -> onConfirm(value)
+        }
+    }
 
     fun push(v: String) { if (history.lastOrNull() != v) history.add(v) }
     fun insertVar(name: String) { push(value); value = if (isIdentifier) name else value + "{$name}"; hasChanges = true }
@@ -94,7 +119,7 @@ fun ExpressionEditorScreen(
                     IconButton(onClick = { push(value); value = "" }) {
                         Icon(Icons.Default.ClearAll, "Очистить", tint = Danger.copy(alpha = 0.8f))
                     }
-                    Button(onClick = { onConfirm(value) },
+                    Button(onClick = { validateAndConfirm() },
                         colors = ButtonDefaults.buttonColors(containerColor = Accent),
                         modifier = Modifier.padding(end = 8.dp)) {
                         Text("OK", color = Navy900, fontWeight = FontWeight.Bold)
@@ -173,6 +198,29 @@ fun ExpressionEditorScreen(
         ) {
             Icon(Icons.Default.Add, "Создать", tint = Navy900)
         }
+    }
+
+    validationWarning?.let { warn ->
+        AlertDialog(
+            onDismissRequest = { validationWarning = null },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.Warning, null, tint = Warning) },
+            title = { Text("Возможная ошибка", color = TextPrim) },
+            text = { Text(
+                "Переменная $warn не найдена в проекте.\n\n" +
+                "Если хочешь использовать переменную — оберни имя в фигурные скобки: {имя}.\n\n" +
+                "Всё равно сохранить?",
+                color = TextSec
+            ) },
+            confirmButton = {
+                Button(onClick = { validationWarning = null; onConfirm(value) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Warning)
+                ) { Text("Сохранить", color = Navy900) }
+            },
+            dismissButton = {
+                TextButton(onClick = { validationWarning = null }) { Text("Исправить", color = TextSec) }
+            }
+        )
     }
 
     if (showCreateVar) {
@@ -296,6 +344,11 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$length(\"text\")",     "Длина текста", "Количество символов в тексте",       Icons.Default.Straighten,   stringColor),
         BuiltinFn("\$upper(\"text\")",      "В верхний регистр", "Преобразует в заглавные буквы", Icons.Default.KeyboardArrowUp, stringColor),
         BuiltinFn("\$lower(\"TEXT\")",      "В нижний регистр",  "Преобразует в строчные буквы",  Icons.Default.KeyboardArrowDown, stringColor),
+
+        // Объекты
+        BuiltinFn("\$objX(Button)",   "X объекта",        "Позиция объекта по горизонтали",     Icons.Default.SwapHoriz,    screenColor),
+        BuiltinFn("\$objY(Button)",   "Y объекта",        "Позиция объекта по вертикали",       Icons.Default.SwapVert,     screenColor),
+        BuiltinFn("\$objRot(Button)", "Вращение объекта", "Угол поворота объекта в градусах",   Icons.Default.RotateRight,  screenColor),
     )
 
     LazyColumn(

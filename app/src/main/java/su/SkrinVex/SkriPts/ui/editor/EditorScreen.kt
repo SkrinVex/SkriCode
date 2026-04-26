@@ -628,7 +628,7 @@ private fun BlockCard(
                                         key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick") ->
                                             ExprChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
-                                        key == "color" || key == "baseColor" || key == "knobColor" ->
+                                        key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
                                             ColorField(param = param, onChange = { onParamChange(key, it) })
                                         block.type == "sim_move" && key == "mode" ->
                                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
@@ -1003,7 +1003,7 @@ private fun ChildBlockRow(
                         block.type == "set_var" && key == "name" ->
                             VarNameChip(value = param.value, label = param.label,
                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
-                        key == "color" || key == "baseColor" || key == "knobColor" ->
+                        key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
                             ColorField(param = param, onChange = { onParamChange(key, it) })
                         block.type == "sim_move" && key == "mode" ->
                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
