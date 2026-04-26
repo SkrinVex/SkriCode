@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -1125,6 +1126,10 @@ private fun SmallBtn(icon: ImageVector, onClick: () -> Unit, enabled: Boolean = 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    var selectedCategory by remember { mutableStateOf<BlockCategory?>(null) }
+    val allBlocks = BlockRegistry.byCategory()
+    val categories = allBlocks.keys.toList()
+    
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Surface1,
         dragHandle = {
             Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
@@ -1132,33 +1137,72 @@ private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             }
         }
     ) {
-        LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxWidth()) {
-            item {
-                Text("Добавить блок", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            }
-            BlockRegistry.byCategory().forEach { (category, metas) ->
+        Column(Modifier.fillMaxWidth()) {
+            Text("Добавить блок", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
                 item {
-                    Text(category.label.uppercase(), color = categoryColor(category),
-                        fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp,
-                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp))
+                    FilterChip(
+                        selected = selectedCategory == null,
+                        onClick = { selectedCategory = null },
+                        label = { Text("Все") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Accent,
+                            selectedLabelColor = Navy900,
+                            containerColor = Surface2,
+                            labelColor = TextSec
+                        )
+                    )
                 }
-                items(metas.size) { i ->
-                    val meta = metas[i]
-                    val color = categoryColor(meta.category)
-                    Card(onClick = { onPick(meta.type) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = Surface2)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center) {
-                                Icon(categoryIcon(meta.category), null, tint = color, modifier = Modifier.size(22.dp))
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                                Text(meta.description, color = TextSec, fontSize = 12.sp)
+                items(categories.size) { i ->
+                    val cat = categories[i]
+                    FilterChip(
+                        selected = selectedCategory == cat,
+                        onClick = { selectedCategory = cat },
+                        label = { Text(cat.label) },
+                        leadingIcon = { Icon(categoryIcon(cat), null, modifier = Modifier.size(16.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = categoryColor(cat).copy(alpha = 0.2f),
+                            selectedLabelColor = categoryColor(cat),
+                            containerColor = Surface2,
+                            labelColor = TextSec
+                        )
+                    )
+                }
+            }
+            
+            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxWidth()) {
+                val filtered = if (selectedCategory == null) allBlocks else allBlocks.filterKeys { it == selectedCategory }
+                filtered.forEach { (category, metas) ->
+                    if (selectedCategory == null) {
+                        item {
+                            Text(category.label.uppercase(), color = categoryColor(category),
+                                fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp,
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp))
+                        }
+                    }
+                    items(metas.size) { i ->
+                        val meta = metas[i]
+                        val color = categoryColor(meta.category)
+                        Card(onClick = { onPick(meta.type) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Surface2)) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center) {
+                                    Icon(categoryIcon(meta.category), null, tint = color, modifier = Modifier.size(22.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                    Text(meta.description, color = TextSec, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
