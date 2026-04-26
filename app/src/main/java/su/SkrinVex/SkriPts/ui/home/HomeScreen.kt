@@ -241,9 +241,10 @@ private fun SettingsDialog(onDismiss: () -> Unit, onThemeChanged: () -> Unit) {
             }
         },
         confirmButton = {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
             Button(
-                onClick = { 
-                    ThemeManager.setTheme(selectedTheme)
+                onClick = {
+                    ThemeManager.setTheme(ctx, selectedTheme)
                     onThemeChanged()
                     onDismiss()
                 },
@@ -337,6 +338,7 @@ private fun HelpDialog(onDismiss: () -> Unit) {
             item { HelpSection(Icons.Default.Widgets, "Блоки симуляции", listOf(
                 "Создать объект — создаёт прямоугольник на сцене",
                 "Переместить объект — меняет позицию (моментально или шагом)",
+                "  X или Y = \$none — не изменять эту координату при перемещении",
                 "Изменить размер — меняет ширину и высоту",
                 "Изменить цвет — меняет цвет объекта (#RRGGBB)",
                 "Текст на объекте — добавляет текст внутри прямоугольника",

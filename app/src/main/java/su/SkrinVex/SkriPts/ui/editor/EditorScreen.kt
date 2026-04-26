@@ -382,7 +382,7 @@ private fun EventPickerDialog(
                         Text(event.label, color = if (selected == event) Accent else TextPrim, fontSize = 14.sp)
                     }
                 }
-                if (selected == ScriptEvent.ON_TAP) {
+                if (selected == ScriptEvent.ON_TAP || selected == ScriptEvent.ON_HOLD) {
                     OutlinedTextField(
                         value = target,
                         onValueChange = { target = it },
@@ -549,6 +549,8 @@ private fun BlockCard(
                                             ColorField(param = param, onChange = { onParamChange(key, it) })
                                         block.type == "sim_move" && key == "mode" ->
                                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                                        key == "bold" ->
+                                            BoolToggle(param = param, onChange = { onParamChange(key, it) })
                                         key == "op" || key == "op1" || key == "op2" ->
                                             OperatorSelector(param = param, onChange = { onParamChange(key, it) })
                                         key in DIRECT_PARAM_KEYS ->
@@ -562,6 +564,33 @@ private fun BlockCard(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
+    val isTrue = param.value == "true"
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+        ) {
+            listOf("false" to "Нет", "true" to "Да").forEach { (v, label) ->
+                val active = param.value == v
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) Accent.copy(0.2f) else Color.Transparent)
+                        .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onChange(v) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (active) Accent else TextSec, fontSize = 13.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
@@ -838,6 +867,8 @@ private fun ChildBlockRow(
                             ColorField(param = param, onChange = { onParamChange(key, it) })
                         block.type == "sim_move" && key == "mode" ->
                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                        key == "bold" ->
+                            BoolToggle(param = param, onChange = { onParamChange(key, it) })
                         key in DIRECT_PARAM_KEYS ->
                             DirectInputField(param = param, onChange = { onParamChange(key, it) })
                         else ->

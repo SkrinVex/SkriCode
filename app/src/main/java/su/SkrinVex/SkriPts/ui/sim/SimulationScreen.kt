@@ -69,6 +69,7 @@ fun SimulationScreen(
                             when (event.type) {
                                 PointerEventType.Press -> {
                                     event.changes.forEach { change ->
+                                        if (!change.pressed) return@forEach
                                         val offset = change.position
                                         val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
                                             val left = cx + obj.x - obj.width / 2f
@@ -83,7 +84,7 @@ fun SimulationScreen(
                                 }
                                 PointerEventType.Release -> {
                                     event.changes.forEach { change ->
-                                        onHoldEnd(change.id.value.toLong())
+                                        if (!change.pressed) onHoldEnd(change.id.value.toLong())
                                     }
                                 }
                                 else -> {}

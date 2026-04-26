@@ -32,7 +32,11 @@ data class SimState(
 
 object SimEngine {
 
-    suspend fun run(scripts: List<Script>, globalVarDefs: List<ProjectVar>): SimState {
+    suspend fun run(
+        scripts: List<Script>,
+        globalVarDefs: List<ProjectVar>,
+        onUpdate: (SimState) -> Unit = {}
+    ): SimState {
         val objects = mutableMapOf<String, SimObject>()
         val log = mutableListOf<String>()
         val errors = mutableListOf<String>()
@@ -42,7 +46,8 @@ object SimEngine {
             log += "Скрипт «${script.name}»"
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
-            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
+            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors,
+                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), globalVars.toMap(), log.toList(), errors.toList())) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
         }
 
@@ -88,7 +93,7 @@ object SimEngine {
         val vars = (globalVars + localVars).toMutableMap()
 
         log += "Касание -> «${script.name}»"
-        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
+        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors, allowDelay = true)
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
         return currentState.copy(
@@ -105,7 +110,9 @@ object SimEngine {
         vars: MutableMap<String, String>,
         objects: MutableMap<String, SimObject>,
         log: MutableList<String>,
-        errors: MutableList<String>
+        errors: MutableList<String>,
+        allowDelay: Boolean = true,
+        onUpdate: (() -> Unit)? = null
     ): Boolean {
         for ((idx, block) in blocks.withIndex()) {
             val num = idx + 1
@@ -150,7 +157,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, log, errors)) return false
+                        if (!runScript(branchBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -240,7 +247,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, log, errors)) return false
+                        if (!runScript(bodyBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -256,14 +263,17 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, log, errors)) return false
+                        if (!runScript(bodyBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
                 "wait" -> {
                     val seconds = getF("seconds", 1f).coerceIn(0f, 60f)
                     log += "  Ждём ${seconds}с"
-                    delay((seconds * 1000).toLong())
+                    if (allowDelay) {
+                        onUpdate?.invoke()
+                        delay((seconds * 1000).toLong())
+                    }
                 }
             }
         }

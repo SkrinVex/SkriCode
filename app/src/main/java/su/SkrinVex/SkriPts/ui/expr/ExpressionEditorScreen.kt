@@ -63,7 +63,7 @@ fun ExpressionEditorScreen(
     fun insertFn(insert: String) { push(value); value = value + insert }
 
     Box(Modifier.fillMaxSize().background(Navy900)) {
-        Column(Modifier.fillMaxSize().padding(bottom = if (!isIdentifier) 72.dp else 0.dp)) {
+        Column(Modifier.fillMaxSize()) {
             Surface(color = Surface1, shadowElevation = 4.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -148,19 +148,6 @@ fun ExpressionEditorScreen(
                 else -> {
                     val currentVars = if (selectedTab == 0) globalVars else localVars
                     Column(Modifier.weight(1f)) {
-                        if (!isIdentifier) {
-                            OutlinedButton(
-                                onClick = { createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL; showCreateVar = true },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Accent.copy(alpha = 0.5f))
-                            ) {
-                                Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Создать ${if (selectedTab == 0) "глобальную" else "локальную"} переменную")
-                            }
-                        }
                         if (currentVars.isEmpty()) {
                             Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
                                 Text("Нет переменных", color = TextSec, fontSize = 14.sp)
@@ -185,17 +172,15 @@ fun ExpressionEditorScreen(
         }
 
         // FAB — создать переменную (всегда видна, кроме режима isIdentifier)
-        if (!isIdentifier) {
-            FloatingActionButton(
-                onClick = {
-                    createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL
-                    showCreateVar = true
-                },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                containerColor = Accent
-            ) {
-                Icon(Icons.Default.Add, "Создать переменную", tint = Navy900)
-            }
+        FloatingActionButton(
+            onClick = {
+                createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL
+                showCreateVar = true
+            },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = Accent
+        ) {
+            Icon(Icons.Default.Add, "Создать переменную", tint = Navy900)
         }
     }
 

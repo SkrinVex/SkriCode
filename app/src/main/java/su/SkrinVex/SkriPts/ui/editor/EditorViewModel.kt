@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -205,9 +206,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val state = _state.value
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
+        // Сразу показываем экран симуляции с пустым состоянием
+        val initial = SimState()
+        _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
+        // ON_START выполняется уже после открытия экрана
         viewModelScope.launch {
-            val result = SimEngine.run(state.scripts, state.globalVars)
-            _state.update { it.copy(simState = result, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
+            val result = SimEngine.run(state.scripts, state.globalVars) { liveState ->
+                _state.update { it.copy(simState = liveState) }
+            }
+            _state.update { it.copy(simState = result) }
         }
     }
 
@@ -232,11 +239,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _holdJobs[pointerId]?.cancel()
         _holdJobs[pointerId] = viewModelScope.launch {
             while (true) {
-                _tapMutex.withLock {
-                    val currentSim = _state.value.simState ?: return@withLock
-                    val newSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
-                    _state.update { it.copy(simState = newSim) }
-                }
+                val currentSim = _state.value.simState ?: break
+                val newSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
+                _state.update { it.copy(simState = newSim) }
+                delay(50) // ~20 раз в секунду, не блокируем поток
             }
         }
     }

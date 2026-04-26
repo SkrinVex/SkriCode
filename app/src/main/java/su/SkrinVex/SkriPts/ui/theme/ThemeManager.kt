@@ -33,13 +33,23 @@ enum class AppTheme(
 
 object ThemeManager {
     private var currentTheme = AppTheme.BLUE
-    
-    fun getCurrentTheme() = currentTheme
-    
-    fun setTheme(theme: AppTheme) {
-        currentTheme = theme
+    private const val PREFS = "skripts_prefs"
+    private const val KEY_THEME = "theme"
+
+    fun init(ctx: android.content.Context) {
+        val name = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .getString(KEY_THEME, AppTheme.BLUE.name) ?: AppTheme.BLUE.name
+        currentTheme = AppTheme.entries.find { it.name == name } ?: AppTheme.BLUE
     }
-    
+
+    fun getCurrentTheme() = currentTheme
+
+    fun setTheme(ctx: android.content.Context, theme: AppTheme) {
+        currentTheme = theme
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putString(KEY_THEME, theme.name).apply()
+    }
+
     fun getAccent() = currentTheme.accent
     fun getSurface1() = currentTheme.surface1
     fun getSurface2() = currentTheme.surface2

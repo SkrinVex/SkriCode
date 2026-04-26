@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeManager.init(this)
         // Устанавливаем размеры экрана для встроенных констант
         val dm = resources.displayMetrics
         ExprEval.screenWidth = dm.widthPixels.toFloat()
