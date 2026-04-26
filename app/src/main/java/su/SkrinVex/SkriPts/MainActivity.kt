@@ -50,6 +50,8 @@ class MainActivity : ComponentActivity() {
                     "sim" -> SimulationScreen(
                         state = editorState.simState!!,
                         onTap = { objName -> editorVm.handleTap(objName) },
+                        onHoldStart = { objName, pid -> editorVm.handleHoldStart(objName, pid) },
+                        onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },
                         onBack = { screen = "editor" },
                         onClearLogs = { editorVm.clearSimLogs() }
                     )

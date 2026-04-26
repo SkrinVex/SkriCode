@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import su.SkrinVex.SkriPts.block.BlockDef
 import su.SkrinVex.SkriPts.block.BlockRegistry
 import su.SkrinVex.SkriPts.data.*
@@ -213,9 +215,34 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val state = _state.value
         val scriptId = state.simState?.objects?.get(objectName)?.tapScriptId ?: return
         viewModelScope.launch {
-            val newSim = SimEngine.runTap(scriptId, state.scripts, state.simState!!)
-            _state.update { it.copy(simState = newSim) }
+            _tapMutex.withLock {
+                val currentSim = _state.value.simState ?: return@withLock
+                val newSim = SimEngine.runTap(scriptId, _state.value.scripts, currentSim)
+                _state.update { it.copy(simState = newSim) }
+            }
         }
+    }
+
+    // Хранит активные hold-корутины по pointerId
+    private val _holdJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
+
+    fun handleHoldStart(objectName: String, pointerId: Long) {
+        val state = _state.value
+        val scriptId = state.simState?.objects?.get(objectName)?.holdScriptId ?: return
+        _holdJobs[pointerId]?.cancel()
+        _holdJobs[pointerId] = viewModelScope.launch {
+            while (true) {
+                _tapMutex.withLock {
+                    val currentSim = _state.value.simState ?: return@withLock
+                    val newSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
+                    _state.update { it.copy(simState = newSim) }
+                }
+            }
+        }
+    }
+
+    fun handleHoldEnd(pointerId: Long) {
+        _holdJobs.remove(pointerId)?.cancel()
     }
 
     fun clearSimLogs() {
@@ -232,6 +259,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // scriptId -> Set<blockId>
     private val _collapsedBlocks = mutableMapOf<String, MutableSet<String>>()
     private var _pendingCollapsedSave = false
+    private val _tapMutex = Mutex()
 
     fun saveScrollPosition(scriptId: String, index: Int) { _scrollPositions[scriptId] = index }
     fun getScrollPosition(scriptId: String) = _scrollPositions[scriptId] ?: 0

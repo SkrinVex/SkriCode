@@ -1,6 +1,7 @@
 package su.SkrinVex.SkriPts.engine
 
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.delay
 import su.SkrinVex.SkriPts.block.BlockDef
 import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
@@ -17,12 +18,13 @@ data class SimObject(
     val fontSize: Float = 14f,
     val bold: Boolean = false,
     val tapScriptId: String? = null,
+    val holdScriptId: String? = null,
     val visible: Boolean = true
 )
 
 data class SimState(
     val objects: Map<String, SimObject> = emptyMap(),
-    val globalVars: Map<String, String> = emptyMap(),  // живые глобальные — накапливаются между касаниями
+    val globalVars: Map<String, String> = emptyMap(),
     val log: List<String> = emptyList(),
     val errors: List<String> = emptyList(),
     val isStopped: Boolean = false
@@ -30,26 +32,20 @@ data class SimState(
 
 object SimEngine {
 
-    fun run(scripts: List<Script>, globalVarDefs: List<ProjectVar>): SimState {
+    suspend fun run(scripts: List<Script>, globalVarDefs: List<ProjectVar>): SimState {
         val objects = mutableMapOf<String, SimObject>()
         val log = mutableListOf<String>()
         val errors = mutableListOf<String>()
-        // Начальные значения глобальных переменных
         val globalVars = globalVarDefs.associate { it.name to it.value }.toMutableMap()
 
-        // ON_START скрипты
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
             log += "Скрипт «${script.name}»"
-            // Локальные переменные — только для этого скрипта, не сохраняются
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
-            val cont = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
-            // Сохраняем обновлённые глобальные
+            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
-            if (!cont) return@forEach
         }
 
-        // Привязываем ON_TAP
         scripts.filter { it.event == ScriptEvent.ON_TAP }.forEach { script ->
             val target = script.eventTarget.trim()
             if (target.isNotBlank()) {
@@ -59,46 +55,58 @@ object SimEngine {
             }
         }
 
+        scripts.filter { it.event == ScriptEvent.ON_HOLD }.forEach { script ->
+            val target = script.eventTarget.trim()
+            if (target.isNotBlank()) {
+                val obj = objects[target]
+                if (obj != null) objects[target] = obj.copy(holdScriptId = script.id)
+                else errors += "Скрипт «${script.name}»: объект «$target» не найден для ON_HOLD"
+            }
+        }
+
         return SimState(objects = objects, globalVars = globalVars, log = log, errors = errors, isStopped = false)
     }
 
-    /** ON_TAP: использует актуальные globalVars из SimState, локальные берёт из скрипта */
-    fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
-        // Если симуляция остановлена, не выполняем касания
+    suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
         if (currentState.isStopped) return currentState
-        
         val script = scripts.find { it.id == scriptId } ?: return currentState
+        return runScriptOnState(script, currentState)
+    }
+
+    suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
+        if (currentState.isStopped) return currentState
+        val script = scripts.find { it.id == scriptId } ?: return currentState
+        return runScriptOnState(script, currentState)
+    }
+
+    private suspend fun runScriptOnState(script: Script, currentState: SimState): SimState {
         val objects = currentState.objects.toMutableMap()
         val log = currentState.log.toMutableList()
         val errors = currentState.errors.toMutableList()
-
-        // Актуальные глобальные из SimState (накопленные)
         val globalVars = currentState.globalVars.toMutableMap()
-        // Локальные — из определения скрипта (сбрасываются при каждом касании)
         val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
         val vars = (globalVars + localVars).toMutableMap()
 
         log += "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors)
-        // Сохраняем обновлённые глобальные обратно в SimState
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
         return currentState.copy(
-            objects = objects, 
-            globalVars = globalVars, 
-            log = log, 
+            objects = objects,
+            globalVars = globalVars,
+            log = log,
             errors = errors,
             isStopped = !continued
         )
     }
 
-    private fun runScript(
+    private suspend fun runScript(
         blocks: List<BlockDef>,
         vars: MutableMap<String, String>,
         objects: MutableMap<String, SimObject>,
         log: MutableList<String>,
         errors: MutableList<String>
-    ): Boolean {  // returns false if sim_stop was hit
+    ): Boolean {
         for ((idx, block) in blocks.withIndex()) {
             val num = idx + 1
 
@@ -142,8 +150,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        val stopped = !runScript(branchBlocks, vars, objects, log, errors)
-                        if (stopped) return false
+                        if (!runScript(branchBlocks, vars, objects, log, errors)) return false
                     }
                 }
                 "sim_create" -> {
@@ -163,8 +170,14 @@ object SimEngine {
                     val name = getStr("name")
                     val obj = objects[name] ?: run { errors += "Блок $num «Переместить»: «$name» не найден"; continue }
                     val mode = block.params["mode"]?.value ?: "instant"
-                    val dx = getF("x"); val dy = getF("y")
-                    val (nx, ny) = if (mode == "step") (obj.x + dx) to (obj.y + dy) else dx to dy
+                    val rawX = block.params["x"]?.value ?: "0"
+                    val rawY = block.params["y"]?.value ?: "0"
+                    val noneX = rawX.trim() == "\$none"
+                    val noneY = rawY.trim() == "\$none"
+                    val dx = if (noneX) 0f else getF("x")
+                    val dy = if (noneY) 0f else getF("y")
+                    val nx = when { noneX -> obj.x; mode == "step" -> obj.x + dx; else -> dx }
+                    val ny = when { noneY -> obj.y; mode == "step" -> obj.y + dy; else -> dy }
                     objects[name] = obj.copy(x = nx, y = ny)
                     if (mode == "step") log += "  «$name» шаг (+$dx, +$dy) -> ($nx, $ny)"
                     else log += "  «$name» -> ($nx, $ny)"
@@ -227,8 +240,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        val stopped = !runScript(bodyBlocks, vars, objects, log, errors)
-                        if (stopped) return false
+                        if (!runScript(bodyBlocks, vars, objects, log, errors)) return false
                     }
                     vars.remove("i")
                 }
@@ -239,19 +251,19 @@ object SimEngine {
                     val bodyBlocks = block.children["body"] ?: emptyList()
                     log += "  Цикл пока: $left $op $right"
                     var iterations = 0
-                    while (iterations < 1000) { // защита от бесконечного цикла
+                    while (iterations < 1000) {
                         val (result, err) = ExprEval.evalCondition(left, op, right, vars)
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        val stopped = !runScript(bodyBlocks, vars, objects, log, errors)
-                        if (stopped) return false
+                        if (!runScript(bodyBlocks, vars, objects, log, errors)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
                 "wait" -> {
-                    val seconds = getF("seconds", 1f)
-                    log += "  Ждём ${seconds}с (симуляция не поддерживает реальные задержки)"
+                    val seconds = getF("seconds", 1f).coerceIn(0f, 60f)
+                    log += "  Ждём ${seconds}с"
+                    delay((seconds * 1000).toLong())
                 }
             }
         }

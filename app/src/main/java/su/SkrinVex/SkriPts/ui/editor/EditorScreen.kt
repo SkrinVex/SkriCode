@@ -1030,6 +1030,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
     ScriptEvent.ON_START -> Icons.Default.PlayArrow
     ScriptEvent.ON_TAP   -> Icons.Default.TouchApp
+    ScriptEvent.ON_HOLD  -> Icons.Default.PanTool
 }
 
 @Composable

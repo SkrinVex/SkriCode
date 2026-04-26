@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +37,8 @@ import su.SkrinVex.SkriPts.ui.theme.*
 fun SimulationScreen(
     state: SimState,
     onTap: (objectName: String) -> Unit,
+    onHoldStart: (objectName: String, pointerId: Long) -> Unit = { _, _ -> },
+    onHoldEnd: (pointerId: Long) -> Unit = {},
     onBack: () -> Unit,
     onClearLogs: () -> Unit = {}
 ) {
@@ -59,15 +61,34 @@ fun SimulationScreen(
             Modifier
                 .fillMaxSize()
                 .pointerInput(state.objects) {
-                    detectTapGestures { offset ->
-                        val cx = canvasSize.first / 2f
-                        val cy = canvasSize.second / 2f
-                        val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
-                            val left = cx + obj.x - obj.width / 2f
-                            val top  = cy - obj.y - obj.height / 2f
-                            offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val cx = canvasSize.first / 2f
+                            val cy = canvasSize.second / 2f
+                            when (event.type) {
+                                PointerEventType.Press -> {
+                                    event.changes.forEach { change ->
+                                        val offset = change.position
+                                        val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
+                                            val left = cx + obj.x - obj.width / 2f
+                                            val top  = cy - obj.y - obj.height / 2f
+                                            offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                                        }
+                                        if (hit != null) {
+                                            onTap(hit.name)
+                                            onHoldStart(hit.name, change.id.value.toLong())
+                                        }
+                                    }
+                                }
+                                PointerEventType.Release -> {
+                                    event.changes.forEach { change ->
+                                        onHoldEnd(change.id.value.toLong())
+                                    }
+                                }
+                                else -> {}
+                            }
                         }
-                        if (hit != null) onTap(hit.name)
                     }
                 }
         ) {
@@ -235,6 +256,12 @@ private fun ObjectsPanel(objects: List<SimObject>, onHighlight: (String) -> Unit
                     Text("TAP", color = Warning, fontSize = 10.sp,
                         modifier = Modifier.clip(RoundedCornerShape(4.dp))
                             .background(Warning.copy(0.15f)).padding(horizontal = 5.dp, vertical = 2.dp))
+                }
+                if (obj.holdScriptId != null) {
+                    Spacer(Modifier.width(4.dp))
+                    Text("HOLD", color = Color(0xFFA78BFA), fontSize = 10.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFFA78BFA).copy(0.15f)).padding(horizontal = 5.dp, vertical = 2.dp))
                 }
             }
         }
