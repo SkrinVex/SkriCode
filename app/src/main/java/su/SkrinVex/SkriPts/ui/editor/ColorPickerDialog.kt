@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.ui.theme.*
@@ -22,7 +24,6 @@ fun ColorPickerDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Парсим начальный цвет
     val initColor = parseHex(initial) ?: Color(0xFF4F8EF7)
     var r by remember { mutableFloatStateOf(initColor.red * 255f) }
     var g by remember { mutableFloatStateOf(initColor.green * 255f) }
@@ -30,6 +31,18 @@ fun ColorPickerDialog(
 
     val color = Color(r / 255f, g / 255f, b / 255f)
     val hex = "#%02X%02X%02X".format(r.roundToInt(), g.roundToInt(), b.roundToInt())
+
+    // Поле ввода HEX
+    var hexInput by remember(hex) { mutableStateOf(hex) }
+    // Синхронизируем слайдеры при ручном вводе
+    LaunchedEffect(hexInput) {
+        val parsed = parseHex(hexInput)
+        if (parsed != null) {
+            r = parsed.red * 255f
+            g = parsed.green * 255f
+            b = parsed.blue * 255f
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -45,19 +58,40 @@ fun ColorPickerDialog(
                         .border(1.dp, Color.White.copy(0.2f), RoundedCornerShape(10.dp))
                 )
 
-                // HEX
-                Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                        .background(Surface3).padding(horizontal = 12.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(hex, color = TextPrim, fontFamily = FontFamily.Monospace, fontSize = 16.sp)
-                }
+                // HEX поле — редактируемое и выделяемое
+                OutlinedTextField(
+                    value = hexInput,
+                    onValueChange = { v ->
+                        hexInput = v
+                    },
+                    label = { Text("HEX", fontSize = 12.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = LocalTextStyle.current.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Surface3,
+                        focusedLabelColor = Accent,
+                        focusedTextColor = TextPrim,
+                        unfocusedTextColor = TextPrim,
+                        cursorColor = Accent
+                    ),
+                    leadingIcon = {
+                        Box(
+                            Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)).background(color)
+                                .border(1.dp, Color.White.copy(0.3f), RoundedCornerShape(4.dp))
+                        )
+                    }
+                )
 
                 // Слайдеры RGB
-                RgbSlider("R", r, Color(1f, 0f, 0f)) { r = it }
-                RgbSlider("G", g, Color(0f, 0.8f, 0f)) { g = it }
-                RgbSlider("B", b, Color(0.2f, 0.5f, 1f)) { b = it }
+                RgbSlider("R", r, Color(1f, 0f, 0f)) { r = it; hexInput = "#%02X%02X%02X".format(it.roundToInt(), g.roundToInt(), b.roundToInt()) }
+                RgbSlider("G", g, Color(0f, 0.8f, 0f)) { g = it; hexInput = "#%02X%02X%02X".format(r.roundToInt(), it.roundToInt(), b.roundToInt()) }
+                RgbSlider("B", b, Color(0.2f, 0.5f, 1f)) { b = it; hexInput = "#%02X%02X%02X".format(r.roundToInt(), g.roundToInt(), it.roundToInt()) }
             }
         },
         confirmButton = {
@@ -73,7 +107,7 @@ fun ColorPickerDialog(
 @Composable
 private fun RgbSlider(label: String, value: Float, trackColor: Color, onChange: (Float) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, color = trackColor, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        Text(label, color = trackColor, fontSize = 13.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.width(16.dp))
         Slider(
             value = value,

@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -29,9 +30,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import su.SkrinVex.SkriPts.engine.JoystickState
 import su.SkrinVex.SkriPts.engine.SimObject
 import su.SkrinVex.SkriPts.engine.SimState
 import su.SkrinVex.SkriPts.ui.theme.*
+import kotlin.math.*
 
 @Composable
 fun SimulationScreen(
@@ -39,6 +42,8 @@ fun SimulationScreen(
     onTap: (objectName: String) -> Unit,
     onHoldStart: (objectName: String, pointerId: Long) -> Unit = { _, _ -> },
     onHoldEnd: (pointerId: Long) -> Unit = {},
+    onJoystickMove: (name: String, dx: Float, dy: Float, pointerId: Long) -> Unit = { _, _, _, _ -> },
+    onJoystickRelease: (pointerId: Long) -> Unit = {},
     onBack: () -> Unit,
     onClearLogs: () -> Unit = {},
     debugMode: Boolean = true
@@ -61,31 +66,53 @@ fun SimulationScreen(
         Canvas(
             Modifier
                 .fillMaxSize()
-                .pointerInput(state.objects) {
+                .pointerInput(state.objects, state.joysticks) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent()
                             val cx = canvasSize.first / 2f
                             val cy = canvasSize.second / 2f
                             when (event.type) {
-                                PointerEventType.Press -> {
+                                PointerEventType.Press, PointerEventType.Move -> {
                                     event.changes.forEach { change ->
                                         if (!change.pressed) return@forEach
                                         val offset = change.position
-                                        val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
-                                            val left = cx + obj.x - obj.width / 2f
-                                            val top  = cy - obj.y - obj.height / 2f
-                                            offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
-                                        }
-                                        if (hit != null) {
-                                            onTap(hit.name)
-                                            onHoldStart(hit.name, change.id.value.toLong())
+                                        val pid = change.id.value.toLong()
+                                        // Джойстик уже захвачен этим пальцем — продолжаем независимо от позиции
+                                        val capturedJoy = state.joysticks.values.firstOrNull { j -> j.pointerId == pid }
+                                        // Или новое нажатие в пределах базы
+                                        val joy = capturedJoy ?: if (event.type == PointerEventType.Press)
+                                            state.joysticks.values.firstOrNull { j ->
+                                                val jx = cx + j.x; val jy = cy - j.y
+                                                hypot(offset.x - jx, offset.y - jy) <= j.baseRadius
+                                            } else null
+                                        if (joy != null) {
+                                            val jx = cx + joy.x; val jy = cy - joy.y
+                                            val rawDx = (offset.x - jx) / joy.baseRadius
+                                            val rawDy = (offset.y - jy) / joy.baseRadius
+                                            val len = hypot(rawDx, rawDy).coerceAtMost(1f)
+                                            val angle = atan2(rawDy, rawDx)
+                                            onJoystickMove(joy.name, cos(angle) * len, -sin(angle) * len, pid)
+                                        } else if (event.type == PointerEventType.Press) {
+                                            val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
+                                                val left = cx + obj.x - obj.width / 2f
+                                                val top  = cy - obj.y - obj.height / 2f
+                                                offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                                            }
+                                            if (hit != null) {
+                                                onTap(hit.name)
+                                                onHoldStart(hit.name, pid)
+                                            }
                                         }
                                     }
                                 }
                                 PointerEventType.Release -> {
                                     event.changes.forEach { change ->
-                                        if (!change.pressed) onHoldEnd(change.id.value.toLong())
+                                        if (!change.pressed) {
+                                            val pid = change.id.value.toLong()
+                                            onHoldEnd(pid)
+                                            onJoystickRelease(pid)
+                                        }
                                     }
                                 }
                                 else -> {}
@@ -98,9 +125,10 @@ fun SimulationScreen(
             val cx = size.width / 2f
             val cy = size.height / 2f
             if (debugMode) drawGrid(cx, cy)
-            state.objects.values.forEach { 
-                if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj) 
+            state.objects.values.forEach {
+                if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj)
             }
+            state.joysticks.values.forEach { drawJoystick(it, cx, cy) }
         }
 
         // Кнопка закрыть — только в debug или при ошибках
@@ -283,26 +311,42 @@ private fun DrawScope.drawGrid(cx: Float, cy: Float) {
     drawLine(Color(0x33FFFFFF), Offset(0f, cy), Offset(size.width, cy), 1f)
 }
 
+private fun DrawScope.drawJoystick(joy: JoystickState, cx: Float, cy: Float) {
+    val jx = cx + joy.x
+    val jy = cy - joy.y
+    // База
+    drawCircle(color = joy.baseColor, radius = joy.baseRadius, center = Offset(jx, jy))
+    drawCircle(color = joy.baseColor.copy(alpha = 0.4f), radius = joy.baseRadius,
+        center = Offset(jx, jy), style = Stroke(width = 2f))
+    // Ручка
+    val kx = jx + joy.knobDx * (joy.baseRadius - joy.knobRadius)
+    val ky = jy - joy.knobDy * (joy.baseRadius - joy.knobRadius)
+    drawCircle(color = joy.knobColor, radius = joy.knobRadius, center = Offset(kx, ky))
+}
+
 private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean) {
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
     val cr = CornerRadius(obj.radius, obj.radius)
+    val centerX = left + obj.width / 2f
+    val centerY = top + obj.height / 2f
 
-    if (obj.color != Color.Transparent) {
-        drawRoundRect(color = obj.color, topLeft = Offset(left, top), size = Size(obj.width, obj.height), cornerRadius = cr)
-    }
+    rotate(obj.rotation, Offset(centerX, centerY)) {
+        if (obj.color != Color.Transparent) {
+            drawRoundRect(color = obj.color, topLeft = Offset(left, top), size = Size(obj.width, obj.height), cornerRadius = cr)
+        }
 
-    // Обводка
-    val strokeColor = when {
-        highlighted -> Color.Yellow
-        obj.tapScriptId != null -> Color.White.copy(alpha = 0.7f)
-        obj.color == Color.Transparent -> Color.Transparent
-        else -> obj.color.copy(alpha = 0.4f)
-    }
-    if (strokeColor != Color.Transparent) {
-        drawRoundRect(
-            color = strokeColor,
-            topLeft = Offset(left - 1f, top - 1f),
+        // Обводка
+        val strokeColor = when {
+            highlighted -> Color.Yellow
+            obj.tapScriptId != null -> Color.White.copy(alpha = 0.7f)
+            obj.color == Color.Transparent -> Color.Transparent
+            else -> obj.color.copy(alpha = 0.4f)
+        }
+        if (strokeColor != Color.Transparent) {
+            drawRoundRect(
+                color = strokeColor,
+                topLeft = Offset(left - 1f, top - 1f),
             size = Size(obj.width + 2f, obj.height + 2f),
             cornerRadius = CornerRadius(obj.radius + 1f, obj.radius + 1f),
             style = Stroke(width = if (highlighted) 3f else if (obj.tapScriptId != null) 2f else 1f)
@@ -325,4 +369,5 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
             }
         )
     }
+    } // end rotate
 }

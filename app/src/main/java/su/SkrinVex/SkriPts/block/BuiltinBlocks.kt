@@ -99,6 +99,23 @@ object BlockFactory {
         "sim_show" -> build("sim_show", "Показать объект", "Делает объект видимым и кликабельным", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект показать")))
 
+        "sim_rotate" -> build("sim_rotate", "Вращать объект", "Изменяет угол поворота объекта", BlockCategory.SIMULATION, listOf(
+            "name"  to p("rect1", "Имя объекта", "Какой объект"),
+            "mode"  to p("instant", "Режим", "instant = установить, step = добавить", ParamType.SELECT),
+            "angle" to p("0", "Угол (°)", "Градусы по часовой стрелке", ParamType.NUMBER)))
+
+        "sim_joystick" -> build("sim_joystick", "Джойстик", "Создаёт виртуальный джойстик для управления объектом", BlockCategory.SIMULATION, listOf(
+            "name"        to p("joy1", "Имя джойстика", "Уникальное имя"),
+            "x"           to p("-250", "X (от центра)", "Позиция X", ParamType.NUMBER),
+            "y"           to p("\$screenBottom + 300", "Y (от центра)", "Позиция Y"),
+            "baseRadius"  to p("100", "Радиус базы", "Размер основания", ParamType.NUMBER),
+            "knobRadius"  to p("40", "Радиус ручки", "Размер ручки", ParamType.NUMBER),
+            "baseColor"   to p("#334466", "Цвет базы", "#RRGGBB"),
+            "knobColor"   to p("#4F8EF7", "Цвет ручки", "#RRGGBB"),
+            "target"      to p("rect1", "Объект управления", "Какой объект двигать"),
+            "speed"       to p("8", "Скорость", "Пикселей за тик", ParamType.NUMBER),
+            "directional" to p("false", "Поворот по направлению", "true = объект поворачивается")))
+
         else -> null
     }
 }

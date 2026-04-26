@@ -552,11 +552,13 @@ private fun BlockCard(
                                         block.type == "set_var" && key == "name" ->
                                             VarNameChip(value = param.value, label = param.label,
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        key == "color" ->
+                                        key == "color" || key == "baseColor" || key == "knobColor" ->
                                             ColorField(param = param, onChange = { onParamChange(key, it) })
                                         block.type == "sim_move" && key == "mode" ->
                                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                                        key == "bold" ->
+                                        (block.type == "sim_rotate") && key == "mode" ->
+                                            RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ->
                                             BoolToggle(param = param, onChange = { onParamChange(key, it) })
                                         key == "op" || key == "op1" || key == "op2" ->
                                             OperatorSelector(param = param, onChange = { onParamChange(key, it) })
@@ -571,6 +573,28 @@ private fun BlockCard(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RotateModeToggle(value: String, onChange: (String) -> Unit) {
+    Column {
+        Text("Режим вращения", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)) {
+            listOf("instant" to "Установить", "step" to "Добавить").forEach { (mode, label) ->
+                val active = value == mode
+                Box(
+                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                        .background(if (active) Accent.copy(0.2f) else Color.Transparent)
+                        .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onChange(mode) }.padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (active) Accent else TextSec, fontSize = 13.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
@@ -870,11 +894,13 @@ private fun ChildBlockRow(
                         block.type == "set_var" && key == "name" ->
                             VarNameChip(value = param.value, label = param.label,
                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
-                        key == "color" ->
+                        key == "color" || key == "baseColor" || key == "knobColor" ->
                             ColorField(param = param, onChange = { onParamChange(key, it) })
                         block.type == "sim_move" && key == "mode" ->
                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                        key == "bold" ->
+                        (block.type == "sim_rotate") && key == "mode" ->
+                            RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ->
                             BoolToggle(param = param, onChange = { onParamChange(key, it) })
                         key in DIRECT_PARAM_KEYS ->
                             DirectInputField(param = param, onChange = { onParamChange(key, it) })

@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
                         onTap = { objName -> editorVm.handleTap(objName) },
                         onHoldStart = { objName, pid -> editorVm.handleHoldStart(objName, pid) },
                         onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },
+                        onJoystickMove = { name, dx, dy, pid -> editorVm.handleJoystickMove(name, dx, dy, pid) },
+                        onJoystickRelease = { pid -> editorVm.handleJoystickRelease(pid) },
                         onBack = { screen = "editor" },
                         onClearLogs = { editorVm.clearSimLogs() },
                         debugMode = ThemeManager.debugMode

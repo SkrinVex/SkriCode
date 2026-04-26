@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.*
 import su.SkrinVex.SkriPts.block.BlockDef
 import su.SkrinVex.SkriPts.block.BlockRegistry
 import su.SkrinVex.SkriPts.data.*
@@ -232,6 +233,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // Хранит активные hold-корутины по pointerId
     private val _holdJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
+    private val _joystickJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     fun handleHoldStart(objectName: String, pointerId: Long) {
         val state = _state.value
@@ -249,6 +251,68 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun handleHoldEnd(pointerId: Long) {
         _holdJobs.remove(pointerId)?.cancel()
+    }
+
+    fun handleJoystickMove(name: String, dx: Float, dy: Float, pointerId: Long) {
+        // Обновляем визуальное положение ручки и запускаем тик движения
+        _state.update { s ->
+            val sim = s.simState ?: return@update s
+            val joy = sim.joysticks[name] ?: return@update s
+            val newJoy = joy.copy(knobDx = dx, knobDy = dy, pointerId = pointerId)
+            s.copy(simState = sim.copy(joysticks = sim.joysticks + (name to newJoy)))
+        }
+        // Запускаем/обновляем тик для этого джойстика
+        if (_joystickJobs[name] == null) {
+            _joystickJobs[name] = viewModelScope.launch {
+                while (true) {
+                    val sim = _state.value.simState ?: break
+                    val joy = sim.joysticks[name] ?: break
+                    if (joy.pointerId == null) break
+                    val target = sim.objects[joy.targetObject] ?: run { delay(16); continue }
+                    val len = hypot(joy.knobDx, joy.knobDy)
+                    if (len > 0.05f) {
+                        val moveX = joy.knobDx * joy.speed
+                        val moveY = joy.knobDy * joy.speed
+                        val newRotation = if (joy.directional)
+                            (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
+                        else target.rotation
+                        val newTarget = if (joy.directional) {
+                            // движение по направлению поворота
+                            val rad = Math.toRadians(newRotation.toDouble() - 90.0)
+                            target.copy(
+                                x = target.x + (cos(rad) * len * joy.speed).toFloat(),
+                                y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
+                                rotation = newRotation
+                            )
+                        } else {
+                            target.copy(x = target.x + moveX, y = target.y + moveY)
+                        }
+                        _state.update { s ->
+                            val st = s.simState ?: return@update s
+                            s.copy(simState = st.copy(objects = st.objects + (joy.targetObject to newTarget)))
+                        }
+                    }
+                    delay(16) // ~60fps
+                }
+            }
+        }
+    }
+
+    fun handleJoystickRelease(pointerId: Long) {
+        // Сбрасываем ручку джойстика который держал этот палец
+        _state.update { s ->
+            val sim = s.simState ?: return@update s
+            val updated = sim.joysticks.mapValues { (_, joy) ->
+                if (joy.pointerId == pointerId) joy.copy(knobDx = 0f, knobDy = 0f, pointerId = null)
+                else joy
+            }
+            s.copy(simState = sim.copy(joysticks = updated))
+        }
+        // Останавливаем тики джойстиков без пальца
+        _joystickJobs.entries.removeIf { (name, job) ->
+            val joy = _state.value.simState?.joysticks?.get(name)
+            if (joy?.pointerId == null) { job.cancel(); true } else false
+        }
     }
 
     fun clearSimLogs() {

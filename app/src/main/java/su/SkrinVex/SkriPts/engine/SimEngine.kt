@@ -19,11 +19,29 @@ data class SimObject(
     val bold: Boolean = false,
     val tapScriptId: String? = null,
     val holdScriptId: String? = null,
-    val visible: Boolean = true
+    val visible: Boolean = true,
+    val rotation: Float = 0f  // градусы, по часовой стрелке
+)
+
+data class JoystickState(
+    val name: String,
+    val x: Float, val y: Float,          // позиция центра джойстика
+    val baseRadius: Float,               // радиус базы
+    val knobRadius: Float,               // радиус ручки
+    val baseColor: Color,
+    val knobColor: Color,
+    val targetObject: String,            // имя объекта которым управляет
+    val speed: Float,                    // скорость движения px/tick
+    val directional: Boolean,            // вращать объект по направлению
+    // runtime
+    val knobDx: Float = 0f,             // смещение ручки от центра (-1..1)
+    val knobDy: Float = 0f,
+    val pointerId: Long? = null          // какой палец держит
 )
 
 data class SimState(
     val objects: Map<String, SimObject> = emptyMap(),
+    val joysticks: Map<String, JoystickState> = emptyMap(),
     val globalVars: Map<String, String> = emptyMap(),
     val log: List<String> = emptyList(),
     val errors: List<String> = emptyList(),
@@ -38,6 +56,7 @@ object SimEngine {
         onUpdate: (SimState) -> Unit = {}
     ): SimState {
         val objects = mutableMapOf<String, SimObject>()
+        val joysticks = mutableMapOf<String, JoystickState>()
         val log = mutableListOf<String>()
         val errors = mutableListOf<String>()
         val globalVars = globalVarDefs.associate { it.name to it.value }.toMutableMap()
@@ -46,8 +65,8 @@ object SimEngine {
             log += "Скрипт «${script.name}»"
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
-            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors,
-                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), globalVars.toMap(), log.toList(), errors.toList())) })
+            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, log, errors,
+                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), log.toList(), errors.toList())) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
         }
 
@@ -69,7 +88,7 @@ object SimEngine {
             }
         }
 
-        return SimState(objects = objects, globalVars = globalVars, log = log, errors = errors, isStopped = false)
+        return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars, log = log, errors = errors, isStopped = false)
     }
 
     suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState): SimState {
@@ -86,6 +105,7 @@ object SimEngine {
 
     private suspend fun runScriptOnState(script: Script, currentState: SimState): SimState {
         val objects = currentState.objects.toMutableMap()
+        val joysticks = currentState.joysticks.toMutableMap()
         val log = currentState.log.toMutableList()
         val errors = currentState.errors.toMutableList()
         val globalVars = currentState.globalVars.toMutableMap()
@@ -93,11 +113,12 @@ object SimEngine {
         val vars = (globalVars + localVars).toMutableMap()
 
         log += "Касание -> «${script.name}»"
-        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, log, errors, allowDelay = true)
+        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, log, errors, allowDelay = true)
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
         return currentState.copy(
             objects = objects,
+            joysticks = joysticks,
             globalVars = globalVars,
             log = log,
             errors = errors,
@@ -109,6 +130,7 @@ object SimEngine {
         blocks: List<BlockDef>,
         vars: MutableMap<String, String>,
         objects: MutableMap<String, SimObject>,
+        joysticks: MutableMap<String, JoystickState>,
         log: MutableList<String>,
         errors: MutableList<String>,
         allowDelay: Boolean = true,
@@ -157,7 +179,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -247,7 +269,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -263,7 +285,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -274,6 +296,31 @@ object SimEngine {
                         onUpdate?.invoke()
                         delay((seconds * 1000).toLong())
                     }
+                }
+                "sim_rotate" -> {
+                    val name = getStr("name")
+                    val obj = objects[name] ?: run { errors += "Блок $num «Вращать»: «$name» не найден"; continue }
+                    val mode = block.params["mode"]?.value ?: "instant"
+                    val angle = getF("angle")
+                    val nr = if (mode == "step") obj.rotation + angle else angle
+                    objects[name] = obj.copy(rotation = nr % 360f)
+                    log += "  «$name» поворот -> ${nr % 360f}°"
+                }
+                "sim_joystick" -> {
+                    val name = getStr("name")
+                    if (name.isBlank()) { errors += "Блок $num «Джойстик»: имя пустое"; continue }
+                    joysticks[name] = JoystickState(
+                        name = name,
+                        x = getF("x"), y = getF("y"),
+                        baseRadius = getF("baseRadius", 100f).coerceAtLeast(20f),
+                        knobRadius = getF("knobRadius", 40f).coerceAtLeast(10f),
+                        baseColor = parseColor(getStr("baseColor", "#334466")),
+                        knobColor = parseColor(getStr("knobColor", "#4F8EF7")),
+                        targetObject = getStr("target"),
+                        speed = getF("speed", 8f).coerceAtLeast(1f),
+                        directional = getStr("directional", "false") == "true"
+                    )
+                    log += "  Джойстик «$name» создан"
                 }
             }
         }
