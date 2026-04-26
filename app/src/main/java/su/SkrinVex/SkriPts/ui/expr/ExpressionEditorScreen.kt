@@ -1,6 +1,8 @@
 package su.SkrinVex.SkriPts.ui.expr
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.data.ProjectVar
+import su.SkrinVex.SkriPts.data.ProjectTag
 import su.SkrinVex.SkriPts.data.VarScope
 import su.SkrinVex.SkriPts.ui.theme.*
 
@@ -42,25 +45,32 @@ fun ExpressionEditorScreen(
     initialValue: String,
     paramLabel: String,
     variables: List<ProjectVar>,
+    tags: List<ProjectTag> = emptyList(),
     isIdentifier: Boolean = false,
     onConfirm: (String) -> Unit,
     onCreateVar: (name: String, scope: VarScope) -> Unit,
     onDeleteVar: ((name: String, scope: VarScope) -> Unit)? = null,
+    onCreateTag: ((name: String, scope: VarScope) -> Unit)? = null,
+    onDeleteTag: ((name: String, scope: VarScope) -> Unit)? = null,
     onBack: () -> Unit
 ) {
     var value by remember { mutableStateOf(initialValue) }
     val history = remember { mutableStateListOf(initialValue) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showCreateVar by remember { mutableStateOf(false) }
-    var createVarScope by remember { mutableStateOf(VarScope.GLOBAL) }
+    var showCreateTag by remember { mutableStateOf(false) }
     var showDeleteVar by remember { mutableStateOf<ProjectVar?>(null) }
-
-    val globalVars = variables.filter { it.scope == VarScope.GLOBAL }
-    val localVars  = variables.filter { it.scope == VarScope.LOCAL }
+    var showDeleteTag by remember { mutableStateOf<ProjectTag?>(null) }
+    var hasChanges by remember { mutableStateOf(false) }
 
     fun push(v: String) { if (history.lastOrNull() != v) history.add(v) }
-    fun insertVar(name: String) { push(value); value = if (isIdentifier) name else value + "{$name}" }
-    fun insertFn(insert: String) { push(value); value = value + insert }
+    fun insertVar(name: String) { push(value); value = if (isIdentifier) name else value + "{$name}"; hasChanges = true }
+    fun insertTag(name: String) { push(value); value = if (isIdentifier) name else value + "#$name"; hasChanges = true }
+    fun insertFn(insert: String) { push(value); value = value + insert; hasChanges = true }
+    
+    BackHandler(enabled = !hasChanges) {
+        onBack()
+    }
 
     Box(Modifier.fillMaxSize().background(Navy900)) {
         Column(Modifier.fillMaxSize()) {
@@ -123,15 +133,15 @@ fun ExpressionEditorScreen(
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                     Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Public, null, modifier = Modifier.size(14.dp))
-                        Text("Глобальные (${globalVars.size})", fontSize = 13.sp)
+                        Icon(Icons.Default.DataObject, null, modifier = Modifier.size(14.dp))
+                        Text("Переменные (${variables.size})", fontSize = 13.sp)
                     }
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                     Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null, modifier = Modifier.size(14.dp))
-                        Text("Локальные (${localVars.size})", fontSize = 13.sp)
+                        Icon(Icons.Default.Tag, null, modifier = Modifier.size(14.dp))
+                        Text("Теги (${tags.size})", fontSize = 13.sp)
                     }
                 }
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
@@ -144,55 +154,53 @@ fun ExpressionEditorScreen(
             }
 
             when (selectedTab) {
+                0 -> VarsTab(variables, onInsert = { insertVar(it) }, onDelete = { showDeleteVar = it })
+                1 -> TagsTab(tags, onInsert = { insertTag(it) }, onDelete = if (onDeleteTag != null) { { showDeleteTag = it } } else null)
                 2 -> FunctionsTab(onInsert = { insertFn(it) })
-                else -> {
-                    val currentVars = if (selectedTab == 0) globalVars else localVars
-                    Column(Modifier.weight(1f)) {
-                        if (currentVars.isEmpty()) {
-                            Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
-                                Text("Нет переменных", color = TextSec, fontSize = 14.sp)
-                            }
-                        } else {
-                            LazyColumn(
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                items(currentVars, key = { it.name }) { v ->
-                                    VarRow(
-                                        variable = v,
-                                        onClick = { insertVar(v.name) },
-                                        onDelete = if (onDeleteVar != null) { { showDeleteVar = v } } else null
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
 
-        // FAB — создать переменную (всегда видна, кроме режима isIdentifier)
+        // FAB — создать переменную или тег
         FloatingActionButton(
             onClick = {
-                createVarScope = if (selectedTab == 0) VarScope.GLOBAL else VarScope.LOCAL
-                showCreateVar = true
+                when (selectedTab) {
+                    0 -> showCreateVar = true
+                    1 -> if (onCreateTag != null) showCreateTag = true
+                }
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             containerColor = Accent
         ) {
-            Icon(Icons.Default.Add, "Создать переменную", tint = Navy900)
+            Icon(Icons.Default.Add, "Создать", tint = Navy900)
         }
     }
 
     if (showCreateVar) {
+        var selectedScope by remember { mutableStateOf(VarScope.GLOBAL) }
         CreateVarDialog(
-            scope = createVarScope,
+            scope = selectedScope,
+            onScopeChange = { selectedScope = it },
             existingNames = variables.map { it.name }.toSet(),
             onDismiss = { showCreateVar = false },
             onCreate = { name, scope ->
                 onCreateVar(name, scope)
                 showCreateVar = false
                 insertVar(name)
+            }
+        )
+    }
+    
+    if (showCreateTag && onCreateTag != null) {
+        var selectedScope by remember { mutableStateOf(VarScope.GLOBAL) }
+        CreateTagDialog(
+            scope = selectedScope,
+            onScopeChange = { selectedScope = it },
+            existingNames = tags.map { it.name }.toSet(),
+            onDismiss = { showCreateTag = false },
+            onCreate = { name, scope ->
+                onCreateTag(name, scope)
+                showCreateTag = false
+                insertTag(name)
             }
         )
     }
@@ -220,6 +228,30 @@ fun ExpressionEditorScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteVar = null }) {
+                    Text("Отмена", color = TextSec)
+                }
+            }
+        )
+    }
+    
+    showDeleteTag?.let { tag ->
+        AlertDialog(
+            onDismissRequest = { showDeleteTag = null },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить тег?", color = TextPrim) },
+            text = { Text("Тег «#${tag.name}» будет удалён.", color = TextSec) },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        onDeleteTag?.invoke(tag.name, tag.scope)
+                        showDeleteTag = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteTag = null }) {
                     Text("Отмена", color = TextSec)
                 }
             }
@@ -346,6 +378,7 @@ private fun VarRow(variable: ProjectVar, onClick: () -> Unit, onDelete: (() -> U
 @Composable
 private fun CreateVarDialog(
     scope: VarScope,
+    onScopeChange: (VarScope) -> Unit,
     existingNames: Set<String>,
     onDismiss: () -> Unit,
     onCreate: (String, VarScope) -> Unit
@@ -362,9 +395,26 @@ private fun CreateVarDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
         icon = { Icon(Icons.Default.DataObject, null, tint = if (scope == VarScope.GLOBAL) Accent else Warning) },
-        title = { Text("${if (scope == VarScope.GLOBAL) "Глобальная" else "Локальная"} переменная", color = TextPrim) },
+        title = { Text("Создать переменную", color = TextPrim) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Переключатель области видимости
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)) {
+                    listOf(VarScope.GLOBAL to "Глобальная", VarScope.LOCAL to "Локальная").forEach { (s, label) ->
+                        val active = scope == s
+                        Box(
+                            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                .background(if (active) (if (s == VarScope.GLOBAL) Accent else Warning).copy(0.2f) else Color.Transparent)
+                                .border(if (active) 1.dp else 0.dp, if (active) (if (s == VarScope.GLOBAL) Accent else Warning) else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable { onScopeChange(s) }.padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, color = if (active) (if (s == VarScope.GLOBAL) Accent else Warning) else TextSec, fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+                
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Имя переменной") },
@@ -390,6 +440,189 @@ private fun CreateVarDialog(
                 enabled = name.isNotBlank() && nameError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = Accent)
             ) { Text("Создать", color = Navy900) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
+    )
+}
+
+@Composable
+private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onDelete: (ProjectVar) -> Unit) {
+    val globalVars = variables.filter { it.scope == VarScope.GLOBAL }
+    val localVars = variables.filter { it.scope == VarScope.LOCAL }
+    
+    Column(Modifier.fillMaxHeight()) {
+        if (variables.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
+                Text("Нет переменных", color = TextSec, fontSize = 14.sp)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (globalVars.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Icon(Icons.Default.Public, null, tint = Accent, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Глобальные", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(globalVars, key = { it.name }) { v ->
+                        VarRow(variable = v, onClick = { onInsert(v.name) }, onDelete = { onDelete(v) })
+                    }
+                }
+                if (localVars.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).padding(top = if (globalVars.isNotEmpty()) 8.dp else 0.dp)) {
+                            Icon(Icons.Default.Lock, null, tint = Warning, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Локальные", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(localVars, key = { it.name }) { v ->
+                        VarRow(variable = v, onClick = { onInsert(v.name) }, onDelete = { onDelete(v) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagsTab(tags: List<ProjectTag>, onInsert: (String) -> Unit, onDelete: ((ProjectTag) -> Unit)?) {
+    val globalTags = tags.filter { it.scope == VarScope.GLOBAL }
+    val localTags = tags.filter { it.scope == VarScope.LOCAL }
+    
+    Column(Modifier.fillMaxHeight()) {
+        if (tags.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
+                Text("Нет тегов", color = TextSec, fontSize = 14.sp)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (globalTags.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Icon(Icons.Default.Public, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Глобальные", color = Color(0xFFFF6B6B), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(globalTags, key = { it.name }) { t ->
+                        TagRow(tag = t, onClick = { onInsert(t.name) }, onDelete = onDelete?.let { { it(t) } })
+                    }
+                }
+                if (localTags.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).padding(top = if (globalTags.isNotEmpty()) 8.dp else 0.dp)) {
+                            Icon(Icons.Default.Lock, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Локальные", color = Color(0xFFFF6B6B), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(localTags, key = { it.name }) { t ->
+                        TagRow(tag = t, onClick = { onInsert(t.name) }, onDelete = onDelete?.let { { it(t) } })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagRow(tag: ProjectTag, onClick: () -> Unit, onDelete: (() -> Unit)?) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface2)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Tag, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("#${tag.name}", color = TextPrim, fontSize = 15.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+            if (onDelete != null) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = Danger.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateTagDialog(
+    scope: VarScope,
+    onScopeChange: (VarScope) -> Unit,
+    existingNames: Set<String>,
+    onDismiss: () -> Unit,
+    onCreate: (String, VarScope) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    val nameError = when {
+        name.isBlank() -> null
+        !name.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*")) -> "Только латинские буквы, цифры и _"
+        name in existingNames -> "Тег с таким именем уже существует"
+        else -> null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        icon = { Icon(Icons.Default.Tag, null, tint = Color(0xFFFF6B6B)) },
+        title = { Text("Создать тег", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Переключатель области видимости
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)) {
+                    listOf(VarScope.GLOBAL to "Глобальный", VarScope.LOCAL to "Локальный").forEach { (s, label) ->
+                        val active = scope == s
+                        Box(
+                            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                .background(if (active) Color(0xFFFF6B6B).copy(0.2f) else Color.Transparent)
+                                .border(if (active) 1.dp else 0.dp, if (active) Color(0xFFFF6B6B) else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable { onScopeChange(s) }.padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, color = if (active) Color(0xFFFF6B6B) else TextSec, fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+                
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Имя тега") },
+                    placeholder = { Text("enemies", color = TextSec) },
+                    prefix = { Text("#", color = Color(0xFFFF6B6B)) },
+                    singleLine = true, isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it, color = Danger) } },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFF6B6B), focusedLabelColor = Color(0xFFFF6B6B),
+                        cursorColor = Color(0xFFFF6B6B), focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    )
+                )
+                Text(
+                    if (scope == VarScope.GLOBAL) "Доступен во всех скриптах проекта"
+                    else "Доступен только в текущем скрипте",
+                    color = TextSec, fontSize = 12.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank() && nameError == null) onCreate(name.trim(), scope) },
+                enabled = name.isNotBlank() && nameError == null,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
+            ) { Text("Создать") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
     )

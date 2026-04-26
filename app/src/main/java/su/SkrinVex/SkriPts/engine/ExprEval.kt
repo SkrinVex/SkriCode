@@ -61,6 +61,10 @@ object ExprEval {
                     sb.append(value)
                     i = end + 1
                 }
+                expr[i] == '#' -> {
+                    // Тег - просто копируем как есть
+                    sb.append(expr[i++])
+                }
                 else -> sb.append(expr[i++])
             }
         }

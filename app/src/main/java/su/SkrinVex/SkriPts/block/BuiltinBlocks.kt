@@ -28,6 +28,10 @@ object BlockFactory {
             "name"  to p("", "Имя переменной", "Нажми чтобы выбрать"),
             "value" to p("0", "Значение", "Число или текст")))
 
+        "set_tag" -> build("set_tag", "Установить тег", "Присваивает тег объекту для группировки", BlockCategory.SIMULATION, listOf(
+            "object" to p("rect1", "Имя объекта", "Какому объекту"),
+            "tag"    to p("", "Тег", "Нажми чтобы выбрать")))
+
         "sim_create" -> build("sim_create", "Создать объект", "Создаёт прямоугольник на сцене", BlockCategory.SIMULATION, listOf(
             "name"   to p("rect1", "Имя объекта", "Уникальное имя"),
             "x"      to p("0", "X (от центра)", "Вправо = +, влево = −", ParamType.NUMBER),

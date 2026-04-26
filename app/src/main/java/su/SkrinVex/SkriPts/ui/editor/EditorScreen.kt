@@ -44,8 +44,6 @@ import su.SkrinVex.SkriPts.ui.theme.*
 
 data class ExprEditTarget(val blockIndex: Int, val paramKey: String, val paramLabel: String, val currentValue: String, val isIdentifier: Boolean = false, val branch: String? = null, val childIndex: Int = -1)
 
-private val DIRECT_PARAM_KEYS = setOf("name", "color")
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
@@ -62,6 +60,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             initialValue = target.currentValue,
             paramLabel = target.paramLabel,
             variables = state.visibleVars,
+            tags = state.visibleTags,
             isIdentifier = target.isIdentifier,
             onConfirm = { value ->
                 if (target.branch != null && target.childIndex >= 0) {
@@ -73,6 +72,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             },
             onCreateVar = { name, scope -> vm.addVariable(name, scope) },
             onDeleteVar = { name, scope -> vm.deleteVariable(name, scope) },
+            onCreateTag = { name, scope -> vm.addTag(name, scope) },
+            onDeleteTag = { name, scope -> vm.deleteTag(name, scope) },
             onBack = { exprTarget = null }
         )
         return
@@ -615,6 +616,18 @@ private fun BlockCard(
                                         block.type == "set_var" && key == "name" ->
                                             VarNameChip(value = param.value, label = param.label,
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        block.type == "set_tag" && key == "tag" ->
+                                            TagNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        block.type == "set_tag" && key == "object" ->
+                                            ObjectNameChip(param = param, variables = variables,
+                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
+                                        (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
+                                            ObjectNameChip(param = param, variables = variables,
+                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
+                                        key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick") ->
+                                            ExprChip(param = param, variables = variables,
+                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
                                         key == "color" || key == "baseColor" || key == "knobColor" ->
                                             ColorField(param = param, onChange = { onParamChange(key, it) })
                                         block.type == "sim_move" && key == "mode" ->
@@ -625,8 +638,6 @@ private fun BlockCard(
                                             BoolToggle(param = param, onChange = { onParamChange(key, it) })
                                         key == "op" || key == "op1" || key == "op2" ->
                                             OperatorSelector(param = param, onChange = { onParamChange(key, it) })
-                                        key in DIRECT_PARAM_KEYS ->
-                                            DirectInputField(param = param, onChange = { onParamChange(key, it) })
                                         else ->
                                             ExprChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
@@ -1000,8 +1011,6 @@ private fun ChildBlockRow(
                             RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
                         key == "bold" || (block.type == "sim_joystick" && key == "directional") ->
                             BoolToggle(param = param, onChange = { onParamChange(key, it) })
-                        key in DIRECT_PARAM_KEYS ->
-                            DirectInputField(param = param, onChange = { onParamChange(key, it) })
                         else ->
                             ExprChip(param = param, variables = variables,
                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
@@ -1009,6 +1018,42 @@ private fun ChildBlockRow(
                     Spacer(Modifier.height(4.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ObjectNameChip(param: BlockParam, variables: List<ProjectVar>, onClick: () -> Unit) {
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                .background(Surface3)
+                .border(1.dp, Accent.copy(0.3f), RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val icon = when {
+                param.value.startsWith("#") -> Icons.Default.Tag
+                param.value.startsWith("{") && param.value.endsWith("}") -> Icons.Default.DataObject
+                variables.any { it.name == param.value } -> Icons.Default.DataObject
+                else -> Icons.Default.TextFields
+            }
+            val iconColor = when {
+                param.value.startsWith("#") -> Color(0xFFFF6B6B)
+                param.value.startsWith("{") && param.value.endsWith("}") -> Warning
+                variables.any { it.name == param.value } -> Warning
+                else -> Accent
+            }
+            Icon(icon, null, tint = iconColor, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                param.value.ifBlank { param.hint },
+                color = if (param.value.isBlank()) TextSec else TextPrim,
+                fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.Edit, null, tint = TextSec, modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -1056,6 +1101,30 @@ private fun VarNameChip(value: String, label: String, onClick: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Text(
                 value.ifBlank { "Нажми чтобы выбрать переменную" },
+                color = if (value.isBlank()) TextSec else TextPrim,
+                fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
+    Column {
+        Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                .background(Surface3)
+                .border(1.dp, Color(0xFFFF6B6B).copy(0.4f), RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Tag, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (value.isBlank()) "Нажми чтобы выбрать тег" else "#$value",
                 color = if (value.isBlank()) TextSec else TextPrim,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
@@ -1127,6 +1196,7 @@ private fun SmallBtn(icon: ImageVector, onClick: () -> Unit, enabled: Boolean = 
 @Composable
 private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     var selectedCategory by remember { mutableStateOf<BlockCategory?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     val allBlocks = BlockRegistry.byCategory()
     val categories = allBlocks.keys.toList()
     
@@ -1140,6 +1210,22 @@ private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
         Column(Modifier.fillMaxWidth()) {
             Text("Добавить блок", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Поиск блоков...", color = TextSec) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Surface3,
+                    focusedTextColor = TextPrim,
+                    unfocusedTextColor = TextPrim,
+                    cursorColor = Accent
+                )
+            )
             
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp),
@@ -1178,8 +1264,19 @@ private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxWidth()) {
                 val filtered = if (selectedCategory == null) allBlocks else allBlocks.filterKeys { it == selectedCategory }
-                filtered.forEach { (category, metas) ->
-                    if (selectedCategory == null) {
+                val searched = if (searchQuery.isBlank()) {
+                    filtered
+                } else {
+                    filtered.mapValues { (_, metas) ->
+                        metas.filter { meta ->
+                            meta.displayName.contains(searchQuery, ignoreCase = true) ||
+                            meta.description.contains(searchQuery, ignoreCase = true)
+                        }
+                    }.filterValues { it.isNotEmpty() }
+                }
+                
+                searched.forEach { (category, metas) ->
+                    if (selectedCategory == null && searchQuery.isBlank()) {
                         item {
                             Text(category.label.uppercase(), color = categoryColor(category),
                                 fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp,

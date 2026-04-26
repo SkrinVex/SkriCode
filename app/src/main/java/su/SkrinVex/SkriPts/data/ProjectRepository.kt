@@ -15,6 +15,11 @@ data class ProjectVar(
     val value: String = "0"
 )
 
+data class ProjectTag(
+    val name: String,
+    val scope: VarScope
+)
+
 enum class ScriptEvent(val label: String) {
     ON_START("При запуске"),
     ON_TAP("При касании объекта"),
@@ -28,6 +33,7 @@ data class Script(
     val eventTarget: String = "",
     val blocks: List<SerializedBlock> = emptyList(),
     val localVars: List<ProjectVar>? = emptyList(),
+    val localTags: List<ProjectTag>? = emptyList(),
     val collapsedBlockIds: Set<String>? = emptySet()  // сохранённые свёрнутые блоки
 )
 
@@ -36,6 +42,7 @@ data class ScriptProject(
     val name: String,
     val scripts: List<Script>? = emptyList(),
     val globalVars: List<ProjectVar>? = emptyList(),  // только глобальные
+    val globalTags: List<ProjectTag>? = emptyList(),
     // legacy
     val variables: List<ProjectVar>? = null,
     val blocks: List<SerializedBlock>? = null

@@ -22,6 +22,7 @@ data class EditorState(
     val scripts: List<Script> = listOf(Script(UUID.randomUUID().toString(), "Скрипт 1")),
     val activeScriptId: String = "",
     val globalVars: List<ProjectVar> = emptyList(),
+    val globalTags: List<ProjectTag> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     val validationErrors: List<String> = emptyList()
@@ -30,6 +31,8 @@ data class EditorState(
     val activeBlocks: List<BlockDef> get() = activeScript.blocks.mapNotNull { it.deserialize() }
     /** Переменные видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleVars: List<ProjectVar> get() = globalVars + (activeScript.localVars ?: emptyList())
+    /** Теги видимые в активном скрипте: глобальные + локальные этого скрипта */
+    val visibleTags: List<ProjectTag> get() = globalTags + (activeScript.localTags ?: emptyList())
 }
 
 @OptIn(FlowPreview::class)
@@ -67,6 +70,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
         val globalVars = (project.globalVars ?: project.variables ?: emptyList())
             .filter { it.scope == VarScope.GLOBAL }
+        
+        val globalTags = project.globalTags ?: emptyList()
 
         // Восстанавливаем collapsed из файла
         scripts.forEach { script ->
@@ -81,7 +86,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             projectName = project.name,
             scripts = scripts,
             activeScriptId = scripts.first().id,
-            globalVars = globalVars
+            globalVars = globalVars,
+            globalTags = globalTags
         )}
     }
 
@@ -211,6 +217,37 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val activeId = _state.value.activeScriptId
                 updateScript(activeId) { script ->
                     script.copy(localVars = script.localVars.orEmpty().filter { v -> v.name != name })
+                }
+            }
+        }
+    }
+
+    // --- Теги ---
+    fun addTag(name: String, scope: VarScope) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                if (it.globalTags.any { t -> t.name == name }) it
+                else it.copy(globalTags = it.globalTags + ProjectTag(name, scope))
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    if (script.localTags.orEmpty().any { t -> t.name == name }) script
+                    else script.copy(localTags = script.localTags.orEmpty() + ProjectTag(name, scope))
+                }
+            }
+        }
+    }
+
+    fun deleteTag(name: String, scope: VarScope) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                it.copy(globalTags = it.globalTags.filter { t -> t.name != name })
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    script.copy(localTags = script.localTags.orEmpty().filter { t -> t.name != name })
                 }
             }
         }
@@ -366,7 +403,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
-            scripts = scripts, globalVars = s.globalVars
+            scripts = scripts, globalVars = s.globalVars, globalTags = s.globalTags
         ))
     }
 

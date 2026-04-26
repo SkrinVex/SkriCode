@@ -20,7 +20,8 @@ data class SimObject(
     val tapScriptId: String? = null,
     val holdScriptId: String? = null,
     val visible: Boolean = true,
-    val rotation: Float = 0f  // градусы, по часовой стрелке
+    val rotation: Float = 0f,  // градусы, по часовой стрелке
+    val tags: Set<String> = emptySet()  // теги объекта
 )
 
 data class JoystickState(
@@ -136,6 +137,20 @@ object SimEngine {
         allowDelay: Boolean = true,
         onUpdate: (() -> Unit)? = null
     ): Boolean {
+        // Вспомогательная функция для получения объектов по имени или тегу
+        fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
+            // Вычисляем выражение (поддержка переменных)
+            val resolved = ExprEval.eval(nameOrTag, vars).value
+            
+            return if (resolved.startsWith("#")) {
+                val tag = resolved.substring(1)
+                objects.filter { (_, obj) -> tag in obj.tags }.toList()
+            } else {
+                val obj = objects[resolved]
+                if (obj != null) listOf(resolved to obj) else emptyList()
+            }
+        }
+        
         for ((idx, block) in blocks.withIndex()) {
             val num = idx + 1
 
@@ -162,6 +177,15 @@ object SimEngine {
                     val value = getStr("value")
                     vars[name] = value
                     log += "  $name = $value"
+                }
+                "set_tag" -> {
+                    val objName = getStr("object")
+                    val tag = block.params["tag"]?.value?.trim() ?: ""
+                    if (tag.isBlank()) { errors += "Блок $num «Установить тег»: тег не заполнен"; continue }
+                    val obj = objects[objName]
+                    if (obj == null) { errors += "Блок $num «Установить тег»: объект «$objName» не найден"; continue }
+                    objects[objName] = obj.copy(tags = obj.tags + tag)
+                    log += "  Тег #$tag установлен для «$objName»"
                 }
                 "sim_stop" -> {
                     log += "  Симуляция остановлена"
@@ -196,8 +220,9 @@ object SimEngine {
                     log += "  Создан «$name» (${getStr("x")}, ${getStr("y")}) ${getStr("width")}x${getStr("height")}"
                 }
                 "sim_move" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Переместить»: «$name» не найден"; continue }
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Переместить»: «$nameOrTag» не найден"; continue }
                     val mode = block.params["mode"]?.value ?: "instant"
                     val rawX = block.params["x"]?.value ?: "0"
                     val rawY = block.params["y"]?.value ?: "0"
@@ -205,36 +230,46 @@ object SimEngine {
                     val noneY = rawY.trim() == "\$none"
                     val dx = if (noneX) 0f else getF("x")
                     val dy = if (noneY) 0f else getF("y")
-                    val nx = when { noneX -> obj.x; mode == "step" -> obj.x + dx; else -> dx }
-                    val ny = when { noneY -> obj.y; mode == "step" -> obj.y + dy; else -> dy }
-                    objects[name] = obj.copy(x = nx, y = ny)
-                    if (mode == "step") log += "  «$name» шаг (+$dx, +$dy) -> ($nx, $ny)"
-                    else log += "  «$name» -> ($nx, $ny)"
+                    targets.forEach { (name, obj) ->
+                        val nx = when { noneX -> obj.x; mode == "step" -> obj.x + dx; else -> dx }
+                        val ny = when { noneY -> obj.y; mode == "step" -> obj.y + dy; else -> dy }
+                        objects[name] = obj.copy(x = nx, y = ny)
+                    }
+                    if (mode == "step") log += "  «$nameOrTag» шаг (+$dx, +$dy)"
+                    else log += "  «$nameOrTag» -> ($dx, $dy)"
                 }
                 "sim_resize" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Размер»: «$name» не найден"; continue }
-                    objects[name] = obj.copy(width = getF("width", 100f).coerceAtLeast(1f), height = getF("height", 60f).coerceAtLeast(1f))
-                    log += "  «$name» размер ${getStr("width")}x${getStr("height")}"
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Размер»: «$nameOrTag» не найден"; continue }
+                    val w = getF("width", 100f).coerceAtLeast(1f)
+                    val h = getF("height", 60f).coerceAtLeast(1f)
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(width = w, height = h) }
+                    log += "  «$nameOrTag» размер ${getStr("width")}x${getStr("height")}"
                 }
                 "sim_color" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Цвет»: «$name» не найден"; continue }
-                    objects[name] = obj.copy(color = parseColor(getStr("color", "#4F8EF7")))
-                    log += "  «$name» цвет -> ${getStr("color")}"
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Цвет»: «$nameOrTag» не найден"; continue }
+                    val color = parseColor(getStr("color", "#4F8EF7"))
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(color = color) }
+                    log += "  «$nameOrTag» цвет -> ${getStr("color")}"
                 }
                 "sim_label" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Текст»: «$name» не найден"; continue }
-                    objects[name] = obj.copy(label = getStr("text"))
-                    log += "  «$name» текст: «${getStr("text")}»"
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Текст»: «$nameOrTag» не найден"; continue }
+                    val text = getStr("text")
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(label = text) }
+                    log += "  «$nameOrTag» текст: «$text»"
                 }
                 "sim_update_text" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Обновить текст»: «$name» не найден"; continue }
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Обновить текст»: «$nameOrTag» не найден"; continue }
                     val text = getStr("text")
-                    objects[name] = obj.copy(label = text)
-                    log += "  «$name» текст обновлён: «$text»"
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(label = text) }
+                    log += "  «$nameOrTag» текст обновлён: «$text»"
                 }
                 "sim_text" -> {
                     val name = getStr("name")
@@ -252,16 +287,18 @@ object SimEngine {
                     log += "  Текст «$name»: «${getStr("text")}»"
                 }
                 "sim_hide" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Скрыть»: «$name» не найден"; continue }
-                    objects[name] = obj.copy(visible = false)
-                    log += "  «$name» скрыт"
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Скрыть»: «$nameOrTag» не найден"; continue }
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = false) }
+                    log += "  «$nameOrTag» скрыт"
                 }
                 "sim_show" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Показать»: «$name» не найден"; continue }
-                    objects[name] = obj.copy(visible = true)
-                    log += "  «$name» показан"
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Показать»: «$nameOrTag» не найден"; continue }
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = true) }
+                    log += "  «$nameOrTag» показан"
                 }
                 "for_loop" -> {
                     val count = getF("count").toInt().coerceAtLeast(0)
@@ -298,13 +335,16 @@ object SimEngine {
                     }
                 }
                 "sim_rotate" -> {
-                    val name = getStr("name")
-                    val obj = objects[name] ?: run { errors += "Блок $num «Вращать»: «$name» не найден"; continue }
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Вращать»: «$nameOrTag» не найден"; continue }
                     val mode = block.params["mode"]?.value ?: "instant"
                     val angle = getF("angle")
-                    val nr = if (mode == "step") obj.rotation + angle else angle
-                    objects[name] = obj.copy(rotation = nr % 360f)
-                    log += "  «$name» поворот -> ${nr % 360f}°"
+                    targets.forEach { (name, obj) ->
+                        val nr = if (mode == "step") obj.rotation + angle else angle
+                        objects[name] = obj.copy(rotation = nr % 360f)
+                    }
+                    log += "  «$nameOrTag» поворот -> ${angle}°"
                 }
                 "sim_joystick" -> {
                     val name = getStr("name")
