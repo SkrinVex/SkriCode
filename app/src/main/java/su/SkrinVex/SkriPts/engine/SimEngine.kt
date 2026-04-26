@@ -6,6 +6,7 @@ import su.SkrinVex.SkriPts.block.BlockDef
 import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.ProjectVar
+import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.data.deserialize
 
 data class SimObject(
@@ -45,6 +46,7 @@ data class SimState(
     val objects: Map<String, SimObject> = emptyMap(),
     val joysticks: Map<String, JoystickState> = emptyMap(),
     val globalVars: Map<String, String> = emptyMap(),
+    val tables: Map<String, Map<String, String>> = emptyMap(),
     val log: List<String> = emptyList(),
     val errors: List<String> = emptyList(),
     val isStopped: Boolean = false
@@ -55,6 +57,7 @@ object SimEngine {
     suspend fun run(
         scripts: List<Script>,
         globalVarDefs: List<ProjectVar>,
+        globalTableDefs: List<ProjectTable> = emptyList(),
         onUpdate: (SimState) -> Unit = {}
     ): SimState {
         val objects = mutableMapOf<String, SimObject>()
@@ -62,14 +65,21 @@ object SimEngine {
         val log = mutableListOf<String>()
         val errors = mutableListOf<String>()
         val globalVars = globalVarDefs.associate { it.name to it.value }.toMutableMap()
+        // Таблицы: глобальные + локальные скрипта объединяются при выполнении
+        val globalTables = globalTableDefs.associate { it.name to it.entries.toMutableMap() }
+            .mapValues { it.value }.toMutableMap<String, MutableMap<String, String>>()
 
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
             log += "Скрипт «${script.name}»"
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
-            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, log, errors,
-                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), log.toList(), errors.toList())) })
+            val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
+            val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
+            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
+                allowDelay = true, onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList())) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
+            // Синхронизируем изменения таблиц обратно в глобальные
+            globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
         }
 
         // Привязываем ON_TAP/ON_HOLD только к объектам, уже существующим после ON_START.
@@ -77,7 +87,8 @@ object SimEngine {
         // через bindEventScripts при каждом обновлении состояния.
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
-        return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars, log = log, errors = errors, isStopped = false)
+        return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
+            tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false)
     }
 
     /**
@@ -136,9 +147,11 @@ object SimEngine {
         val globalVars = currentState.globalVars.toMutableMap()
         val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
         val vars = (globalVars + localVars).toMutableMap()
+        val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
+        val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
 
         log += "Касание -> «${script.name}»"
-        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, log, errors, allowDelay = true)
+        val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true)
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
 
         // Привязываем события к объектам, которые могли быть созданы этим скриптом
@@ -148,6 +161,7 @@ object SimEngine {
             objects = objects,
             joysticks = joysticks,
             globalVars = globalVars,
+            tables = allTables.mapValues { it.value.toMap() },
             log = log,
             errors = errors,
             isStopped = !continued
@@ -159,6 +173,7 @@ object SimEngine {
         vars: MutableMap<String, String>,
         objects: MutableMap<String, SimObject>,
         joysticks: MutableMap<String, JoystickState>,
+        tables: MutableMap<String, MutableMap<String, String>>,
         log: MutableList<String>,
         errors: MutableList<String>,
         allowDelay: Boolean = true,
@@ -167,6 +182,7 @@ object SimEngine {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
         ExprEval.objects = objects
         ExprEval.joysticks = joysticks
+        ExprEval.tables = tables.mapValues { it.value.toMap() }
 
         // Вспомогательная функция для получения объектов по имени или тегу
         fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
@@ -234,7 +250,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -331,7 +347,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -347,7 +363,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, log, errors, allowDelay, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -439,6 +455,27 @@ object SimEngine {
                         joysticks[name] = modified
                     }
                     log += "  «$nameOrTag» свойства изменены (${props.size})"
+                }
+                "table_set" -> {
+                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    if (tableName.isBlank()) { errors += "Блок $num «Таблица: записать»: имя таблицы не заполнено"; continue }
+                    val key = getStr("key")
+                    val value = getStr("value")
+                    val tbl = tables.getOrPut(tableName) { mutableMapOf() }
+                    tbl[key] = value
+                    ExprEval.tables = tables.mapValues { it.value.toMap() }
+                    log += "  $tableName[$key] = $value"
+                }
+                "table_get" -> {
+                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    if (tableName.isBlank()) { errors += "Блок $num «Таблица: читать»: имя таблицы не заполнено"; continue }
+                    val key = getStr("key")
+                    val varName = block.params["var"]?.value?.trim() ?: ""
+                    if (varName.isBlank()) { errors += "Блок $num «Таблица: читать»: имя переменной не заполнено"; continue }
+                    val tbl = tables[tableName]
+                    val value = tbl?.get(key) ?: ""
+                    vars[varName] = value
+                    log += "  $varName = $tableName[$key] → «$value»"
                 }
             }
         }

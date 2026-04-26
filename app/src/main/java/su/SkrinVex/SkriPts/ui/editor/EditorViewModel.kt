@@ -13,6 +13,7 @@ import kotlin.math.*
 import su.SkrinVex.SkriPts.block.BlockDef
 import su.SkrinVex.SkriPts.block.BlockRegistry
 import su.SkrinVex.SkriPts.data.*
+import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.engine.SimEngine
 import su.SkrinVex.SkriPts.engine.SimState
 import java.util.UUID
@@ -23,6 +24,7 @@ data class EditorState(
     val activeScriptId: String = "",
     val globalVars: List<ProjectVar> = emptyList(),
     val globalTags: List<ProjectTag> = emptyList(),
+    val globalTables: List<ProjectTable> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     val validationErrors: List<String> = emptyList()
@@ -33,6 +35,8 @@ data class EditorState(
     val visibleVars: List<ProjectVar> get() = globalVars + (activeScript.localVars ?: emptyList())
     /** Теги видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleTags: List<ProjectTag> get() = globalTags + (activeScript.localTags ?: emptyList())
+    /** Таблицы видимые в активном скрипте: глобальные + локальные этого скрипта */
+    val visibleTables: List<ProjectTable> get() = globalTables + (activeScript.localTables ?: emptyList())
 }
 
 @OptIn(FlowPreview::class)
@@ -72,6 +76,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             .filter { it.scope == VarScope.GLOBAL }
         
         val globalTags = project.globalTags ?: emptyList()
+        val globalTables = project.globalTables ?: emptyList()
 
         // Восстанавливаем collapsed из файла
         scripts.forEach { script ->
@@ -87,7 +92,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             scripts = scripts,
             activeScriptId = scripts.first().id,
             globalVars = globalVars,
-            globalTags = globalTags
+            globalTags = globalTags,
+            globalTables = globalTables
         )}
     }
 
@@ -253,6 +259,73 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // --- Таблицы ---
+    fun addTable(name: String, scope: VarScope) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                if (it.globalTables.any { t -> t.name == name }) it
+                else it.copy(globalTables = it.globalTables + ProjectTable(name, scope))
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    if (script.localTables.orEmpty().any { t -> t.name == name }) script
+                    else script.copy(localTables = script.localTables.orEmpty() + ProjectTable(name, scope))
+                }
+            }
+        }
+    }
+
+    fun deleteTable(name: String, scope: VarScope) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                it.copy(globalTables = it.globalTables.filter { t -> t.name != name })
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    script.copy(localTables = script.localTables.orEmpty().filter { t -> t.name != name })
+                }
+            }
+        }
+    }
+
+    fun setTableEntry(name: String, scope: VarScope, key: String, value: String) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                it.copy(globalTables = it.globalTables.map { t ->
+                    if (t.name == name) t.copy(entries = t.entries + (key to value)) else t
+                })
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    script.copy(localTables = script.localTables.orEmpty().map { t ->
+                        if (t.name == name) t.copy(entries = t.entries + (key to value)) else t
+                    })
+                }
+            }
+        }
+    }
+
+    fun removeTableEntry(name: String, scope: VarScope, key: String) {
+        when (scope) {
+            VarScope.GLOBAL -> _state.update {
+                it.copy(globalTables = it.globalTables.map { t ->
+                    if (t.name == name) t.copy(entries = t.entries - key) else t
+                })
+            }
+            VarScope.LOCAL -> {
+                val activeId = _state.value.activeScriptId
+                updateScript(activeId) { script ->
+                    script.copy(localTables = script.localTables.orEmpty().map { t ->
+                        if (t.name == name) t.copy(entries = t.entries - key) else t
+                    })
+                }
+            }
+        }
+    }
+
     // --- Симуляция ---
     fun runSim() {
         val state = _state.value
@@ -263,7 +336,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
         // ON_START выполняется уже после открытия экрана
         viewModelScope.launch {
-            val result = SimEngine.run(state.scripts, state.globalVars) { liveState ->
+            val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables) { liveState ->
                 _state.update { it.copy(simState = liveState) }
             }
             _state.update { it.copy(simState = result) }
@@ -403,7 +476,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
-            scripts = scripts, globalVars = s.globalVars, globalTags = s.globalTags
+            scripts = scripts, globalVars = s.globalVars, globalTags = s.globalTags,
+            globalTables = s.globalTables
         ))
     }
 
@@ -431,17 +505,33 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if ((block.params["name"]?.value?.trim() ?: "").isBlank())
                             errors += "$prefix: имя переменной не заполнено"
                     }
+                    "table_set", "table_get" -> {
+                        if ((block.params["table"]?.value?.trim() ?: "").isBlank())
+                            errors += "$prefix: имя таблицы не заполнено"
+                    }
                 }
+
+                val allTableNames = (state.globalTables + (script.localTables ?: emptyList())).map { it.name }.toSet()
 
                 block.params.forEach { (key, param) ->
                     if (block.type == "set_var" && key == "name") return@forEach
+                    if ((block.type == "table_set" || block.type == "table_get") && key == "table") return@forEach
+                    if (block.type == "table_get" && key == "var") return@forEach
                     val v = param.value
                     if (v.count { it == '{' } != v.count { it == '}' })
                         errors += "$prefix [${param.label}]: незакрытая скобка в «$v»"
+                    if (v.count { it == '[' } != v.count { it == ']' })
+                        errors += "$prefix [${param.label}]: незакрытая скобка [ в «$v»"
                     Regex("\\{([^}]+)\\}").findAll(v).forEach { m ->
                         val ref = m.groupValues[1].trim()
                         if (ref !in allVisible)
                             errors += "$prefix [${param.label}]: переменная «$ref» не объявлена"
+                    }
+                    Regex("\\[([^\\]]+)\\]").findAll(v).forEach { m ->
+                        val ref = m.groupValues[1].trim()
+                        val tableName = ref.substringBefore('.').trim()
+                        if (tableName !in allTableNames)
+                            errors += "$prefix [${param.label}]: таблица «$tableName» не объявлена"
                     }
                 }
             }

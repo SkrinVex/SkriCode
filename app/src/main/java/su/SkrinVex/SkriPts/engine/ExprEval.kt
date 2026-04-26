@@ -23,6 +23,8 @@ object ExprEval {
     // Объекты симуляции — обновляются из SimEngine перед каждым вычислением
     var objects: Map<String, SimObject> = emptyMap()
     var joysticks: Map<String, JoystickState> = emptyMap()
+    // Таблицы — обновляются из SimEngine перед каждым вычислением
+    var tables: Map<String, Map<String, String>> = emptyMap()
 
     data class EvalResult(val value: String, val error: String? = null)
 
@@ -33,6 +35,8 @@ object ExprEval {
             return EvalResult("", "Незакрытая скобка { в выражении «$expr»")
         if (expr.contains('}') && !expr.contains('{'))
             return EvalResult("", "Лишняя скобка } в выражении «$expr»")
+        if (expr.contains('[') && !expr.contains(']'))
+            return EvalResult("", "Незакрытая скобка [ в выражении «$expr»")
 
         // Подставляем встроенные функции и переменные
         val (resolved, subErr) = substitute(expr, vars)
@@ -64,6 +68,31 @@ object ExprEval {
                         ?: return "" to "Переменная «$varName» не объявлена. Создай её через блок «Переменная»"
                     sb.append(value)
                     i = end + 1
+                }
+                expr[i] == '[' -> {
+                    val end = expr.indexOf(']', i)
+                    if (end == -1) return "" to "Незакрытая скобка [ в «$expr»"
+                    val ref = expr.substring(i + 1, end).trim()
+                    val dot = ref.indexOf('.')
+                    if (dot == -1) {
+                        // [tableName] — вся таблица как "key1=val1, key2=val2"
+                        val tableName = ref.trim()
+                        val tableData = tables[tableName]
+                            ?: return "" to "Таблица «$tableName» не найдена"
+                        sb.append(tableData.entries.joinToString(", ") { "${it.key}=${it.value}" })
+                        i = end + 1
+                    } else {
+                        val tableName = ref.substring(0, dot).trim()
+                        val rawKey = ref.substring(dot + 1).trim()
+                        val (resolvedKey, keyErr) = substitute(rawKey, vars)
+                        if (keyErr != null) return "" to keyErr
+                        val tableData = tables[tableName]
+                            ?: return "" to "Таблица «$tableName» не найдена"
+                        val value = tableData[resolvedKey]
+                            ?: return "" to "Ключ «$resolvedKey» не найден в таблице «$tableName»"
+                        sb.append(value)
+                        i = end + 1
+                    }
                 }
                 expr[i] == '#' -> {
                     // Тег - просто копируем как есть
@@ -99,7 +128,10 @@ object ExprEval {
             "objX(" to ::handleObjX,
             "objY(" to ::handleObjY,
             "objRot(" to ::handleObjRot,
-            "sqrt(" to ::handleSqrt
+            "sqrt(" to ::handleSqrt,
+            "tableSize(" to ::handleTableSize,
+            "tableKey(" to ::handleTableKey,
+            "tableVal(" to ::handleTableVal
         )
         
         for ((pattern, handler) in funcPatterns) {
@@ -110,7 +142,7 @@ object ExprEval {
                 val rawArgs = sub.substring(pattern.length, close)
                 val (resolvedArgs, argErr) = substitute(rawArgs, vars)
                 if (argErr != null) return Triple("", 1, argErr)
-                val args = resolvedArgs.split(",").map { it.trim() }
+                val args = resolvedArgs.split(",").map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
                 val consumed = 1 + close + 1
                 return handler(args, consumed)
             }
@@ -262,8 +294,32 @@ object ExprEval {
         return Triple(fmt(sqrt(a)), consumed, null)
     }
 
+    private fun handleTableSize(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$tableSize() требует один аргумент: имя таблицы")
+        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableSize(): таблица «${args[0]}» не найдена")
+        return Triple(tbl.size.toString(), consumed, null)
+    }
+
+    private fun handleTableKey(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$tableKey() требует два аргумента: имя таблицы и индекс")
+        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableKey(): таблица «${args[0]}» не найдена")
+        val idx = args[1].toIntOrNull() ?: return Triple("", consumed, "\$tableKey(): индекс «${args[1]}» не число")
+        val key = tbl.keys.toList().getOrNull(idx) ?: return Triple("", consumed, "\$tableKey(): индекс $idx вне диапазона (размер: ${tbl.size})")
+        return Triple(key, consumed, null)
+    }
+
+    private fun handleTableVal(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$tableVal() требует два аргумента: имя таблицы и индекс")
+        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableVal(): таблица «${args[0]}» не найдена")
+        val idx = args[1].toIntOrNull() ?: return Triple("", consumed, "\$tableVal(): индекс «${args[1]}» не число")
+        val value = tbl.values.toList().getOrNull(idx) ?: return Triple("", consumed, "\$tableVal(): индекс $idx вне диапазона (размер: ${tbl.size})")
+        return Triple(value, consumed, null)
+    }
+
     private fun tryArith(expr: String): String? {
         if (expr.toDoubleOrNull() != null) return fmt(expr.toDouble())
+        if ((expr.startsWith("\"") && expr.endsWith("\"")) || (expr.startsWith("'") && expr.endsWith("'")))
+            return expr.substring(1, expr.length - 1)
         return evalAddSub(expr)
     }
 
@@ -277,9 +333,15 @@ object ExprEval {
                 '+', '-' -> if (depth == 0 && i > 0) {
                     val l = evalAddSub(expr.substring(0, i)) ?: return null
                     val r = evalMulDiv(expr.substring(i + 1)) ?: return null
-                    val lv = l.toDoubleOrNull() ?: return null
-                    val rv = r.toDoubleOrNull() ?: return null
-                    return fmt(if (expr[i] == '+') lv + rv else lv - rv)
+                    if (expr[i] == '+') {
+                        val lv = l.toDoubleOrNull()
+                        val rv = r.toDoubleOrNull()
+                        return if (lv != null && rv != null) fmt(lv + rv) else l + r
+                    } else {
+                        val lv = l.toDoubleOrNull() ?: return null
+                        val rv = r.toDoubleOrNull() ?: return null
+                        return fmt(lv - rv)
+                    }
                 }
             }
             i--
@@ -315,7 +377,9 @@ object ExprEval {
     private fun evalAtom(expr: String): String? {
         val t = expr.trim()
         if (t.startsWith("(") && t.endsWith(")")) return evalAddSub(t.substring(1, t.length - 1))
-        return t.toDoubleOrNull()?.let { fmt(it) }
+        if ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'")))
+            return t.substring(1, t.length - 1)
+        return t.toDoubleOrNull()?.let { fmt(it) } ?: t.ifEmpty { null }
     }
 
     private fun fmt(v: Double): String =

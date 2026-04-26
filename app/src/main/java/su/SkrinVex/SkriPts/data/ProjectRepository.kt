@@ -20,6 +20,13 @@ data class ProjectTag(
     val scope: VarScope
 )
 
+/** Таблица — именованный словарь ключ→значение */
+data class ProjectTable(
+    val name: String,
+    val scope: VarScope,
+    val entries: Map<String, String> = emptyMap()
+)
+
 enum class ScriptEvent(val label: String) {
     ON_START("При запуске"),
     ON_TAP("При касании объекта"),
@@ -34,6 +41,7 @@ data class Script(
     val blocks: List<SerializedBlock> = emptyList(),
     val localVars: List<ProjectVar>? = emptyList(),
     val localTags: List<ProjectTag>? = emptyList(),
+    val localTables: List<ProjectTable>? = emptyList(),
     val collapsedBlockIds: Set<String>? = emptySet()  // сохранённые свёрнутые блоки
 )
 
@@ -43,6 +51,7 @@ data class ScriptProject(
     val scripts: List<Script>? = emptyList(),
     val globalVars: List<ProjectVar>? = emptyList(),  // только глобальные
     val globalTags: List<ProjectTag>? = emptyList(),
+    val globalTables: List<ProjectTable>? = emptyList(),
     // legacy
     val variables: List<ProjectVar>? = null,
     val blocks: List<SerializedBlock>? = null

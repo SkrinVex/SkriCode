@@ -38,6 +38,7 @@ import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.VarScope
+import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.ui.expr.ExpressionEditorScreen
 import su.SkrinVex.SkriPts.ui.theme.*
@@ -61,6 +62,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             paramLabel = target.paramLabel,
             variables = state.visibleVars,
             tags = state.visibleTags,
+            tables = state.visibleTables,
             isIdentifier = target.isIdentifier,
             onConfirm = { value ->
                 if (target.branch != null && target.childIndex >= 0) {
@@ -74,6 +76,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             onDeleteVar = { name, scope -> vm.deleteVariable(name, scope) },
             onCreateTag = { name, scope -> vm.addTag(name, scope) },
             onDeleteTag = { name, scope -> vm.deleteTag(name, scope) },
+            onCreateTable = { name, scope -> vm.addTable(name, scope) },
+            onDeleteTable = { name, scope -> vm.deleteTable(name, scope) },
+            onSetTableEntry = { name, scope, k, v -> vm.setTableEntry(name, scope, k, v) },
+            onRemoveTableEntry = { name, scope, k -> vm.removeTableEntry(name, scope, k) },
             onBack = { exprTarget = null }
         )
         return
@@ -636,6 +642,12 @@ private fun BlockCard(
                                         block.type == "set_tag" && key == "object" ->
                                             ObjectNameChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
+                                        (block.type == "table_set" || block.type == "table_get") && key == "table" ->
+                                            TableNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        (block.type == "table_get") && key == "var" ->
+                                            VarNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
                                         (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
                                             ObjectNameChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
@@ -1140,6 +1152,31 @@ private fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
             Text(
                 if (value.isBlank()) "Нажми чтобы выбрать тег" else "#$value",
                 color = if (value.isBlank()) TextSec else TextPrim,
+                fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
+    val tableColor = Color(0xFF34D399)
+    Column {
+        Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                .background(Surface3)
+                .border(1.dp, tableColor.copy(0.4f), RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.TableChart, null, tint = tableColor, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (value.isBlank()) "Нажми чтобы выбрать таблицу" else value,
+                color = if (value.isBlank()) TextSec else tableColor,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
             Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))

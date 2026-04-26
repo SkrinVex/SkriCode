@@ -15,9 +15,10 @@ val TextPrim get() = ThemeManager.getTextPrim()
 val TextSec get() = ThemeManager.getTextSec()
 
 // Статичные цвета
-val Success  = Color(0xFF22C55E)
-val Warning  = Color(0xFFF59E0B)
-val Danger   = Color(0xFFEF4444)
+val Success     = Color(0xFF22C55E)
+val Warning     = Color(0xFFF59E0B)
+val Danger      = Color(0xFFEF4444)
+val TableAccent = Color(0xFF34D399)
 
 @Composable
 fun SkriPtsTheme(content: @Composable () -> Unit) {

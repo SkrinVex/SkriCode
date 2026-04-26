@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.ProjectTag
+import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.data.VarScope
 import su.SkrinVex.SkriPts.ui.theme.*
 
@@ -46,46 +49,88 @@ fun ExpressionEditorScreen(
     paramLabel: String,
     variables: List<ProjectVar>,
     tags: List<ProjectTag> = emptyList(),
+    tables: List<ProjectTable> = emptyList(),
     isIdentifier: Boolean = false,
     onConfirm: (String) -> Unit,
     onCreateVar: (name: String, scope: VarScope) -> Unit,
     onDeleteVar: ((name: String, scope: VarScope) -> Unit)? = null,
     onCreateTag: ((name: String, scope: VarScope) -> Unit)? = null,
     onDeleteTag: ((name: String, scope: VarScope) -> Unit)? = null,
+    onCreateTable: ((name: String, scope: VarScope) -> Unit)? = null,
+    onDeleteTable: ((name: String, scope: VarScope) -> Unit)? = null,
+    onSetTableEntry: ((name: String, scope: VarScope, key: String, value: String) -> Unit)? = null,
+    onRemoveTableEntry: ((name: String, scope: VarScope, key: String) -> Unit)? = null,
     onBack: () -> Unit
 ) {
-    var value by remember { mutableStateOf(initialValue) }
+    var tfv by remember { mutableStateOf(TextFieldValue(initialValue, TextRange(initialValue.length))) }
     val history = remember { mutableStateListOf(initialValue) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showCreateVar by remember { mutableStateOf(false) }
     var showCreateTag by remember { mutableStateOf(false) }
+    var showCreateTable by remember { mutableStateOf(false) }
     var showDeleteVar by remember { mutableStateOf<ProjectVar?>(null) }
     var showDeleteTag by remember { mutableStateOf<ProjectTag?>(null) }
+    var showDeleteTable by remember { mutableStateOf<ProjectTable?>(null) }
+    var editingTable by remember { mutableStateOf<ProjectTable?>(null) }
     var hasChanges by remember { mutableStateOf(false) }
     var validationWarning by remember { mutableStateOf<String?>(null) }
 
     val knownVarNames = remember(variables) { variables.map { it.name }.toSet() }
 
     fun validateAndConfirm() {
-        if (isIdentifier) { onConfirm(value); return }
-        val unknown = Regex("\\{([^}]+)\\}").findAll(value.trim())
+        if (isIdentifier) { onConfirm(tfv.text); return }
+        val unknown = Regex("\\{([^}]+)\\}").findAll(tfv.text.trim())
             .map { it.groupValues[1].trim() }
             .filter { it.isNotBlank() && it !in knownVarNames }
             .toSet()
         if (unknown.isNotEmpty()) {
             validationWarning = unknown.joinToString(", ") { "{$it}" }
         } else {
-            onConfirm(value)
+            onConfirm(tfv.text)
         }
     }
 
     fun push(v: String) { if (history.lastOrNull() != v) history.add(v) }
-    fun insertVar(name: String) { push(value); value = if (isIdentifier) name else value + "{$name}"; hasChanges = true }
-    fun insertTag(name: String) { push(value); value = if (isIdentifier) name else value + "#$name"; hasChanges = true }
-    fun insertFn(insert: String) { push(value); value = value + insert; hasChanges = true }
+
+    fun insertAt(insert: String) {
+        val cur = tfv.text
+        val sel = tfv.selection
+        val pos = if (sel.collapsed) sel.start else sel.end
+        push(cur)
+        val newText = cur.substring(0, pos) + insert + cur.substring(pos)
+        tfv = TextFieldValue(newText, TextRange(pos + insert.length))
+        hasChanges = true
+    }
+
+    fun insertVar(name: String) {
+        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(name, TextRange(name.length)); hasChanges = true }
+        else insertAt("{$name}")
+    }
+    fun insertTag(name: String) {
+        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(name, TextRange(name.length)); hasChanges = true }
+        else insertAt("#$name")
+    }
+    fun insertTable(tableName: String, key: String) {
+        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(tableName, TextRange(tableName.length)); hasChanges = true }
+        else insertAt("[$tableName.$key]")
+    }
+    fun insertFn(insert: String) { insertAt(insert) }
     
     BackHandler(enabled = !hasChanges) {
         onBack()
+    }
+
+    // Редактор таблицы — полноэкранный
+    editingTable?.let { tbl ->
+        // Берём актуальную версию таблицы из списка (данные могут меняться)
+        val current = tables.find { it.name == tbl.name && it.scope == tbl.scope } ?: tbl
+        TableEditorScreen(
+            table = current,
+            onSetEntry = { k, v -> onSetTableEntry?.invoke(tbl.name, tbl.scope, k, v) },
+            onRemoveEntry = { k -> onRemoveTableEntry?.invoke(tbl.name, tbl.scope, k) },
+            onBack = { editingTable = null }
+        )
+        return
     }
 
     Box(Modifier.fillMaxSize().background(Navy900)) {
@@ -101,13 +146,19 @@ fun ExpressionEditorScreen(
                         Text(paramLabel, color = TextSec, fontSize = 12.sp)
                     }
                     IconButton(
-                        onClick = { if (history.size > 1) { history.removeLastOrNull(); value = history.lastOrNull() ?: "" } },
+                        onClick = {
+                            if (history.size > 1) {
+                                history.removeLastOrNull()
+                                val prev = history.lastOrNull() ?: ""
+                                tfv = TextFieldValue(prev, TextRange(prev.length))
+                            }
+                        },
                         enabled = history.size > 1
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Undo, "Отменить",
                             tint = if (history.size > 1) TextPrim else TextSec.copy(alpha = 0.3f))
                     }
-                    IconButton(onClick = { push(value); value = "" }) {
+                    IconButton(onClick = { push(tfv.text); tfv = TextFieldValue("", TextRange(0)) }) {
                         Icon(Icons.Default.ClearAll, "Очистить", tint = Danger.copy(alpha = 0.8f))
                     }
                     Button(onClick = { validateAndConfirm() },
@@ -120,8 +171,12 @@ fun ExpressionEditorScreen(
 
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 OutlinedTextField(
-                    value = value,
-                    onValueChange = { push(value); value = it },
+                    value = tfv,
+                    onValueChange = { new ->
+                        if (new.text != tfv.text) push(tfv.text)
+                        tfv = new
+                        hasChanges = true
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Выражение") },
                     placeholder = { Text("100, {x} + 50, \$screenWidth - 100", color = TextSec) },
@@ -138,6 +193,8 @@ fun ExpressionEditorScreen(
                     buildAnnotatedString {
                         withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
                         append(" — переменная  ")
+                        withStyle(SpanStyle(color = Color(0xFF34D399), fontFamily = FontFamily.Monospace)) { append("[таблица.ключ]") }
+                        append(" — таблица  ")
                         withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$константа") }
                         append(" — встроенная")
                     },
@@ -163,6 +220,13 @@ fun ExpressionEditorScreen(
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
                     Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.TableChart, null, modifier = Modifier.size(14.dp))
+                        Text("Таблицы (${tables.size})", fontSize = 13.sp)
+                    }
+                }
+                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) {
+                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Functions, null, modifier = Modifier.size(14.dp))
                         Text("Функции", fontSize = 13.sp)
                     }
@@ -172,16 +236,20 @@ fun ExpressionEditorScreen(
             when (selectedTab) {
                 0 -> VarsTab(variables, onInsert = { insertVar(it) }, onDelete = { showDeleteVar = it })
                 1 -> TagsTab(tags, onInsert = { insertTag(it) }, onDelete = if (onDeleteTag != null) { { showDeleteTag = it } } else null)
-                2 -> FunctionsTab(onInsert = { insertFn(it) })
+                2 -> TablesTab(tables, onInsert = { t, k -> insertTable(t, k) },
+                    onDelete = if (onDeleteTable != null) { { showDeleteTable = it } } else null,
+                    onEdit = { editingTable = it })
+                3 -> FunctionsTab(onInsert = { insertFn(it) })
             }
         }
 
-        // FAB — создать переменную или тег
+        // FAB — создать переменную, тег или таблицу
         FloatingActionButton(
             onClick = {
                 when (selectedTab) {
                     0 -> showCreateVar = true
                     1 -> if (onCreateTag != null) showCreateTag = true
+                    2 -> if (onCreateTable != null) showCreateTable = true
                 }
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -204,7 +272,7 @@ fun ExpressionEditorScreen(
                 color = TextSec
             ) },
             confirmButton = {
-                Button(onClick = { validationWarning = null; onConfirm(value) },
+                Button(onClick = { validationWarning = null; onConfirm(tfv.text) },
                     colors = ButtonDefaults.buttonColors(containerColor = Warning)
                 ) { Text("Сохранить", color = Navy900) }
             },
@@ -240,6 +308,20 @@ fun ExpressionEditorScreen(
                 onCreateTag(name, scope)
                 showCreateTag = false
                 insertTag(name)
+            }
+        )
+    }
+
+    if (showCreateTable && onCreateTable != null) {
+        var selectedScope by remember { mutableStateOf(VarScope.GLOBAL) }
+        CreateTableDialog(
+            scope = selectedScope,
+            onScopeChange = { selectedScope = it },
+            existingNames = tables.map { it.name }.toSet(),
+            onDismiss = { showCreateTable = false },
+            onCreate = { name, scope ->
+                onCreateTable(name, scope)
+                showCreateTable = false
             }
         )
     }
@@ -296,6 +378,30 @@ fun ExpressionEditorScreen(
             }
         )
     }
+
+    showDeleteTable?.let { table ->
+        AlertDialog(
+            onDismissRequest = { showDeleteTable = null },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить таблицу?", color = TextPrim) },
+            text = { Text("Таблица «${table.name}» и все её данные будут удалены.", color = TextSec) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteTable?.invoke(table.name, table.scope)
+                        showDeleteTable = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteTable = null }) {
+                    Text("Отмена", color = TextSec)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -341,6 +447,11 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$objX(Button)",   "X объекта",        "Позиция объекта по горизонтали",     Icons.Default.SwapHoriz,    screenColor),
         BuiltinFn("\$objY(Button)",   "Y объекта",        "Позиция объекта по вертикали",       Icons.Default.SwapVert,     screenColor),
         BuiltinFn("\$objRot(Button)", "Вращение объекта", "Угол поворота объекта в градусах",   Icons.Default.RotateRight,  screenColor),
+
+        // Таблицы
+        BuiltinFn("\$tableSize(scores)", "Размер таблицы",  "Количество записей в таблице",                    Icons.Default.TableChart, TableAccent),
+        BuiltinFn("\$tableKey(scores, 0)", "Ключ по индексу", "Ключ записи по индексу (0, 1, 2, ...)",         Icons.Default.TableChart, TableAccent),
+        BuiltinFn("\$tableVal(scores, 0)", "Значение по индексу", "Значение записи по индексу (0, 1, 2, ...)", Icons.Default.TableChart, TableAccent),
     )
 
     LazyColumn(
@@ -498,7 +609,7 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
     Column(Modifier.fillMaxHeight()) {
         if (variables.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
-                Text("Нет переменных", color = TextSec, fontSize = 14.sp)
+                Text("Нет переменных. Нажми + чтобы создать.", color = TextSec, fontSize = 14.sp)
             }
         } else {
             LazyColumn(
@@ -542,7 +653,7 @@ private fun TagsTab(tags: List<ProjectTag>, onInsert: (String) -> Unit, onDelete
     Column(Modifier.fillMaxHeight()) {
         if (tags.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
-                Text("Нет тегов", color = TextSec, fontSize = 14.sp)
+                Text("Нет тегов. Нажми + чтобы создать.", color = TextSec, fontSize = 14.sp)
             }
         } else {
             LazyColumn(
@@ -603,8 +714,7 @@ private fun TagRow(tag: ProjectTag, onClick: () -> Unit, onDelete: (() -> Unit)?
 }
 
 @Composable
-private fun CreateTagDialog(
-    scope: VarScope,
+private fun CreateTagDialog(    scope: VarScope,
     onScopeChange: (VarScope) -> Unit,
     existingNames: Set<String>,
     onDismiss: () -> Unit,
@@ -668,6 +778,200 @@ private fun CreateTagDialog(
                 enabled = name.isNotBlank() && nameError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
             ) { Text("Создать") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
+    )
+}
+
+private val TableColor = Color(0xFF34D399)
+
+@Composable
+private fun TablesTab(
+    tables: List<ProjectTable>,
+    onInsert: (tableName: String, key: String) -> Unit,
+    onDelete: ((ProjectTable) -> Unit)?,
+    onEdit: (ProjectTable) -> Unit
+) {
+    val globalTables = tables.filter { it.scope == VarScope.GLOBAL }
+    val localTables = tables.filter { it.scope == VarScope.LOCAL }
+
+    Column(Modifier.fillMaxHeight()) {
+        if (tables.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
+                Text("Нет таблиц. Нажми + чтобы создать.", color = TextSec, fontSize = 14.sp)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (globalTables.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Icon(Icons.Default.Public, null, tint = TableColor, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Глобальные", color = TableColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(globalTables, key = { it.name }) { t ->
+                        TableRow(table = t, onInsert = { k -> onInsert(t.name, k) },
+                            onDelete = onDelete?.let { { it(t) } }, onEdit = { onEdit(t) })
+                    }
+                }
+                if (localTables.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 4.dp).padding(top = if (globalTables.isNotEmpty()) 8.dp else 0.dp)) {
+                            Icon(Icons.Default.Lock, null, tint = TableColor, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Локальные", color = TableColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(localTables, key = { it.name }) { t ->
+                        TableRow(table = t, onInsert = { k -> onInsert(t.name, k) },
+                            onDelete = onDelete?.let { { it(t) } }, onEdit = { onEdit(t) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TableRow(table: ProjectTable, onInsert: (key: String) -> Unit, onDelete: (() -> Unit)?, onEdit: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
+    ) {
+        // Заголовок таблицы
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(TableColor.copy(0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.TableChart, null, tint = TableColor, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = TableColor, fontFamily = FontFamily.Monospace)) { append(table.name) }
+                    },
+                    fontSize = 14.sp, fontWeight = FontWeight.Medium
+                )
+                Text("${table.entries.size} записей · нажми чтобы вставить ключ", color = TextSec, fontSize = 11.sp)
+            }
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, null, tint = TableColor.copy(0.8f), modifier = Modifier.size(16.dp))
+            }
+            if (onDelete != null) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = Danger.copy(0.7f), modifier = Modifier.size(16.dp))
+                }
+            }
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                null, tint = TextSec, modifier = Modifier.size(18.dp)
+            )
+        }
+
+        // Записи таблицы
+        if (expanded) {
+            Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (table.entries.isEmpty()) {
+                    Text("Таблица пуста · нажми ✏ чтобы добавить записи",
+                        color = TextSec, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+                } else {
+                    table.entries.forEach { (key, value) ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Surface3)
+                                .clickable { onInsert(key) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                buildAnnotatedString {
+                                    withStyle(SpanStyle(color = TableColor, fontFamily = FontFamily.Monospace)) { append("[${table.name}.$key]") }
+                                },
+                                fontSize = 12.sp, modifier = Modifier.weight(1f)
+                            )
+                            Text("= $value", color = TextSec, fontSize = 11.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.AddCircleOutline, null, tint = TableColor.copy(0.7f), modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateTableDialog(
+    scope: VarScope,
+    onScopeChange: (VarScope) -> Unit,
+    existingNames: Set<String>,
+    onDismiss: () -> Unit,
+    onCreate: (String, VarScope) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    val nameError = when {
+        name.isBlank() -> null
+        !name.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*")) -> "Только латинские буквы, цифры и _"
+        name in existingNames -> "Таблица с таким именем уже существует"
+        else -> null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        icon = { Icon(Icons.Default.TableChart, null, tint = TableColor) },
+        title = { Text("Создать таблицу", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)) {
+                    listOf(VarScope.GLOBAL to "Глобальная", VarScope.LOCAL to "Локальная").forEach { (s, label) ->
+                        val active = scope == s
+                        Box(
+                            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                .background(if (active) TableColor.copy(0.2f) else Color.Transparent)
+                                .border(if (active) 1.dp else 0.dp, if (active) TableColor else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable { onScopeChange(s) }.padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, color = if (active) TableColor else TextSec, fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Имя таблицы") },
+                    placeholder = { Text("scores", color = TextSec) },
+                    singleLine = true, isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it, color = Danger) } },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TableColor, focusedLabelColor = TableColor,
+                        cursorColor = TableColor, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    )
+                )
+                Text(
+                    "Доступ: [${name.ifBlank { "таблица" }}.ключ]",
+                    color = TextSec, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank() && nameError == null) onCreate(name.trim(), scope) },
+                enabled = name.isNotBlank() && nameError == null,
+                colors = ButtonDefaults.buttonColors(containerColor = TableColor)
+            ) { Text("Создать", color = Navy900) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
     )
