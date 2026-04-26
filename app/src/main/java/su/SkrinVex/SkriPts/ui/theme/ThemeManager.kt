@@ -35,11 +35,16 @@ object ThemeManager {
     private var currentTheme = AppTheme.BLUE
     private const val PREFS = "skripts_prefs"
     private const val KEY_THEME = "theme"
+    private const val KEY_DEBUG = "debug_mode"
+
+    var debugMode: Boolean = true
+        private set
 
     fun init(ctx: android.content.Context) {
-        val name = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-            .getString(KEY_THEME, AppTheme.BLUE.name) ?: AppTheme.BLUE.name
+        val prefs = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        val name = prefs.getString(KEY_THEME, AppTheme.BLUE.name) ?: AppTheme.BLUE.name
         currentTheme = AppTheme.entries.find { it.name == name } ?: AppTheme.BLUE
+        debugMode = prefs.getBoolean(KEY_DEBUG, true)
     }
 
     fun getCurrentTheme() = currentTheme
@@ -48,6 +53,12 @@ object ThemeManager {
         currentTheme = theme
         ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
             .edit().putString(KEY_THEME, theme.name).apply()
+    }
+
+    fun setDebugMode(ctx: android.content.Context, enabled: Boolean) {
+        debugMode = enabled
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_DEBUG, enabled).apply()
     }
 
     fun getAccent() = currentTheme.accent

@@ -114,6 +114,13 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         }
                         Text(state.projectName, color = TextPrim, fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp, modifier = Modifier.weight(1f).padding(horizontal = 4.dp), maxLines = 1)
+                        var showSimSettings by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showSimSettings = true }) {
+                            Icon(Icons.Default.Settings, "Настройки симуляции", tint = TextSec)
+                        }
+                        if (showSimSettings) {
+                            SimSettingsDialog(onDismiss = { showSimSettings = false })
+                        }
                         IconButton(onClick = vm::runSim) {
                             Icon(Icons.Default.PlayArrow, "Запустить", tint = Success)
                         }
@@ -1097,5 +1104,42 @@ private fun LoopBlockContent(
         onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange,
         onOpenChildExpr = onOpenChildExpr
+    )
+}
+
+@Composable
+private fun SimSettingsDialog(onDismiss: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var debugMode by remember { mutableStateOf(ThemeManager.debugMode) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        icon = { Icon(Icons.Default.Settings, null, tint = Accent) },
+        title = { Text("Настройки симуляции", color = TextPrim) },
+        text = {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+                    .clickable { debugMode = !debugMode }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Режим отладки", color = TextPrim, fontSize = 14.sp)
+                    Text("Сетка, логи, кнопка закрытия", color = TextSec, fontSize = 12.sp)
+                }
+                Switch(
+                    checked = debugMode,
+                    onCheckedChange = { debugMode = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Navy900, checkedTrackColor = Accent)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { ThemeManager.setDebugMode(ctx, debugMode); onDismiss() },
+                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+            ) { Text("OK", color = Navy900) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
     )
 }

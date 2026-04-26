@@ -54,7 +54,8 @@ class MainActivity : ComponentActivity() {
                         onHoldStart = { objName, pid -> editorVm.handleHoldStart(objName, pid) },
                         onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },
                         onBack = { screen = "editor" },
-                        onClearLogs = { editorVm.clearSimLogs() }
+                        onClearLogs = { editorVm.clearSimLogs() },
+                        debugMode = ThemeManager.debugMode
                     )
                     "editor" -> {
                         BackHandler { screen = "home"; homeVm.refresh() }

@@ -40,7 +40,8 @@ fun SimulationScreen(
     onHoldStart: (objectName: String, pointerId: Long) -> Unit = { _, _ -> },
     onHoldEnd: (pointerId: Long) -> Unit = {},
     onBack: () -> Unit,
-    onClearLogs: () -> Unit = {}
+    onClearLogs: () -> Unit = {},
+    debugMode: Boolean = true
 ) {
     BackHandler(onBack = onBack)
 
@@ -96,34 +97,37 @@ fun SimulationScreen(
             canvasSize = Pair(size.width, size.height)
             val cx = size.width / 2f
             val cy = size.height / 2f
-            drawGrid(cx, cy)
+            if (debugMode) drawGrid(cx, cy)
             state.objects.values.forEach { 
                 if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj) 
             }
         }
 
-        // Кнопка закрыть
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
-                .background(Color(0x88000000), RoundedCornerShape(8.dp))
-        ) {
-            Icon(Icons.Default.Close, "Закрыть", tint = Color.White)
+        // Кнопка закрыть — только в debug или при ошибках
+        if (debugMode || state.errors.isNotEmpty()) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+                    .background(Color(0x88000000), RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.Default.Close, "Закрыть", tint = Color.White)
+            }
         }
 
-        // Кнопки панелей (снизу слева) — видны только когда панель скрыта
-        if (panelTab < 0) {
+        val hasErrors = state.errors.isNotEmpty()
+        // Кнопки панелей — только в debug или при ошибках
+        if ((debugMode || hasErrors) && panelTab < 0) {
             Row(
                 Modifier.align(Alignment.BottomStart).padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 PanelBtn(
-                    label = if (state.errors.isNotEmpty()) "Ошибки (${state.errors.size})" else "Лог",
+                    label = if (hasErrors) "Ошибки (${state.errors.size})" else "Лог",
                     active = false,
-                    color = if (state.errors.isNotEmpty()) Danger else TextSec,
+                    color = if (hasErrors) Danger else TextSec,
                     onClick = { panelTab = 0 }
                 )
-                PanelBtn(
+                if (debugMode) PanelBtn(
                     label = "Объекты (${state.objects.size})",
                     active = false,
                     color = Accent,
@@ -133,28 +137,29 @@ fun SimulationScreen(
         }
 
         // Панель
-        if (panelTab >= 0) {
+        if ((debugMode || hasErrors) && panelTab >= 0) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = 240.dp),
                 color = Color(0xEE0A0E1A),
                 shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    // Заголовок панели с вкладками и кнопкой закрыть
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         PanelBtn(
-                            label = if (state.errors.isNotEmpty()) "Ошибки (${state.errors.size})" else "Лог",
+                            label = if (hasErrors) "Ошибки (${state.errors.size})" else "Лог",
                             active = panelTab == 0,
-                            color = if (state.errors.isNotEmpty()) Danger else TextSec,
+                            color = if (hasErrors) Danger else TextSec,
                             onClick = { panelTab = 0 }
                         )
-                        Spacer(Modifier.width(6.dp))
-                        PanelBtn(
-                            label = "Объекты (${state.objects.size})",
-                            active = panelTab == 1,
-                            color = Accent,
-                            onClick = { panelTab = 1 }
-                        )
+                        if (debugMode) {
+                            Spacer(Modifier.width(6.dp))
+                            PanelBtn(
+                                label = "Объекты (${state.objects.size})",
+                                active = panelTab == 1,
+                                color = Accent,
+                                onClick = { panelTab = 1 }
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = { panelTab = -1 }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.KeyboardArrowDown, "Свернуть", tint = TextSec, modifier = Modifier.size(20.dp))
