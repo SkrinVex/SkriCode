@@ -68,23 +68,14 @@ fun ExpressionEditorScreen(
 
     fun validateAndConfirm() {
         if (isIdentifier) { onConfirm(value); return }
-        val trimmed = value.trim()
-        // Ищем необъявленные {varName}
-        val unknown = Regex("\\{([^}]+)\\}").findAll(trimmed)
+        val unknown = Regex("\\{([^}]+)\\}").findAll(value.trim())
             .map { it.groupValues[1].trim() }
             .filter { it.isNotBlank() && it !in knownVarNames }
             .toSet()
-        // Предупреждаем если выражение выглядит как имя переменной без скобок
-        val looksLikeBareVar = unknown.isEmpty()
-            && trimmed.matches(Regex("[a-zA-Z_][a-zA-Z0-9_]*"))
-            && trimmed !in knownVarNames
-            && trimmed.length > 1
-        when {
-            unknown.isNotEmpty() ->
-                validationWarning = unknown.joinToString(", ") { "{$it}" }
-            looksLikeBareVar ->
-                validationWarning = "«$trimmed» (без фигурных скобок)"
-            else -> onConfirm(value)
+        if (unknown.isNotEmpty()) {
+            validationWarning = unknown.joinToString(", ") { "{$it}" }
+        } else {
+            onConfirm(value)
         }
     }
 

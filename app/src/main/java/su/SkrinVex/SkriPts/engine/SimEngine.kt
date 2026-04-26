@@ -17,7 +17,7 @@ data class SimObject(
     val label: String = "",
     val fontSize: Float = 14f,
     val bold: Boolean = false,
-    val textColor: Color? = null,        // null = белый по умолчанию
+    val textColor: Color? = null,
     val tapScriptId: String? = null,
     val holdScriptId: String? = null,
     val visible: Boolean = true,
@@ -285,24 +285,6 @@ object SimEngine {
                     val color = parseColor(getStr("color", "#4F8EF7"))
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(color = color) }
                     log += "  «$nameOrTag» цвет -> ${getStr("color")}"
-                }
-                "sim_label" -> {
-                    val nameOrTag = getStr("name")
-                    val targets = getObjectsByNameOrTag(nameOrTag)
-                    if (targets.isEmpty()) { errors += "Блок $num «Текст»: «$nameOrTag» не найден"; continue }
-                    val text = getStr("text")
-                    val sizeRaw = getStr("size", "0").toFloatOrNull() ?: 0f
-                    val boldRaw = getStr("bold", "")
-                    val colorRaw = getStr("textColor", "")
-                    targets.forEach { (name, obj) ->
-                        objects[name] = obj.copy(
-                            label = text,
-                            fontSize = if (sizeRaw > 0f) sizeRaw else obj.fontSize,
-                            bold = if (boldRaw == "true") true else if (boldRaw == "false") false else obj.bold,
-                            textColor = if (colorRaw.isNotBlank()) parseColor(colorRaw) else obj.textColor
-                        )
-                    }
-                    log += "  «$nameOrTag» текст: «$text»"
                 }
                 "sim_update_text" -> {
                     val nameOrTag = getStr("name")

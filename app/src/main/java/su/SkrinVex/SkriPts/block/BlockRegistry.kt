@@ -12,7 +12,7 @@ object BlockRegistry {
         "set_var", "set_tag",
         "if_block", "sim_stop",
         "for_loop", "while_loop", "wait",
-        "sim_create", "sim_move", "sim_resize", "sim_color", "sim_label", "sim_text", "sim_update_text",
+        "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",
         "sim_hide", "sim_show", "sim_rotate", "sim_joystick"
     )
 
