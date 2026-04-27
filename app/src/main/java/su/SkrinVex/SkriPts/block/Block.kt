@@ -42,6 +42,10 @@ data class BlockDef(
     fun withParam(key: String, value: String): BlockDef =
         copy(params = params + (key to params[key]!!.copy(value = value)))
 
+    /** Добавляет/обновляет произвольный параметр (в т.ч. служебные _-ключи) */
+    fun withExtraParam(key: String, value: String): BlockDef =
+        copy(params = params + (key to (params[key]?.copy(value = value) ?: BlockParam(value, key))))
+
     fun toJson(): JsonObject = JsonObject().apply {
         addProperty("type", type)
         addProperty("async", isAsync)

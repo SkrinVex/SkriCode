@@ -57,6 +57,22 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
     var positionPickerBlock by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     // blockIndex -> sim_hitbox block
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
+    var showLocationEditor by remember { mutableStateOf(false) }
+
+    // Редактор локации — полноэкранный
+    if (showLocationEditor) {
+        val uiBlocks = state.allScriptBlocks.filter { it.params.containsKey("x") && it.params.containsKey("y") }
+        LocationEditorScreen(
+            uiBlocks = uiBlocks,
+            initialBlocks = state.locationBlocks,
+            onSave = { blocks ->
+                vm.updateLocationBlocks(blocks)
+                showLocationEditor = false
+            },
+            onDismiss = { showLocationEditor = false }
+        )
+        return
+    }
 
     // Редактор хитбоксов — полноэкранный
     hitboxEditorTarget?.let { (blockIndex, block) ->
@@ -214,6 +230,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         }
                         if (showSimSettings) {
                             SimSettingsDialog(onDismiss = { showSimSettings = false })
+                        }
+                        IconButton(onClick = { showLocationEditor = true }) {
+                            Icon(Icons.Default.Map, "Редактор локации", tint = TextSec)
                         }
                         IconButton(onClick = vm::runSim) {
                             Icon(Icons.Default.PlayArrow, "Запустить", tint = Success)
@@ -598,7 +617,7 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun BlockCard(
+internal fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
@@ -850,7 +869,7 @@ private fun BlockCard(
 }
 
 @Composable
-private fun RotateModeToggle(value: String, onChange: (String) -> Unit) {
+internal fun RotateModeToggle(value: String, onChange: (String) -> Unit) {
     Column {
         Text("Режим вращения", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)) {
@@ -872,7 +891,7 @@ private fun RotateModeToggle(value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
+internal fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
     val isTrue = param.value == "true"
     Column {
         Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -899,7 +918,7 @@ private fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
+internal fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val isEncrypt = param.value == "true"
     val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx, su.SkrinVex.SkriPts.engine.SimEngine.projectName)
@@ -955,7 +974,7 @@ private fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun MoveModeToggle(value: String, onChange: (String) -> Unit) {
+internal fun MoveModeToggle(value: String, onChange: (String) -> Unit) {
     val isStep = value == "step"
     Column {
         Text("Режим перемещения", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -987,7 +1006,7 @@ private fun MoveModeToggle(value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
+internal fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
     val operators = listOf(
         "==" to "равно",
         "!=" to "не равно", 
@@ -1024,7 +1043,7 @@ private fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun IfBlockContent(
+internal fun IfBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     scriptId: String = "",
@@ -1111,7 +1130,7 @@ private fun IfBlockContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IfBranchSection(
+internal fun IfBranchSection(
     label: String,
     color: Color,
     branch: String,
@@ -1205,7 +1224,7 @@ private fun IfBranchSection(
 }
 
 @Composable
-private fun ChildBlockRow(
+internal fun ChildBlockRow(
     block: BlockDef, childIndex: Int, branch: String,
     variables: List<ProjectVar>,
     accentColor: Color,
@@ -1278,7 +1297,7 @@ private fun ChildBlockRow(
 }
 
 @Composable
-private fun ObjectNameChip(param: BlockParam, variables: List<ProjectVar>, onClick: () -> Unit) {
+internal fun ObjectNameChip(param: BlockParam, variables: List<ProjectVar>, onClick: () -> Unit) {
     Column {
         Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
         Row(
@@ -1314,7 +1333,7 @@ private fun ObjectNameChip(param: BlockParam, variables: List<ProjectVar>, onCli
 }
 
 @Composable
-private fun ExprChip(param: BlockParam, variables: List<ProjectVar>, onClick: () -> Unit) {
+internal fun ExprChip(param: BlockParam, variables: List<ProjectVar>, onClick: () -> Unit) {
     val isVar = variables.any { "{${it.name}}" == param.value || it.name == param.value }
     Column {
         Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
@@ -1341,7 +1360,7 @@ private fun ExprChip(param: BlockParam, variables: List<ProjectVar>, onClick: ()
 }
 
 @Composable
-private fun VarNameChip(value: String, label: String, onClick: () -> Unit) {
+internal fun VarNameChip(value: String, label: String, onClick: () -> Unit) {
     Column {
         Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
         Row(
@@ -1365,7 +1384,7 @@ private fun VarNameChip(value: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
+internal fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
     Column {
         Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
         Row(
@@ -1389,7 +1408,7 @@ private fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
+internal fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
     val tableColor = Color(0xFF34D399)
     Column {
         Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
@@ -1414,7 +1433,7 @@ private fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ColorField(param: BlockParam, onChange: (String) -> Unit) {
+internal fun ColorField(param: BlockParam, onChange: (String) -> Unit) {
     var showPicker by remember { mutableStateOf(false) }
     val color = runCatching {
         val c = param.value.trim().trimStart('#').toLong(16)
@@ -1450,7 +1469,7 @@ private fun ColorField(param: BlockParam, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun DirectInputField(param: BlockParam, onChange: (String) -> Unit) {
+internal fun DirectInputField(param: BlockParam, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = param.value, onValueChange = onChange,
         label = { Text(param.label, fontSize = 12.sp) },
@@ -1466,7 +1485,7 @@ private fun DirectInputField(param: BlockParam, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun SmallBtn(icon: ImageVector, onClick: () -> Unit, enabled: Boolean = true, tint: Color = TextSec) {
+internal fun SmallBtn(icon: ImageVector, onClick: () -> Unit, enabled: Boolean = true, tint: Color = TextSec) {
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(32.dp)) {
         Icon(icon, null, tint = if (enabled) tint else tint.copy(alpha = 0.25f), modifier = Modifier.size(18.dp))
     }
@@ -1474,7 +1493,7 @@ private fun SmallBtn(icon: ImageVector, onClick: () -> Unit, enabled: Boolean = 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+internal fun BlockPickerSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     var selectedCategory by remember { mutableStateOf<BlockCategory?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     val allBlocks = BlockRegistry.byCategory()
@@ -1622,7 +1641,7 @@ fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
 }
 
 @Composable
-private fun LoopBlockContent(
+internal fun LoopBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     scriptId: String = "",
@@ -1660,7 +1679,7 @@ private fun LoopBlockContent(
 }
 
 @Composable
-private fun PhysicsBlockContent(
+internal fun PhysicsBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     onParamChange: (String, String) -> Unit,
@@ -1707,7 +1726,7 @@ private fun PhysicsBlockContent(
 }
 
 @Composable
-private fun HitboxBlockContent(
+internal fun HitboxBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
@@ -1761,7 +1780,7 @@ private fun HitboxBlockContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModifyBlockContent(
+internal fun ModifyBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef>,
@@ -1925,7 +1944,7 @@ private fun ModifyBlockContent(
 }
 
 @Composable
-private fun ModifyPropRow(
+internal fun ModifyPropRow(
     prop: BlockDef, childIndex: Int,
     variables: List<ProjectVar>,
     onRemove: () -> Unit,

@@ -47,13 +47,27 @@ data class Script(
     val collapsedBlockIds: Set<String>? = emptySet()  // сохранённые свёрнутые блоки
 )
 
+/** Объект на локации (не привязан к скрипту, только визуальное позиционирование) */
+data class LocationObject(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String = "",
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val width: Float = 100f,
+    val height: Float = 60f,
+    val radius: Float = 8f,
+    val color: String = "#4F8EF7",
+    val type: String = "rect"  // rect | circle | text
+)
+
 data class ScriptProject(
     val id: String,
     val name: String,
     val scripts: List<Script>? = emptyList(),
-    val globalVars: List<ProjectVar>? = emptyList(),  // только глобальные
+    val globalVars: List<ProjectVar>? = emptyList(),
     val globalTags: List<ProjectTag>? = emptyList(),
     val globalTables: List<ProjectTable>? = emptyList(),
+    val locationBlocks: List<SerializedBlock>? = emptyList(),
     // legacy
     val variables: List<ProjectVar>? = null,
     val blocks: List<SerializedBlock>? = null

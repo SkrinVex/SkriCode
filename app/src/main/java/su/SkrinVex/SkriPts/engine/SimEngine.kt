@@ -103,6 +103,7 @@ object SimEngine {
         scripts: List<Script>,
         globalVarDefs: List<ProjectVar>,
         globalTableDefs: List<ProjectTable> = emptyList(),
+        locationBlocks: List<su.SkrinVex.SkriPts.data.SerializedBlock> = emptyList(),
         onUpdate: (SimState) -> Unit = {}
     ): SimState {
         val objects = mutableMapOf<String, SimObject>()
@@ -113,6 +114,64 @@ object SimEngine {
         val globalTables = globalTableDefs.associate { it.name to it.entries.toMutableMap() }
             .mapValues { it.value }.toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = true
+
+        // Создаём объекты локации до выполнения скриптов
+        locationBlocks.mapNotNull { it.deserialize() }.forEach { block ->
+            val name = block.params["name"]?.value?.trim() ?: return@forEach
+            if (name.isBlank()) return@forEach
+            fun p(key: String) = block.params[key]?.value ?: ""
+            fun pf(key: String, def: Float) = p(key).toFloatOrNull() ?: def
+
+            val tags = p("_tags").split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+            val hasPhysics = p("_physics") == "true"
+            val physicsBody = if (hasPhysics) PhysicsBody(
+                enabled = true,
+                gravity = pf("_gravity", -9.8f),
+                isStatic = p("_static") == "true",
+                bounciness = pf("_bounciness", 0f).coerceIn(0f, 1f),
+                mass = pf("_mass", 1f).coerceAtLeast(0.01f),
+                velocityX = pf("_vx", 0f),
+                velocityY = pf("_vy", 0f)
+            ) else null
+            val hitboxType = if (p("_hitbox_type") == "manual") HitboxType.MANUAL else HitboxType.AUTO
+            val hitboxPts = if (hitboxType == HitboxType.MANUAL) parseHitboxPoints(p("_hitbox_points")) else emptyList()
+            val hitbox = Hitbox(type = hitboxType, points = hitboxPts)
+
+            when (block.type) {
+                "sim_create" -> objects[name] = SimObject(
+                    name = name,
+                    x = ExprEval.eval(p("x").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                    y = ExprEval.eval(p("y").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                    width = pf("width", 100f).coerceAtLeast(1f),
+                    height = pf("height", 60f).coerceAtLeast(1f),
+                    radius = pf("radius", 8f).coerceAtLeast(0f),
+                    color = parseColor(p("color").ifBlank { "#4F8EF7" }),
+                    tags = tags, physicsBody = physicsBody, hitbox = hitbox
+                )
+                "sim_text" -> objects[name] = SimObject(
+                    name = name,
+                    x = ExprEval.eval(p("x").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                    y = ExprEval.eval(p("y").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                    width = pf("width", 200f).coerceAtLeast(1f),
+                    height = pf("height", 40f).coerceAtLeast(1f),
+                    radius = 0f,
+                    color = parseColor(p("textColor").ifBlank { "#FFFFFF" }),
+                    label = p("text"),
+                    fontSize = pf("size", 16f),
+                    bold = p("bold") == "true",
+                    tags = tags, physicsBody = physicsBody, hitbox = hitbox
+                )
+            }
+            // Выполняем setup-блоки объекта (sim_physics, sim_hitbox, set_tag и т.д.)
+            val setupBlocks = block.children["setup"] ?: emptyList()
+            if (setupBlocks.isNotEmpty()) {
+                val dummyVars = mutableMapOf<String, String>()
+                runScript(setupBlocks, dummyVars, objects, joysticks,
+                    mutableMapOf(), log, errors,
+                    allowDelay = false, physicsEnabledRef = { physicsEnabled },
+                    setPhysicsEnabled = { physicsEnabled = it }, cameraRef = arrayOf(null))
+            }
+        }
         val cameraRef: Array<SimCamera?> = arrayOf(null)
 
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->

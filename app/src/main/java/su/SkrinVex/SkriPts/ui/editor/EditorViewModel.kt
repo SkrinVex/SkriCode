@@ -25,6 +25,7 @@ data class EditorState(
     val globalVars: List<ProjectVar> = emptyList(),
     val globalTags: List<ProjectTag> = emptyList(),
     val globalTables: List<ProjectTable> = emptyList(),
+    val locationBlocks: List<SerializedBlock> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     val validationErrors: List<String> = emptyList()
@@ -95,7 +96,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             activeScriptId = scripts.first().id,
             globalVars = globalVars,
             globalTags = globalTags,
-            globalTables = globalTables
+            globalTables = globalTables,
+            locationBlocks = project.locationBlocks ?: emptyList()
         )}
     }
 
@@ -339,7 +341,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val initial = SimState()
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
         viewModelScope.launch {
-            val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables) { liveState ->
+            val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks) { liveState ->
                 _state.update { it.copy(simState = liveState) }
             }
             _state.update { it.copy(simState = result) }
@@ -506,6 +508,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissErrors() = _state.update { it.copy(validationErrors = emptyList()) }
 
+    // --- Объекты локации ---
+    fun updateLocationBlocks(blocks: List<SerializedBlock>) =
+        _state.update { it.copy(locationBlocks = blocks) }
+
     // UI-состояние (не в EditorState — не вызывает рекомпозицию всего экрана)
     // scriptId -> firstVisibleItemIndex
     private val _scrollPositions = mutableMapOf<String, Int>()
@@ -535,7 +541,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
             scripts = scripts, globalVars = s.globalVars, globalTags = s.globalTags,
-            globalTables = s.globalTables
+            globalTables = s.globalTables, locationBlocks = s.locationBlocks
         ))
     }
 
