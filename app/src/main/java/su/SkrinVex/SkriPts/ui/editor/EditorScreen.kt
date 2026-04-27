@@ -134,8 +134,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
         PositionPickerScreen(
             objectName = block.params["name"]?.value ?: block.displayName,
             blockType = block.type,
-            objectWidth = evalF("width", 100f).coerceAtLeast(10f),
-            objectHeight = evalF("height", 60f).coerceAtLeast(10f),
+            objectWidth = if (block.type == "sim_joystick") evalF("baseRadius", 100f).coerceAtLeast(10f) * 2f
+                          else evalF("width", 100f).coerceAtLeast(10f),
+            objectHeight = if (block.type == "sim_joystick") evalF("baseRadius", 100f).coerceAtLeast(10f) * 2f
+                           else evalF("height", 60f).coerceAtLeast(10f),
             objectRadius = evalF("radius", 8f).coerceAtLeast(0f),
             objectColor = block.params["color"]?.value?.let {
                 runCatching {
@@ -2059,5 +2061,3 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
         )
     }
 }
-
-t

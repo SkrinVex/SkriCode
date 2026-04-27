@@ -764,7 +764,7 @@ object SimEngine {
                         SaveCrypto.encrypt(value, cipherKey)
                     } else value
                     ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString(key, toStore).apply()
-                    log += "  Сохранено: $key${if (encrypt) " [🔒]" else ""}"
+                    log += "  Сохранено: $key"
                 }
                 "load_var" -> {
                     val ctx = appContext
@@ -788,7 +788,7 @@ object SimEngine {
                         }
                     } else raw
                     vars[varName] = value
-                    log += "  Загружено: $varName = «$value»${if (encrypt) " [🔒]" else ""}"
+                    log += "  Загружено: $varName = «$value»"
                 }
                 "save_table" -> {
                     val ctx = appContext
@@ -806,7 +806,7 @@ object SimEngine {
                         SaveCrypto.encrypt(json, cipherKey)
                     } else json
                     ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString("__table__$key", toStore).apply()
-                    log += "  Таблица «$tableName» сохранена как «$key» (${tbl.size} записей)${if (encrypt) " [🔒]" else ""}"
+                    log += "  Таблица «$tableName» сохранена как «$key» (${tbl.size} записей)"
                 }
                 "load_table" -> {
                     val ctx = appContext
@@ -832,7 +832,7 @@ object SimEngine {
                         }.toMap().toMutableMap()
                         tables[tableName] = loaded
                         ExprEval.tables = tables.mapValues { it.value.toMap() }
-                        log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)${if (encrypt) " [🔒]" else ""}"
+                        log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)"
                     } else {
                         log += "  Таблица «$key» не найдена в памяти — «$tableName» не изменена"
                     }

@@ -98,21 +98,57 @@ fun PositionPickerScreen(
                 otherBlocks.forEach { b ->
                     val bx = ExprEval.eval(b.params["x"]?.value ?: "0", emptyVars).value.toFloatOrNull() ?: 0f
                     val by = ExprEval.eval(b.params["y"]?.value ?: "0", emptyVars).value.toFloatOrNull() ?: 0f
-                    val bw = (b.params["width"]?.value?.toFloatOrNull() ?: 100f).coerceAtLeast(1f)
-                    val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 60f).coerceAtLeast(1f)
-                    val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f).coerceAtLeast(0f)
-                    val bc = b.params["color"]?.value?.let { hex ->
+                    val bc = (b.params["color"] ?: b.params["baseColor"])?.value?.let { hex ->
                         runCatching {
                             val c = hex.trim().trimStart('#').toLong(16)
                             Color(0xFF000000 or c)
                         }.getOrNull()
                     } ?: Color(0xFF4F8EF7)
-                    val bl = cx + bx - bw / 2f
-                    val bt = cy - by - bh / 2f
-                    drawRoundRect(color = bc.copy(alpha = 0.35f), topLeft = Offset(bl, bt),
-                        size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
-                    drawRoundRect(color = bc.copy(alpha = 0.6f), topLeft = Offset(bl, bt),
-                        size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
+                    when (b.type) {
+                        "sim_joystick" -> {
+                            val baseR = (b.params["baseRadius"]?.value?.toFloatOrNull() ?: 100f).coerceAtLeast(1f)
+                            val knobR = baseR * 0.4f
+                            val knobColor = b.params["knobColor"]?.value?.let { hex ->
+                                runCatching { Color(0xFF000000 or hex.trim().trimStart('#').toLong(16)) }.getOrNull()
+                            } ?: Color(0xFF4F8EF7)
+                            val jcx = cx + bx; val jcy = cy - by
+                            drawCircle(color = bc.copy(alpha = 0.35f), radius = baseR, center = Offset(jcx, jcy))
+                            drawCircle(color = bc.copy(alpha = 0.6f), radius = baseR, center = Offset(jcx, jcy), style = Stroke(1f))
+                            drawCircle(color = knobColor.copy(alpha = 0.5f), radius = knobR, center = Offset(jcx, jcy))
+                        }
+                        "sim_text" -> {
+                            val bw = (b.params["width"]?.value?.toFloatOrNull() ?: 100f).coerceAtLeast(1f)
+                            val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 60f).coerceAtLeast(1f)
+                            val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f).coerceAtLeast(0f)
+                            val bl = cx + bx - bw / 2f; val bt = cy - by - bh / 2f
+                            drawRoundRect(color = Color(0x22FFFFFF), topLeft = Offset(bl, bt),
+                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+                            drawRoundRect(color = bc.copy(alpha = 0.6f), topLeft = Offset(bl, bt),
+                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
+                            val textSize = (bh * 0.4f).coerceIn(10f, 28f) * density
+                            drawContext.canvas.nativeCanvas.drawText(
+                                b.params["name"]?.value ?: b.displayName,
+                                bl + bw / 2f, bt + bh / 2f + textSize / 3f,
+                                android.graphics.Paint().apply {
+                                    color = android.graphics.Color.WHITE
+                                    this.textSize = textSize
+                                    textAlign = android.graphics.Paint.Align.CENTER
+                                    isAntiAlias = true
+                                    alpha = 140
+                                }
+                            )
+                        }
+                        else -> {
+                            val bw = (b.params["width"]?.value?.toFloatOrNull() ?: 100f).coerceAtLeast(1f)
+                            val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 60f).coerceAtLeast(1f)
+                            val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f).coerceAtLeast(0f)
+                            val bl = cx + bx - bw / 2f; val bt = cy - by - bh / 2f
+                            drawRoundRect(color = bc.copy(alpha = 0.35f), topLeft = Offset(bl, bt),
+                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+                            drawRoundRect(color = bc.copy(alpha = 0.6f), topLeft = Offset(bl, bt),
+                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
+                        }
+                    }
                 }
             }
 
