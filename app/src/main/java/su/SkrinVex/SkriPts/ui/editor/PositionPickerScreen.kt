@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -36,6 +37,7 @@ import kotlin.math.roundToInt
 @Composable
 fun PositionPickerScreen(
     objectName: String,
+    blockType: String = "sim_create",
     objectWidth: Float,
     objectHeight: Float,
     objectRadius: Float,
@@ -118,20 +120,57 @@ fun PositionPickerScreen(
             val left = cx + objX - objectWidth / 2f
             val top  = cy - objY - objectHeight / 2f
             val cr = CornerRadius(objectRadius, objectRadius)
-            if (objectColor != Color.Transparent) {
-                drawRoundRect(color = objectColor, topLeft = Offset(left, top),
-                    size = Size(objectWidth, objectHeight), cornerRadius = cr)
+
+            when (blockType) {
+                "sim_joystick" -> {
+                    // Джойстик: два круга
+                    val baseR = objectWidth / 2f
+                    val knobR = baseR * 0.4f
+                    val jcx = cx + objX; val jcy = cy - objY
+                    drawCircle(color = objectColor.copy(alpha = 0.5f), radius = baseR, center = Offset(jcx, jcy))
+                    drawCircle(color = objectColor.copy(alpha = 0.3f), radius = baseR, center = Offset(jcx, jcy), style = Stroke(2f))
+                    drawCircle(color = Color(0xFF4F8EF7), radius = knobR, center = Offset(jcx, jcy))
+                }
+                "sim_text" -> {
+                    // Текстовый объект: прозрачный фон с текстом
+                    drawRoundRect(color = Color(0x22FFFFFF), topLeft = Offset(left, top),
+                        size = Size(objectWidth, objectHeight), cornerRadius = cr)
+                    drawRoundRect(color = Color(0xFF00E5FF).copy(0.5f), topLeft = Offset(left, top),
+                        size = Size(objectWidth, objectHeight), cornerRadius = cr, style = Stroke(1f))
+                    val textSize = (objectHeight * 0.4f).coerceIn(12f, 32f) * density
+                    drawContext.canvas.nativeCanvas.drawText(
+                        objectName,
+                        left + objectWidth / 2f,
+                        top + objectHeight / 2f + textSize / 3f,
+                        android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            this.textSize = textSize
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            isAntiAlias = true
+                        }
+                    )
+                }
+                else -> {
+                    // Обычный прямоугольник
+                    if (objectColor != Color.Transparent) {
+                        drawRoundRect(color = objectColor, topLeft = Offset(left, top),
+                            size = Size(objectWidth, objectHeight), cornerRadius = cr)
+                    }
+                }
             }
             // Обводка выделения
+            val selLeft = if (blockType == "sim_joystick") cx + objX - objectWidth / 2f else left
+            val selTop  = if (blockType == "sim_joystick") cy - objY - objectWidth / 2f else top
+            val selW = objectWidth; val selH = if (blockType == "sim_joystick") objectWidth else objectHeight
             drawRoundRect(
                 color = Color(0xFF00E5FF),
-                topLeft = Offset(left - 2f, top - 2f),
-                size = Size(objectWidth + 4f, objectHeight + 4f),
+                topLeft = Offset(selLeft - 2f, selTop - 2f),
+                size = Size(selW + 4f, selH + 4f),
                 cornerRadius = CornerRadius(objectRadius + 2f, objectRadius + 2f),
                 style = Stroke(width = 2.5f)
             )
             // Крестик в центре объекта
-            val ocx = left + objectWidth / 2f; val ocy = top + objectHeight / 2f
+            val ocx = cx + objX; val ocy = cy - objY
             drawLine(Color(0xFF00E5FF), Offset(ocx - 10f, ocy), Offset(ocx + 10f, ocy), 1.5f)
             drawLine(Color(0xFF00E5FF), Offset(ocx, ocy - 10f), Offset(ocx, ocy + 10f), 1.5f)
         }

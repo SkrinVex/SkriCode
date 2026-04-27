@@ -133,6 +133,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
         }
         PositionPickerScreen(
             objectName = block.params["name"]?.value ?: block.displayName,
+            blockType = block.type,
             objectWidth = evalF("width", 100f).coerceAtLeast(10f),
             objectHeight = evalF("height", 60f).coerceAtLeast(10f),
             objectRadius = evalF("radius", 8f).coerceAtLeast(0f),
@@ -899,7 +900,7 @@ private fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
 private fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val isEncrypt = param.value == "true"
-    val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx)
+    val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx, su.SkrinVex.SkriPts.engine.SimEngine.projectName)
     var showKeyVault by remember { mutableStateOf(false) }
 
     Column {
@@ -944,7 +945,10 @@ private fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
     }
 
     if (showKeyVault) {
-        KeyVaultScreen(onDismiss = { showKeyVault = false })
+        KeyVaultScreen(
+            currentProjectName = su.SkrinVex.SkriPts.engine.SimEngine.projectName,
+            onDismiss = { showKeyVault = false }
+        )
     }
 }
 
@@ -2021,7 +2025,7 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
                 SettingRow("Объекты в позиционировщике", "Показывать все объекты при перемещении", showObjectsInPicker) { showObjectsInPicker = it }
                 SettingRow("Показать хитбоксы", "Отображать хитбоксы объектов в симуляции", showHitboxes) { showHitboxes = it }
 
-                val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx)
+                val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx, su.SkrinVex.SkriPts.engine.SimEngine.projectName)
                 OutlinedButton(
                     onClick = { showKeyVault = true },
                     modifier = Modifier.fillMaxWidth(),
@@ -2049,6 +2053,11 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
     )
 
     if (showKeyVault) {
-        KeyVaultScreen(onDismiss = { showKeyVault = false })
+        KeyVaultScreen(
+            currentProjectName = su.SkrinVex.SkriPts.engine.SimEngine.projectName,
+            onDismiss = { showKeyVault = false }
+        )
     }
 }
+
+t

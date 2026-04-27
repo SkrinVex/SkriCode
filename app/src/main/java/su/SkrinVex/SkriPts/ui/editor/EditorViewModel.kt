@@ -335,6 +335,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val state = _state.value
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
+        SimEngine.projectName = state.projectName
         val initial = SimState()
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
         viewModelScope.launch {

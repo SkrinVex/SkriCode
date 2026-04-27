@@ -97,6 +97,7 @@ data class SimCamera(
 object SimEngine {
 
     var appContext: Context? = null
+    var projectName: String = ""
 
     suspend fun run(
         scripts: List<Script>,
@@ -758,7 +759,7 @@ object SimEngine {
                     val value = getStr("value")
                     val encrypt = getStr("encrypt") == "true"
                     val toStore = if (encrypt) {
-                        val cipherKey = SaveCrypto.getKey(ctx)
+                        val cipherKey = SaveCrypto.getKey(ctx, projectName)
                         if (cipherKey == null) { errors += "Блок $num «Сохранить переменную»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
                         SaveCrypto.encrypt(value, cipherKey)
                     } else value
@@ -779,7 +780,7 @@ object SimEngine {
                     val value = if (raw == null) {
                         default
                     } else if (encrypt) {
-                        val cipherKey = SaveCrypto.getKey(ctx)
+                        val cipherKey = SaveCrypto.getKey(ctx, projectName)
                         if (cipherKey == null) { errors += "Блок $num «Загрузить переменную»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
                         SaveCrypto.decrypt(raw, cipherKey) ?: run {
                             errors += "Блок $num «Загрузить переменную»: не удалось расшифровать «$key» — неверный ключ?"
@@ -800,7 +801,7 @@ object SimEngine {
                     val tbl = tables[tableName] ?: emptyMap<String, String>()
                     val json = tbl.entries.joinToString("|") { "${it.key}=${it.value}" }
                     val toStore = if (encrypt) {
-                        val cipherKey = SaveCrypto.getKey(ctx)
+                        val cipherKey = SaveCrypto.getKey(ctx, projectName)
                         if (cipherKey == null) { errors += "Блок $num «Сохранить таблицу»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
                         SaveCrypto.encrypt(json, cipherKey)
                     } else json
@@ -819,7 +820,7 @@ object SimEngine {
                     val raw = prefs.getString("__table__$key", null)
                     if (raw != null) {
                         val json = if (encrypt) {
-                            val cipherKey = SaveCrypto.getKey(ctx)
+                            val cipherKey = SaveCrypto.getKey(ctx, projectName)
                             if (cipherKey == null) { errors += "Блок $num «Загрузить таблицу»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
                             SaveCrypto.decrypt(raw, cipherKey) ?: run {
                                 errors += "Блок $num «Загрузить таблицу»: не удалось расшифровать «$key» — неверный ключ?"
