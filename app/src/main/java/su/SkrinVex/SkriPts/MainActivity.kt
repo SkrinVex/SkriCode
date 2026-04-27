@@ -54,8 +54,7 @@ class MainActivity : ComponentActivity() {
                 var screen by remember { mutableStateOf("home") }
 
                 LaunchedEffect(editorState.simRunCount) {
-                    if (editorState.simRunCount > 0 && screen == "editor"
-                        && editorState.validationErrors.isEmpty()
+                    if (editorState.simRunCount > 0 && editorState.validationErrors.isEmpty()
                         && editorState.simState != null) {
                         screen = "sim"
                     }

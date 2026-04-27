@@ -20,26 +20,30 @@ import java.util.UUID
 
 data class EditorState(
     val projectName: String = "Новый проект",
-    val scripts: List<Script> = listOf(Script(UUID.randomUUID().toString(), "Скрипт 1")),
+    val scenes: List<su.SkrinVex.SkriPts.data.Scene> = listOf(
+        su.SkrinVex.SkriPts.data.Scene(name = "Главное меню")
+    ),
+    val activeSceneId: String = "",
+    val scripts: List<Script> = emptyList(),
     val activeScriptId: String = "",
+    val locationBlocks: List<SerializedBlock> = emptyList(),
     val globalVars: List<ProjectVar> = emptyList(),
     val globalTags: List<ProjectTag> = emptyList(),
     val globalTables: List<ProjectTable> = emptyList(),
-    val locationBlocks: List<SerializedBlock> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
-    val validationErrors: List<String> = emptyList()
+    val validationErrors: List<String> = emptyList(),
+    // Буфер обмена — null = пусто, true = скрипт, false = блок
+    val clipboardIsScript: Boolean? = null
 ) {
-    val activeScript: Script get() = scripts.find { it.id == activeScriptId } ?: scripts.first()
+    val activeScene: su.SkrinVex.SkriPts.data.Scene get() = scenes.find { it.id == activeSceneId } ?: scenes.first()
+    val activeScript: Script get() = scripts.find { it.id == activeScriptId } ?: scripts.firstOrNull() ?: Script(UUID.randomUUID().toString(), "Скрипт 1")
     val activeBlocks: List<BlockDef> get() = activeScript.blocks.mapNotNull { it.deserialize() }
-    /** Блоки из всех скриптов — для позиционировщика */
     val allScriptBlocks: List<BlockDef> get() = scripts.flatMap { it.blocks.mapNotNull { b -> b.deserialize() } }
-    /** Переменные видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleVars: List<ProjectVar> get() = globalVars + (activeScript.localVars ?: emptyList())
-    /** Теги видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleTags: List<ProjectTag> get() = globalTags + (activeScript.localTags ?: emptyList())
-    /** Таблицы видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleTables: List<ProjectTable> get() = globalTables + (activeScript.localTables ?: emptyList())
+    val sceneNames: List<String> get() = scenes.map { it.name }
 }
 
 @OptIn(FlowPreview::class)
@@ -71,33 +75,41 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val project = ProjectRepository.load(getApplication(), id) ?: return
         projectId = project.id
 
-        val scripts = if (!project.scripts.isNullOrEmpty()) project.scripts
-        else listOf(Script(UUID.randomUUID().toString(), "Скрипт 1",
-            blocks = project.blocks ?: emptyList()))
-
-        val globalVars = (project.globalVars ?: project.variables ?: emptyList())
-            .filter { it.scope == VarScope.GLOBAL }
-        
+        val globalVars = (project.globalVars ?: project.variables ?: emptyList()).filter { it.scope == VarScope.GLOBAL }
         val globalTags = project.globalTags ?: emptyList()
         val globalTables = project.globalTables ?: emptyList()
 
-        // Восстанавливаем collapsed из файла
-        scripts.forEach { script ->
+        // Загружаем сцены (или создаём одну из legacy-данных)
+        val scenes = if (!project.scenes.isNullOrEmpty()) {
+            project.scenes
+        } else {
+            val legacyScripts = if (!project.scripts.isNullOrEmpty()) project.scripts
+                else listOf(Script(UUID.randomUUID().toString(), "Скрипт 1", blocks = project.blocks ?: emptyList()))
+            listOf(su.SkrinVex.SkriPts.data.Scene(
+                id = project.activeSceneId ?: UUID.randomUUID().toString(),
+                name = "Сцена 1",
+                scripts = legacyScripts,
+                locationBlocks = project.locationBlocks ?: emptyList()
+            ))
+        }
+        val activeScene = scenes.find { it.id == project.activeSceneId } ?: scenes.first()
+
+        // Восстанавливаем collapsed
+        activeScene.scripts.forEach { script ->
             val collapsed = script.collapsedBlockIds ?: emptySet()
-            android.util.Log.d("SkriPts", "loadProject script=${script.id} collapsedBlockIds=$collapsed blocks=${script.blocks.map{it.type}}")
-            if (collapsed.isNotEmpty()) {
-                _collapsedBlocks[script.id] = collapsed.toMutableSet()
-            }
+            if (collapsed.isNotEmpty()) _collapsedBlocks[script.id] = collapsed.toMutableSet()
         }
 
         _state.update { it.copy(
             projectName = project.name,
-            scripts = scripts,
-            activeScriptId = scripts.first().id,
+            scenes = scenes,
+            activeSceneId = activeScene.id,
+            scripts = activeScene.scripts,
+            activeScriptId = activeScene.scripts.first().id,
+            locationBlocks = activeScene.locationBlocks,
             globalVars = globalVars,
             globalTags = globalTags,
-            globalTables = globalTables,
-            locationBlocks = project.locationBlocks ?: emptyList()
+            globalTables = globalTables
         )}
     }
 
@@ -344,29 +356,50 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks) { liveState ->
                 _state.update { it.copy(simState = liveState) }
             }
-            _state.update { it.copy(simState = result) }
+            // Обрабатываем переход на сцену
+            val switchTarget = result.pendingSceneSwitch
+            if (switchTarget != null) {
+                switchScene(switchTarget, result.globalVars)
+            } else {
+                _state.update { it.copy(simState = result) }
+            }
         }
         // Запускаем физический тик ~60fps
         _physicsJob?.cancel()
         _physicsJob = viewModelScope.launch {
+            // Множество активных скриптов коллизий — не запускаем повторно пока выполняется
+            val runningCollisionScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
                 val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
                 _state.update { it.copy(simState = newSim) }
 
-                // Запускаем ON_COLLISION для новых коллизий
+                // Запускаем ON_COLLISION для новых коллизий — в отдельных корутинах
                 for ((nameA, nameB) in newCols) {
                     val sim = _state.value.simState ?: break
                     val scripts = _state.value.scripts
-                    val logMsg = "Коллизия: «$nameA» ↔ «$nameB»"
-                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + logMsg) }) }
+                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Коллизия: «$nameA» ↔ «$nameB»") }) }
                     sim.objects[nameA]?.collisionScriptId?.let { sid ->
-                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
-                        _state.update { it.copy(simState = result) }
+                        if (sid !in runningCollisionScripts) {
+                            runningCollisionScripts += sid
+                            launch {
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA)
+                                runningCollisionScripts -= sid
+                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                _state.update { it.copy(simState = result) }
+                            }
+                        }
                     }
                     sim.objects[nameB]?.collisionScriptId?.let { sid ->
-                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
-                        _state.update { it.copy(simState = result) }
+                        if (sid !in runningCollisionScripts) {
+                            runningCollisionScripts += sid
+                            launch {
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB)
+                                runningCollisionScripts -= sid
+                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                _state.update { it.copy(simState = result) }
+                            }
+                        }
                     }
                 }
 
@@ -374,15 +407,28 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 for ((nameA, nameB) in endedCols) {
                     val sim = _state.value.simState ?: break
                     val scripts = _state.value.scripts
-                    val logMsg = "Конец коллизии: «$nameA» ↔ «$nameB»"
-                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + logMsg) }) }
+                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Конец коллизии: «$nameA» ↔ «$nameB»") }) }
                     sim.objects[nameA]?.collisionEndScriptId?.let { sid ->
-                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
-                        _state.update { it.copy(simState = result) }
+                        if (sid !in runningCollisionScripts) {
+                            runningCollisionScripts += sid
+                            launch {
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA)
+                                runningCollisionScripts -= sid
+                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                _state.update { it.copy(simState = result) }
+                            }
+                        }
                     }
                     sim.objects[nameB]?.collisionEndScriptId?.let { sid ->
-                        val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
-                        _state.update { it.copy(simState = result) }
+                        if (sid !in runningCollisionScripts) {
+                            runningCollisionScripts += sid
+                            launch {
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB)
+                                runningCollisionScripts -= sid
+                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                _state.update { it.copy(simState = result) }
+                            }
+                        }
                     }
                 }
             }
@@ -400,6 +446,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val newSim = SimEngine.runTap(scriptId, _state.value.scripts, currentSim) { liveState ->
                     _state.update { it.copy(simState = liveState) }
                 }
+                if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@withLock }
                 _state.update { it.copy(simState = newSim) }
             }
         }
@@ -506,11 +553,159 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // --- Буфер обмена ---
+    private var _clipboardScript: su.SkrinVex.SkriPts.data.Script? = null
+    private var _clipboardBlock: SerializedBlock? = null
+
+    fun copyScript(script: su.SkrinVex.SkriPts.data.Script) {
+        _clipboardScript = script; _clipboardBlock = null
+        _state.update { it.copy(clipboardIsScript = true) }
+    }
+    fun copyBlock(block: SerializedBlock) {
+        _clipboardBlock = block; _clipboardScript = null
+        _state.update { it.copy(clipboardIsScript = false) }
+    }
+    fun hasClipboard() = _state.value.clipboardIsScript != null
+    fun clipboardIsScript() = _state.value.clipboardIsScript == true
+
+    /** Вставить скопированный скрипт в активную сцену */
+    fun pasteScript() {
+        val src = _clipboardScript ?: return
+        val newScript = src.copy(
+            id = UUID.randomUUID().toString(),
+            name = src.name + " (копия)",
+            blocks = src.blocks.map { it.copy(id = UUID.randomUUID().toString()) }
+        )
+        _state.update { it.copy(scripts = it.scripts + newScript, activeScriptId = newScript.id, clipboardIsScript = null) }
+        _clipboardScript = null
+    }
+
+    /** Вставить скопированный блок в активный скрипт */
+    fun pasteBlock() {
+        val src = _clipboardBlock ?: return
+        val newBlock = src.copy(id = UUID.randomUUID().toString())
+        modifyActiveBlocks { it + newBlock }
+        _clipboardBlock = null
+        _state.update { it.copy(clipboardIsScript = null) }
+    }
+
+    /** Скопировать объект локации в другую сцену */
+    fun copyLocationBlockToScene(block: BlockDef, targetSceneId: String) {
+        val newBlock = block.copy(id = UUID.randomUUID().toString())
+        _state.update { s ->
+            s.copy(scenes = s.scenes.map { scene ->
+                if (scene.id == targetSceneId) {
+                    val serialized = newBlock.serialize()
+                    scene.copy(locationBlocks = scene.locationBlocks + serialized)
+                } else scene
+            })
+        }
+    }
+
     fun dismissErrors() = _state.update { it.copy(validationErrors = emptyList()) }
 
     // --- Объекты локации ---
     fun updateLocationBlocks(blocks: List<SerializedBlock>) =
         _state.update { it.copy(locationBlocks = blocks) }
+
+    // --- Сцены ---
+    fun addScene(name: String) {
+        val scene = su.SkrinVex.SkriPts.data.Scene(name = name)
+        _state.update { it.copy(scenes = it.scenes + scene) }
+    }
+
+    fun selectScene(id: String) {
+        val s = _state.value
+        // Сохраняем текущую сцену перед переключением
+        val updatedScenes = s.scenes.map { scene ->
+            if (scene.id == s.activeSceneId) scene.copy(scripts = s.scripts, locationBlocks = s.locationBlocks)
+            else scene
+        }
+        val newScene = updatedScenes.find { it.id == id } ?: return
+        // Восстанавливаем collapsed для новой сцены
+        newScene.scripts.forEach { script ->
+            val collapsed = script.collapsedBlockIds ?: emptySet()
+            if (collapsed.isNotEmpty()) _collapsedBlocks[script.id] = collapsed.toMutableSet()
+        }
+        _state.update { it.copy(
+            scenes = updatedScenes,
+            activeSceneId = id,
+            scripts = newScene.scripts,
+            activeScriptId = newScene.scripts.first().id,
+            locationBlocks = newScene.locationBlocks
+        )}
+    }
+
+    fun renameScene(id: String, name: String) =
+        _state.update { it.copy(scenes = it.scenes.map { s -> if (s.id == id) s.copy(name = name) else s }) }
+
+    fun deleteScene(id: String) {
+        val s = _state.value
+        if (s.scenes.size <= 1) return  // нельзя удалить последнюю
+        val remaining = s.scenes.filter { it.id != id }
+        val newActive = if (s.activeSceneId == id) remaining.first() else remaining.find { it.id == s.activeSceneId }!!
+        _state.update { it.copy(
+            scenes = remaining,
+            activeSceneId = newActive.id,
+            scripts = newActive.scripts,
+            activeScriptId = newActive.scripts.first().id,
+            locationBlocks = newActive.locationBlocks
+        )}
+    }
+
+    /** Переключение сцены во время симуляции — сохраняем globalVars и запускаем новую сцену */
+    private fun switchScene(sceneName: String, globalVars: Map<String, String>) {
+        val s = _state.value
+        val targetScene = s.scenes.find { it.name == sceneName }
+        if (targetScene == null) {
+            _state.update { it.copy(simState = it.simState?.copy(
+                errors = (it.simState.errors) + "Сцена «$sceneName» не найдена",
+                pendingSceneSwitch = null
+            ))}
+            return
+        }
+        stopPhysics()
+        val updatedGlobalVarDefs = s.globalVars.map { v ->
+            globalVars[v.name]?.let { v.copy(value = it) } ?: v
+        }
+        // simRunCount++ заставит MainActivity перейти на "sim" экран заново (сброс SimulationScreen)
+        _state.update { it.copy(
+            simState = SimState(globalVars = globalVars),
+            simRunCount = it.simRunCount + 1,
+            globalVars = updatedGlobalVarDefs
+        )}
+        viewModelScope.launch {
+            val result = SimEngine.run(
+                targetScene.scripts, updatedGlobalVarDefs, s.globalTables, targetScene.locationBlocks
+            ) { liveState -> _state.update { it.copy(simState = liveState) } }
+            val nextSwitch = result.pendingSceneSwitch
+            if (nextSwitch != null) switchScene(nextSwitch, result.globalVars)
+            else _state.update { it.copy(simState = result) }
+        }
+        _physicsJob?.cancel()
+        _physicsJob = viewModelScope.launch {
+            while (true) {
+                delay(16)
+                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
+                _state.update { it.copy(simState = newSim) }
+                for ((nameA, nameB) in newCols) {
+                    val sim = _state.value.simState ?: break
+                    val scripts = targetScene.scripts
+                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Коллизия: «$nameA» ↔ «$nameB»") }) }
+                    sim.objects[nameA]?.collisionScriptId?.let { sid ->
+                        val r = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
+                        if (r.pendingSceneSwitch != null) { switchScene(r.pendingSceneSwitch, r.globalVars); return@launch }
+                        _state.update { it.copy(simState = r) }
+                    }
+                    sim.objects[nameB]?.collisionScriptId?.let { sid ->
+                        val r = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
+                        if (r.pendingSceneSwitch != null) { switchScene(r.pendingSceneSwitch, r.globalVars); return@launch }
+                        _state.update { it.copy(simState = r) }
+                    }
+                }
+            }
+        }
+    }
 
     // UI-состояние (не в EditorState — не вызывает рекомпозицию всего экрана)
     // scriptId -> firstVisibleItemIndex
@@ -533,15 +728,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         blockId in (_collapsedBlocks[scriptId] ?: emptySet<String>())
 
     private fun saveInternal(s: EditorState) {
-        val scripts = s.scripts.map { script ->
+        // Сохраняем collapsed в скрипты активной сцены
+        val updatedScripts = s.scripts.map { script ->
             val collapsed = _collapsedBlocks[script.id]
-            android.util.Log.d("SkriPts", "saveInternal script=${script.id} collapsed=$collapsed")
             if (collapsed != null) script.copy(collapsedBlockIds = collapsed.toSet()) else script
+        }
+        // Обновляем активную сцену с актуальными скриптами и локацией
+        val updatedScenes = s.scenes.map { scene ->
+            if (scene.id == s.activeSceneId) scene.copy(scripts = updatedScripts, locationBlocks = s.locationBlocks)
+            else scene
         }
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
-            scripts = scripts, globalVars = s.globalVars, globalTags = s.globalTags,
-            globalTables = s.globalTables, locationBlocks = s.locationBlocks
+            scenes = updatedScenes, activeSceneId = s.activeSceneId,
+            globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables
         ))
     }
 

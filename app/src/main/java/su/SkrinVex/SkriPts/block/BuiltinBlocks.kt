@@ -187,6 +187,9 @@ object BlockFactory {
             "table"   to p("", "Таблица", "Нажми чтобы выбрать"),
             "encrypt" to p("false", "Шифровать", "true = данные были зашифрованы")))
 
+        "scene_switch" -> build("scene_switch", "Перейти на сцену", "Переключает активную сцену", BlockCategory.CONTROL, listOf(
+            "scene" to p("", "Сцена", "Имя сцены для перехода")))
+
         else -> null
     }
 }

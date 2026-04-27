@@ -65,6 +65,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
         LocationEditorScreen(
             uiBlocks = uiBlocks,
             initialBlocks = state.locationBlocks,
+            scenes = state.scenes,
+            currentSceneId = state.activeSceneId,
+            onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
                 showLocationEditor = false
@@ -238,6 +241,15 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                             Icon(Icons.Default.PlayArrow, "Запустить", tint = Success)
                         }
                     }
+                    // Панель сцен
+                    SceneTabsRow(
+                        scenes = state.scenes,
+                        activeId = state.activeScene.id,
+                        onSelect = vm::selectScene,
+                        onAdd = { vm.addScene("Сцена ${state.scenes.size + 1}") },
+                        onRename = { id, name -> vm.renameScene(id, name) },
+                        onDelete = { id -> vm.deleteScene(id) }
+                    )
                     // Панель скриптов
                     ScriptTabsRow(
                         scripts = state.scripts,
@@ -319,6 +331,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         total = activeBlocks.size,
                         variables = state.visibleVars,
                         allBlocks = state.allScriptBlocks,
+                        sceneNames = state.sceneNames,
                         collapsed = collapsed,
                         scriptId = activeScriptId,
                         onToggleCollapse = {
@@ -332,6 +345,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
                         onDuplicate = { vm.duplicateBlock(index) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
+                        onCopyBlock = { vm.copyBlock(state.activeScript.blocks[index]) },
                         onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
                         onOpenPositionPicker = { b -> positionPickerBlock = index to b },
                         onOpenHitboxEditor = { b -> hitboxEditorTarget = index to b },
@@ -389,7 +403,22 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 script = script,
                 onRename = { name -> vm.renameScript(scriptId, name); showScriptMenu = null },
                 onDelete = { vm.deleteScript(scriptId); showScriptMenu = null },
+                onCopy = { vm.copyScript(script) },
                 onDismiss = { showScriptMenu = null }
+            )
+        }
+    }
+
+    // FAB вставки — показывается когда в буфере есть скрипт или блок
+    if (state.clipboardIsScript != null) {
+        Box(Modifier.fillMaxSize()) {
+            ExtendedFloatingActionButton(
+                onClick = { if (state.clipboardIsScript == true) vm.pasteScript() else vm.pasteBlock() },
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 20.dp),
+                containerColor = Color(0xFF2A2F3E),
+                contentColor = Accent,
+                icon = { Icon(Icons.Default.ContentPaste, null) },
+                text = { Text(if (state.clipboardIsScript == true) "Вставить скрипт" else "Вставить блок") }
             )
         }
     }
@@ -571,7 +600,7 @@ private fun EventPickerDialog(
 }
 
 @Composable
-private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelete: () -> Unit, onCopy: () -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(script.name) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -588,6 +617,11 @@ private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelet
                         cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
                     )
                 )
+                TextButton(onClick = { onCopy(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.ContentCopy, null, tint = Accent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Копировать скрипт", color = Accent)
+                }
                 TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.DeleteOutline, null, tint = Danger, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -621,6 +655,7 @@ internal fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
+    sceneNames: List<String> = emptyList(),
     collapsed: Boolean,
     scriptId: String = "",
     onToggleCollapse: () -> Unit,
@@ -632,6 +667,7 @@ internal fun BlockCard(
     onDuplicate: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onCopyBlock: (() -> Unit)? = null,
     onOpenPositionPicker: ((block: BlockDef) -> Unit)? = null,
     onOpenHitboxEditor: ((block: BlockDef) -> Unit)? = null,
     onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
@@ -799,6 +835,9 @@ internal fun BlockCard(
                                         block.type == "load_var" && key == "var" ->
                                             VarNameChip(value = param.value, label = param.label,
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        block.type == "scene_switch" && key == "scene" ->
+                                            SceneChip(param = param, sceneNames = sceneNames,
+                                                onChange = { onParamChange(key, it) })
                                         (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
                                             EncryptToggle(param = param, onChange = { onParamChange(key, it) })
                                         (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
@@ -847,6 +886,17 @@ internal fun BlockCard(
                         Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Дублировать блок")
+                    }
+                    if (onCopyBlock != null) {
+                        Button(
+                            onClick = { onCopyBlock(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2F3E))
+                        ) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Копировать блок")
+                        }
                     }
                     Button(
                         onClick = { onRemove(); showContextMenu = false },
@@ -2010,6 +2060,84 @@ internal fun ModifyPropRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SceneTabsRow(
+    scenes: List<su.SkrinVex.SkriPts.data.Scene>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onRename: (String, String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var renamingId by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+
+    Row(
+        Modifier.fillMaxWidth().background(Color(0xFF0D1120))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(Icons.Default.Layers, null, tint = TextSec, modifier = Modifier.size(14.dp))
+        scenes.forEach { scene ->
+            val isActive = scene.id == activeId
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isActive) Color(0xFF1E2A4A) else Color.Transparent)
+                    .border(if (isActive) 1.dp else 0.dp, if (isActive) Accent.copy(0.5f) else Color.Transparent, RoundedCornerShape(6.dp))
+                    .combinedClickable(
+                        onClick = { onSelect(scene.id) },
+                        onLongClick = { renamingId = scene.id; renameText = scene.name }
+                    )
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(scene.name, color = if (isActive) Accent else TextSec, fontSize = 12.sp,
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
+            }
+        }
+        IconButton(onClick = onAdd, modifier = Modifier.size(24.dp)) {
+            Icon(Icons.Default.Add, "Добавить сцену", tint = TextSec, modifier = Modifier.size(16.dp))
+        }
+    }
+
+    // Диалог переименования/удаления сцены
+    renamingId?.let { id ->
+        val scene = scenes.find { it.id == id } ?: return@let
+        AlertDialog(
+            onDismissRequest = { renamingId = null },
+            containerColor = Surface2,
+            title = { Text("Сцена «${scene.name}»", color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = renameText, onValueChange = { renameText = it },
+                        label = { Text("Название") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent, unfocusedBorderColor = Color(0xFF2A2F3E),
+                            focusedLabelColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = Accent
+                        )
+                    )
+                    if (scenes.size > 1) {
+                        TextButton(
+                            onClick = { onDelete(id); renamingId = null },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Danger)
+                        ) { Text("Удалить сцену") }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { onRename(id, renameText.trim().ifBlank { scene.name }); renamingId = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text("OK", color = Color.Black) }
+            },
+            dismissButton = { TextButton(onClick = { renamingId = null }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+}
+
 @Composable
 private fun SimSettingsDialog(onDismiss: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -2078,5 +2206,53 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
             currentProjectName = su.SkrinVex.SkriPts.engine.SimEngine.projectName,
             onDismiss = { showKeyVault = false }
         )
+    }
+}
+
+@Composable
+internal fun SceneChip(param: BlockParam, sceneNames: List<String>, onChange: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Box {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3)
+                    .border(1.dp, Accent.copy(0.3f), RoundedCornerShape(8.dp))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Layers, null, tint = Accent, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    param.value.ifBlank { "Выбрать сцену..." },
+                    color = if (param.value.isBlank()) TextSec else TextPrim,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Surface2)
+            ) {
+                sceneNames.forEach { name ->
+                    DropdownMenuItem(
+                        text = { Text(name, color = if (name == param.value) Accent else TextPrim, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Layers, null, tint = if (name == param.value) Accent else TextSec, modifier = Modifier.size(16.dp)) },
+                        onClick = { onChange(name); expanded = false }
+                    )
+                }
+                if (sceneNames.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Нет сцен", color = TextSec, fontSize = 13.sp) },
+                        onClick = { expanded = false }
+                    )
+                }
+            }
+        }
     }
 }

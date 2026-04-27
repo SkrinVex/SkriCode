@@ -79,7 +79,8 @@ data class SimState(
     val isStopped: Boolean = false,
     val physicsEnabled: Boolean = true,
     val activeCollisions: Set<Pair<String, String>> = emptySet(),
-    val camera: SimCamera? = null
+    val camera: SimCamera? = null,
+    val pendingSceneSwitch: String? = null  // имя сцены для перехода
 )
 
 /** Камера слежения */
@@ -174,7 +175,9 @@ object SimEngine {
         }
         val cameraRef: Array<SimCamera?> = arrayOf(null)
 
+        val sceneSwitchRef: Array<String?> = arrayOf(null)
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
+            if (sceneSwitchRef[0] != null) return@forEach  // уже переключаемся
             log += "Скрипт «${script.name}»"
             val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
             val vars = (globalVars + localVars).toMutableMap()
@@ -182,7 +185,7 @@ object SimEngine {
             val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
             runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                 allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
-                cameraRef = cameraRef,
+                cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
                 onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
             globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
@@ -192,7 +195,7 @@ object SimEngine {
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
-            physicsEnabled = physicsEnabled, camera = cameraRef[0])
+            physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0])
     }
 
     /**
@@ -363,11 +366,12 @@ object SimEngine {
         val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = currentState.physicsEnabled
         val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
+        val sceneSwitchRef: Array<String?> = arrayOf(null)
 
         log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
-            cameraRef = cameraRef,
+            cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
             onUpdate = if (onUpdate != null) {
                 { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) }
             } else null
@@ -380,7 +384,7 @@ object SimEngine {
             objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = allTables.mapValues { it.value.toMap() },
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
-            camera = cameraRef[0]
+            camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0]
         )
     }
 
@@ -396,6 +400,7 @@ object SimEngine {
         physicsEnabledRef: () -> Boolean = { true },
         setPhysicsEnabled: (Boolean) -> Unit = {},
         cameraRef: Array<SimCamera?> = arrayOf(null),
+        sceneSwitchRef: Array<String?> = arrayOf(null),
         onUpdate: (() -> Unit)? = null
     ): Boolean {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
@@ -457,6 +462,13 @@ object SimEngine {
                     log += "  Симуляция остановлена"
                     return false
                 }
+                "scene_switch" -> {
+                    val sceneName = ExprEval.eval(block.params["scene"]?.value ?: "", vars).value.trim()
+                    if (sceneName.isBlank()) { errors += "Блок $num «Перейти на сцену»: имя сцены не заполнено"; continue }
+                    log += "  Переход на сцену «$sceneName»"
+                    sceneSwitchRef[0] = sceneName
+                    return false
+                }
                 "if_block" -> {
                     val left  = block.params["left"]?.value ?: ""
                     val op    = block.params["op"]?.value ?: "=="
@@ -469,7 +481,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -580,7 +592,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -596,7 +608,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }

@@ -50,6 +50,9 @@ private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text")
 fun LocationEditorScreen(
     uiBlocks: List<BlockDef>,
     initialBlocks: List<SerializedBlock>,
+    scenes: List<su.SkrinVex.SkriPts.data.Scene> = emptyList(),
+    currentSceneId: String = "",
+    onCopyToScene: (BlockDef, String) -> Unit = { _, _ -> },
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -59,6 +62,9 @@ fun LocationEditorScreen(
 
     var locBlocks by remember { mutableStateOf(initialBlocks.mapNotNull { it.deserialize() }) }
     var selectedId by remember { mutableStateOf<String?>(null) }
+    // Мультивыделение
+    var multiSelectMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
 
     var snapEnabled by remember { mutableStateOf(false) }
     var snapSize by remember { mutableIntStateOf(32) }
@@ -68,6 +74,9 @@ fun LocationEditorScreen(
     var showAddSheet by remember { mutableStateOf(false) }
     var editingBlock by remember { mutableStateOf<BlockDef?>(null) }
     var deleteConfirmBlock by remember { mutableStateOf<BlockDef?>(null) }
+    var copyToSceneBlock by remember { mutableStateOf<BlockDef?>(null) }
+    var copySelectionToScene by remember { mutableStateOf(false) }
+    var deleteSelectionConfirm by remember { mutableStateOf(false) }
     // Сохраняем свёрнутость блоков между открытиями редактора объекта
     val setupCollapsedState = remember { mutableStateMapOf<String, Boolean>() }
 
@@ -109,29 +118,52 @@ fun LocationEditorScreen(
                         }
 
                         if (hit != null) {
-                            selectedId = hit.id
-                            var moved = false
-                            var lastPos = down.position
-                            do {
-                                val event = awaitPointerEvent()
-                                val ch = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!ch.pressed) break
-                                val delta = ch.position - lastPos
-                                if (delta.getDistance() > 8f) moved = true
-                                if (moved) {
-                                    lastPos = ch.position
-                                    val dx = delta.x / zoom; val dy = -delta.y / zoom
-                                    locBlocks = locBlocks.map { b ->
-                                        if (b.id == hit.id) {
-                                            val nx = snapF(evalParam(b, "x") + dx)
-                                            val ny = snapF(evalParam(b, "y") + dy)
-                                            b.withParam("x", nx.roundToInt().toString())
-                                             .withParam("y", ny.roundToInt().toString())
-                                        } else b
+                            if (multiSelectMode) {
+                                selectedIds = if (hit.id in selectedIds) selectedIds - hit.id else selectedIds + hit.id
+                                selectedId = null
+                                var moved = false; var lastPos = down.position
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val ch = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!ch.pressed) break
+                                    val delta = ch.position - lastPos
+                                    if (delta.getDistance() > 8f) moved = true
+                                    if (moved) {
+                                        lastPos = ch.position
+                                        val dx = delta.x / zoom; val dy = -delta.y / zoom
+                                        locBlocks = locBlocks.map { b ->
+                                            if (b.id in selectedIds)
+                                                b.withParam("x", snapF(evalParam(b, "x") + dx).roundToInt().toString())
+                                                 .withParam("y", snapF(evalParam(b, "y") + dy).roundToInt().toString())
+                                            else b
+                                        }
                                     }
-                                }
-                                ch.consume()
-                            } while (true)
+                                    ch.consume()
+                                } while (true)
+                            } else {
+                                selectedId = hit.id
+                                var moved = false; var lastPos = down.position
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val ch = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!ch.pressed) break
+                                    val delta = ch.position - lastPos
+                                    if (delta.getDistance() > 8f) moved = true
+                                    if (moved) {
+                                        lastPos = ch.position
+                                        val dx = delta.x / zoom; val dy = -delta.y / zoom
+                                        locBlocks = locBlocks.map { b ->
+                                            if (b.id == hit.id) {
+                                                val nx = snapF(evalParam(b, "x") + dx)
+                                                val ny = snapF(evalParam(b, "y") + dy)
+                                                b.withParam("x", nx.roundToInt().toString())
+                                                 .withParam("y", ny.roundToInt().toString())
+                                            } else b
+                                        }
+                                    }
+                                    ch.consume()
+                                } while (true)
+                            }
                         } else {
                             selectedId = null
                             var lastPan = down.position
@@ -185,7 +217,7 @@ fun LocationEditorScreen(
 
             // Объекты локации
             locBlocks.forEach { b ->
-                val isSelected = b.id == selectedId
+                val isSelected = b.id == selectedId || b.id in selectedIds
                 drawBlock(b, cx, cy, zoom, alpha = 1f, emptyVars, density, isSelected)
                 // Имя — фиксированный размер в экранных пикселях (не зависит от зума)
                 if (zoom > 0.05f) {
@@ -225,6 +257,11 @@ fun LocationEditorScreen(
                         IconButton(onClick = { editingBlock = obj }, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(18.dp))
                         }
+                        if (scenes.size > 1) {
+                            IconButton(onClick = { copyToSceneBlock = obj }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.IosShare, null, tint = TextSec, modifier = Modifier.size(18.dp))
+                            }
+                        }
                         IconButton(onClick = {
                             val copy = obj.copy(
                                 id = UUID.randomUUID().toString(),
@@ -256,6 +293,15 @@ fun LocationEditorScreen(
         Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallLocFab(Icons.Default.CenterFocusStrong, "Сброс") { zoom = 1f; panX = 0f; panY = 0f }
             SmallLocFab(Icons.Default.Add, "Добавить") { showAddSheet = true }
+            // Мультивыделение
+            SmallFloatingActionButton(
+                onClick = { multiSelectMode = !multiSelectMode; if (!multiSelectMode) selectedIds = emptySet() },
+                containerColor = if (multiSelectMode) Color(0xFFFFB300) else Color(0xFF1E2535),
+                contentColor = if (multiSelectMode) Color.Black else Color.White,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.SelectAll, "Выделение", modifier = Modifier.size(20.dp))
+            }
             // Snap-to-grid
             SmallFloatingActionButton(
                 onClick = { snapEnabled = !snapEnabled },
@@ -265,22 +311,58 @@ fun LocationEditorScreen(
             ) {
                 Icon(Icons.Default.GridOn, "Сетка", modifier = Modifier.size(20.dp))
             }
-            // Шаг сетки (только когда snap включён)
             if (snapEnabled) {
                 Surface(color = Color(0xCC0A0E1A), shape = RoundedCornerShape(8.dp)) {
                     Column(Modifier.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         listOf(8, 16, 32, 64).forEach { step ->
                             val active = snapSize == step
                             Box(
-                                Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(6.dp))
+                                Modifier.size(36.dp).clip(RoundedCornerShape(6.dp))
                                     .background(if (active) Accent.copy(0.2f) else Color.Transparent)
                                     .clickable { snapSize = step },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text("$step", color = if (active) Accent else TextSec, fontSize = 10.sp)
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Топбар мультивыделения
+        if (multiSelectMode) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                color = Color(0xCC0A0E1A), shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Выбрать всё / снять
+                    val allSelected = locBlocks.isNotEmpty() && locBlocks.all { it.id in selectedIds }
+                    IconButton(onClick = {
+                        selectedIds = if (allSelected) emptySet() else locBlocks.map { it.id }.toSet()
+                    }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                            null, tint = Color(0xFFFFB300), modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Text(
+                        if (selectedIds.isEmpty()) "Выбери объекты" else "${selectedIds.size} выбрано",
+                        color = Color(0xFFFFB300), fontWeight = FontWeight.Bold, fontSize = 13.sp
+                    )
+                    if (selectedIds.isNotEmpty()) {
+                        if (scenes.size > 1) {
+                            IconButton(onClick = { copySelectionToScene = true }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.IosShare, null, tint = TextSec, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        IconButton(onClick = { deleteSelectionConfirm = true }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -336,6 +418,23 @@ fun LocationEditorScreen(
         )
     }
 
+    if (deleteSelectionConfirm) {
+        AlertDialog(
+            onDismissRequest = { deleteSelectionConfirm = false },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Color(0xFFFF6B6B)) },
+            title = { Text("Удалить ${selectedIds.size} объектов?", color = TextPrim) },
+            text = { Text("Все выделенные объекты будут удалены с локации.", color = TextSec) },
+            confirmButton = {
+                Button(onClick = {
+                    locBlocks = locBlocks.filter { it.id !in selectedIds }
+                    selectedIds = emptySet(); deleteSelectionConfirm = false
+                }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { deleteSelectionConfirm = false }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+
     // Диалог подтверждения удаления
     deleteConfirmBlock?.let { block ->
         AlertDialog(
@@ -355,9 +454,70 @@ fun LocationEditorScreen(
             dismissButton = { TextButton(onClick = { deleteConfirmBlock = null }) { Text("Отмена", color = TextSec) } }
         )
     }
-}
 
-// ─── Вспомогательные функции рисования ────────────────────────────────────────
+    // Диалог копирования объекта в другую сцену
+    copyToSceneBlock?.let { block ->
+        AlertDialog(
+            onDismissRequest = { copyToSceneBlock = null },
+            containerColor = Surface2,
+            title = { Text("Копировать в сцену", color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    scenes.filter { it.id != currentSceneId }.forEach { scene ->
+                        Surface(
+                            onClick = { onCopyToScene(block, scene.id); copyToSceneBlock = null },
+                            color = Surface3,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Default.Layers, null, tint = Accent, modifier = Modifier.size(18.dp))
+                                Text(scene.name, color = TextPrim, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { copyToSceneBlock = null }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+
+    if (copySelectionToScene) {
+        AlertDialog(
+            onDismissRequest = { copySelectionToScene = false },
+            containerColor = Surface2,
+            title = { Text("Копировать ${selectedIds.size} объектов в сцену", color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    scenes.filter { it.id != currentSceneId }.forEach { scene ->
+                        Surface(
+                            onClick = {
+                                locBlocks.filter { it.id in selectedIds }.forEach { b -> onCopyToScene(b, scene.id) }
+                                copySelectionToScene = false
+                            },
+                            color = Surface3, shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Default.Layers, null, tint = Accent, modifier = Modifier.size(18.dp))
+                                Text(scene.name, color = TextPrim, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { copySelectionToScene = false }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+}
 
 private fun evalParam(b: BlockDef, key: String): Float =
     ExprEval.eval(b.params[key]?.value ?: "0", emptyMap()).value.toFloatOrNull() ?: 0f
@@ -440,3 +600,6 @@ private fun SmallLocFab(icon: androidx.compose.ui.graphics.vector.ImageVector, d
         Icon(icon, desc, modifier = Modifier.size(20.dp))
     }
 }
+
+// Диалог копирования выделения в другую сцену — вызывается из LocationEditorScreen
+// (встроен в основную функцию через copySelectionToScene state)

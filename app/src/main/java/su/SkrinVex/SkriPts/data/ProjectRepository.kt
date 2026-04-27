@@ -60,10 +60,20 @@ data class LocationObject(
     val type: String = "rect"  // rect | circle | text
 )
 
+/** Сцена — независимый экран с собственными скриптами и объектами */
+data class Scene(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val scripts: List<Script> = listOf(Script(java.util.UUID.randomUUID().toString(), "Скрипт 1")),
+    val locationBlocks: List<SerializedBlock> = emptyList()
+)
+
 data class ScriptProject(
     val id: String,
     val name: String,
-    val scripts: List<Script>? = emptyList(),
+    val scenes: List<Scene>? = null,           // null = legacy (нет сцен)
+    val activeSceneId: String? = null,
+    val scripts: List<Script>? = emptyList(),  // legacy / сцена по умолчанию
     val globalVars: List<ProjectVar>? = emptyList(),
     val globalTags: List<ProjectTag>? = emptyList(),
     val globalTables: List<ProjectTable>? = emptyList(),
