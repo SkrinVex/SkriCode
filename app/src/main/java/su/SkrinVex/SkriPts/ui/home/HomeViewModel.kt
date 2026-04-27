@@ -37,6 +37,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(id: String) {
+        // Удаляем спрайты проекта
+        val project = ProjectRepository.load(getApplication(), id)
+        project?.sprites.orEmpty().forEach { sprite ->
+            su.SkrinVex.SkriPts.data.SpriteRepository.delete(getApplication(), id, sprite.fileName)
+        }
         ProjectRepository.delete(getApplication(), id)
         refresh()
     }
@@ -60,9 +65,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess { imported ->
                     // Если проект с таким ID уже есть — генерируем новый ID
                     val existing = ProjectRepository.load(getApplication(), imported.id)
-                    val toSave = if (existing != null)
-                        imported.copy(id = UUID.randomUUID().toString(), name = "${imported.name} (импорт)")
-                    else imported
+                    val toSave = if (existing != null) {
+                        val newId = UUID.randomUUID().toString()
+                        // Копируем спрайты под новый ID
+                        su.SkrinVex.SkriPts.data.SpriteRepository.copyAll(getApplication(), imported.id, newId)
+                        imported.copy(id = newId, name = "${imported.name} (импорт)")
+                    } else imported
                     ProjectRepository.save(getApplication(), toSave)
                     refresh()
                 }

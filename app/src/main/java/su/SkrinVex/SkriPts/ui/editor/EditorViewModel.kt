@@ -19,6 +19,7 @@ import su.SkrinVex.SkriPts.engine.SimState
 import java.util.UUID
 
 data class EditorState(
+    val projectId: String = "",
     val projectName: String = "Новый проект",
     val scenes: List<su.SkrinVex.SkriPts.data.Scene> = listOf(
         su.SkrinVex.SkriPts.data.Scene(name = "Главное меню")
@@ -30,6 +31,7 @@ data class EditorState(
     val globalVars: List<ProjectVar> = emptyList(),
     val globalTags: List<ProjectTag> = emptyList(),
     val globalTables: List<ProjectTable> = emptyList(),
+    val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     val validationErrors: List<String> = emptyList(),
@@ -44,6 +46,7 @@ data class EditorState(
     val visibleTags: List<ProjectTag> get() = globalTags + (activeScript.localTags ?: emptyList())
     val visibleTables: List<ProjectTable> get() = globalTables + (activeScript.localTables ?: emptyList())
     val sceneNames: List<String> get() = scenes.map { it.name }
+    val spriteNames: List<String> get() = sprites.map { it.name }
 }
 
 @OptIn(FlowPreview::class)
@@ -74,6 +77,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun loadProject(id: String) {
         val project = ProjectRepository.load(getApplication(), id) ?: return
         projectId = project.id
+        // Устанавливаем имя проекта сразу — нужно для KeyVault до запуска симуляции
+        su.SkrinVex.SkriPts.engine.SimEngine.projectName = project.name
 
         val globalVars = (project.globalVars ?: project.variables ?: emptyList()).filter { it.scope == VarScope.GLOBAL }
         val globalTags = project.globalTags ?: emptyList()
@@ -101,6 +106,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _state.update { it.copy(
+            projectId = project.id,
             projectName = project.name,
             scenes = scenes,
             activeSceneId = activeScene.id,
@@ -109,7 +115,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             locationBlocks = activeScene.locationBlocks,
             globalVars = globalVars,
             globalTags = globalTags,
-            globalTables = globalTables
+            globalTables = globalTables,
+            sprites = project.sprites ?: emptyList()
         )}
     }
 
@@ -353,7 +360,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val initial = SimState()
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
         viewModelScope.launch {
-            val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks) { liveState ->
+            val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks,
+                sprites = state.sprites, projectId = projectId) { liveState ->
                 _state.update { it.copy(simState = liveState) }
             }
             // Обрабатываем переход на сцену
@@ -741,9 +749,33 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
-            globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables
+            globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
+            sprites = s.sprites
         ))
     }
+
+    // --- Спрайты ---
+    fun addSprite(uri: android.net.Uri, name: String): String? {
+        val asset = su.SkrinVex.SkriPts.data.SpriteRepository.importSprite(getApplication(), projectId, uri, name)
+            ?: return "Не удалось импортировать изображение"
+        if (_state.value.sprites.any { it.name == name })
+            return "Спрайт с именем «$name» уже существует"
+        _state.update { it.copy(sprites = it.sprites + asset) }
+        return null
+    }
+
+    fun deleteSprite(name: String) {
+        val asset = _state.value.sprites.find { it.name == name } ?: return
+        su.SkrinVex.SkriPts.data.SpriteRepository.delete(getApplication(), projectId, asset.fileName)
+        _state.update { it.copy(sprites = it.sprites.filter { s -> s.name != name }) }
+    }
+
+    fun getSpriteFile(name: String): java.io.File? {
+        val asset = _state.value.sprites.find { it.name == name } ?: return null
+        return su.SkrinVex.SkriPts.data.SpriteRepository.getFile(getApplication(), projectId, asset.fileName)
+    }
+
+    fun getProjectId(): String = projectId
 
     private fun validate(state: EditorState): List<String> {
         val errors = mutableListOf<String>()

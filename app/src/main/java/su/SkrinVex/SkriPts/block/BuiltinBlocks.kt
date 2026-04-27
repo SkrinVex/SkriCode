@@ -190,6 +190,27 @@ object BlockFactory {
         "scene_switch" -> build("scene_switch", "Перейти на сцену", "Переключает активную сцену", BlockCategory.CONTROL, listOf(
             "scene" to p("", "Сцена", "Имя сцены для перехода")))
 
+        // ── Спрайты ──────────────────────────────────────────────────────────────
+        "set_texture" -> build("set_texture", "Установить текстуру", "Назначает спрайт на прямоугольник или джойстик", BlockCategory.SPRITE, listOf(
+            "name"    to p("rect1", "Имя объекта", "Прямоугольник или джойстик"),
+            "sprite"  to p("", "Спрайт", "Имя спрайта из проекта"),
+            "scaleX"  to p("1.0", "Масштаб X", "1.0 = оригинал", ParamType.NUMBER),
+            "scaleY"  to p("1.0", "Масштаб Y", "1.0 = оригинал", ParamType.NUMBER),
+            "alpha"   to p("1.0", "Прозрачность", "0.0..1.0", ParamType.NUMBER),
+            "cropX"   to p("0", "Обрезка X", "Левый край (px)", ParamType.NUMBER),
+            "cropY"   to p("0", "Обрезка Y", "Верхний край (px)", ParamType.NUMBER),
+            "cropW"   to p("0", "Ширина обрезки", "0 = вся ширина", ParamType.NUMBER),
+            "cropH"   to p("0", "Высота обрезки", "0 = вся высота", ParamType.NUMBER)))
+
+        "sim_sprite" -> build("sim_sprite", "Создать спрайт-объект", "Создаёт объект с текстурой и хитбоксом по размеру спрайта", BlockCategory.SPRITE, listOf(
+            "name"   to p("sprite1", "Имя объекта", "Уникальное имя"),
+            "sprite" to p("", "Спрайт", "Имя спрайта из проекта"),
+            "x"      to p("0", "X (от центра)", "Вправо = +, влево = −", ParamType.NUMBER),
+            "y"      to p("0", "Y (от центра)", "Вверх = +, вниз = −", ParamType.NUMBER),
+            "width"  to p("0", "Ширина", "0 = по размеру спрайта", ParamType.NUMBER),
+            "height" to p("0", "Высота", "0 = по размеру спрайта", ParamType.NUMBER),
+            "alpha"  to p("1.0", "Прозрачность", "0.0..1.0", ParamType.NUMBER)))
+
         else -> null
     }
 }

@@ -40,6 +40,7 @@ import su.SkrinVex.SkriPts.data.Script
 import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.VarScope
 import su.SkrinVex.SkriPts.data.ProjectTable
+import su.SkrinVex.SkriPts.data.deserialize
 import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.ui.expr.ExpressionEditorScreen
 import su.SkrinVex.SkriPts.ui.theme.*
@@ -63,10 +64,12 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
     if (showLocationEditor) {
         val uiBlocks = state.allScriptBlocks.filter { it.params.containsKey("x") && it.params.containsKey("y") }
         LocationEditorScreen(
+            projectId = state.projectId,
             uiBlocks = uiBlocks,
             initialBlocks = state.locationBlocks,
             scenes = state.scenes,
             currentSceneId = state.activeSceneId,
+            spriteNames = state.spriteNames,
             onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
@@ -150,7 +153,14 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             val raw = block.params[key]?.value ?: return default
             return ExprEval.eval(raw, vars).value.toFloatOrNull() ?: default
         }
+        val allOtherBlocks = if (ThemeManager.showObjectsInPicker) {
+            val scriptBlocks = state.allScriptBlocks.filter { it.id != block.id && it.params.containsKey("x") && it.params.containsKey("y") }
+            val locBlocks = state.locationBlocks.mapNotNull { it.deserialize() }.filter { it.id != block.id }
+            scriptBlocks + locBlocks
+        } else emptyList()
+        
         PositionPickerScreen(
+            projectId = state.projectId,
             objectName = block.params["name"]?.value ?: block.displayName,
             blockType = block.type,
             objectWidth = if (block.type == "sim_joystick") evalF("baseRadius", 100f).coerceAtLeast(10f) * 2f
@@ -170,12 +180,11 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                     androidx.compose.ui.graphics.Color(0xFF000000 or c)
                 }.getOrNull()
             } ?: androidx.compose.ui.graphics.Color(0xFF4F8EF7),
+            objectSprite = block.params["sprite"]?.value?.ifBlank { null },
             initialX = evalF("x", 0f),
             initialY = evalF("y", 0f),
             showOtherObjects = ThemeManager.showObjectsInPicker,
-            otherBlocks = if (ThemeManager.showObjectsInPicker)
-                state.allScriptBlocks.filter { it.id != block.id && it.params.containsKey("x") && it.params.containsKey("y") }
-            else emptyList(),
+            otherBlocks = allOtherBlocks,
             onConfirm = { xExpr, yExpr ->
                 vm.updateParam(blockIndex, "x", xExpr)
                 vm.updateParam(blockIndex, "y", yExpr)
@@ -332,6 +341,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         variables = state.visibleVars,
                         allBlocks = state.allScriptBlocks,
                         sceneNames = state.sceneNames,
+                        spriteNames = state.spriteNames,
                         collapsed = collapsed,
                         scriptId = activeScriptId,
                         onToggleCollapse = {
@@ -656,6 +666,7 @@ internal fun BlockCard(
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList(),
     collapsed: Boolean,
     scriptId: String = "",
     onToggleCollapse: () -> Unit,
@@ -837,6 +848,9 @@ internal fun BlockCard(
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
                                         block.type == "scene_switch" && key == "scene" ->
                                             SceneChip(param = param, sceneNames = sceneNames,
+                                                onChange = { onParamChange(key, it) })
+                                        (block.type == "set_texture" || block.type == "sim_sprite") && key == "sprite" ->
+                                            SpriteChip(param = param, spriteNames = spriteNames,
                                                 onChange = { onParamChange(key, it) })
                                         (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
                                             EncryptToggle(param = param, onChange = { onParamChange(key, it) })
@@ -1666,6 +1680,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.STRING     -> Color(0xFF34D399)
     BlockCategory.VARIABLE   -> Color(0xFFFB923C)
     BlockCategory.SIMULATION -> Color(0xFFF472B6)
+    BlockCategory.SPRITE     -> Color(0xFFFFD700)
     BlockCategory.PHYSICS    -> Color(0xFF22D3EE)
     BlockCategory.CAMERA     -> Color(0xFF4ADE80)
 }
@@ -1678,6 +1693,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.STRING     -> Icons.Default.TextFields
     BlockCategory.VARIABLE   -> Icons.Default.DataObject
     BlockCategory.SIMULATION -> Icons.Default.Widgets
+    BlockCategory.SPRITE     -> Icons.Default.Image
     BlockCategory.PHYSICS    -> Icons.Default.Science
     BlockCategory.CAMERA     -> Icons.Default.Videocam
 }
@@ -1872,7 +1888,27 @@ internal fun ModifyBlockContent(
                             "x" to "X позиция", "y" to "Y позиция",
                             "width" to "Ширина", "height" to "Высота",
                             "radius" to "Скругление", "color" to "Цвет",
-                            "visible" to "Видимость", "rotation" to "Вращение"
+                            "visible" to "Видимость", "rotation" to "Вращение",
+                            "sprite" to "Спрайт", "spriteAlpha" to "Прозрачность спрайта",
+                            "spriteScaleX" to "Масштаб спрайта X", "spriteScaleY" to "Масштаб спрайта Y"
+                        ))
+                        if (hasPhysics) addAll(listOf(
+                            "physics_enabled" to "Физика вкл/выкл",
+                            "physics_gravity" to "Гравитация",
+                            "physics_static" to "Статический",
+                            "physics_bounciness" to "Упругость",
+                            "physics_mass" to "Масса",
+                            "physics_vx" to "Скорость X",
+                            "physics_vy" to "Скорость Y"
+                        ))
+                    }
+                    "sim_sprite" -> buildList {
+                        addAll(listOf(
+                            "x" to "X позиция", "y" to "Y позиция",
+                            "width" to "Ширина", "height" to "Высота",
+                            "visible" to "Видимость", "rotation" to "Вращение",
+                            "sprite" to "Спрайт", "spriteAlpha" to "Прозрачность спрайта",
+                            "spriteScaleX" to "Масштаб спрайта X", "spriteScaleY" to "Масштаб спрайта Y"
                         ))
                         if (hasPhysics) addAll(listOf(
                             "physics_enabled" to "Физика вкл/выкл",
@@ -2249,6 +2285,54 @@ internal fun SceneChip(param: BlockParam, sceneNames: List<String>, onChange: (S
                 if (sceneNames.isEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Нет сцен", color = TextSec, fontSize = 13.sp) },
+                        onClick = { expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Box {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3)
+                    .border(1.dp, su.SkrinVex.SkriPts.ui.theme.Warning.copy(0.4f), RoundedCornerShape(8.dp))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Image, null, tint = su.SkrinVex.SkriPts.ui.theme.Warning, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    param.value.ifBlank { "Выбрать спрайт..." },
+                    color = if (param.value.isBlank()) TextSec else TextPrim,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Surface2)
+            ) {
+                spriteNames.forEach { name ->
+                    DropdownMenuItem(
+                        text = { Text(name, color = if (name == param.value) su.SkrinVex.SkriPts.ui.theme.Warning else TextPrim, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Image, null, tint = if (name == param.value) su.SkrinVex.SkriPts.ui.theme.Warning else TextSec, modifier = Modifier.size(16.dp)) },
+                        onClick = { onChange(name); expanded = false }
+                    )
+                }
+                if (spriteNames.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Нет спрайтов в проекте", color = TextSec, fontSize = 13.sp) },
                         onClick = { expanded = false }
                     )
                 }

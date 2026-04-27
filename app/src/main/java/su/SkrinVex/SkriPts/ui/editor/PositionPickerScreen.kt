@@ -36,12 +36,14 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun PositionPickerScreen(
+    projectId: String = "",
     objectName: String,
     blockType: String = "sim_create",
     objectWidth: Float,
     objectHeight: Float,
     objectRadius: Float,
     objectColor: Color,
+    objectSprite: String? = null,
     initialX: Float,
     initialY: Float,
     showOtherObjects: Boolean = false,
@@ -56,6 +58,46 @@ fun PositionPickerScreen(
 
     val sw = ExprEval.screenWidth
     val sh = ExprEval.screenHeight
+
+    // Загружаем bitmap для спрайта объекта
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val objSpriteName = remember(blockType, objectSprite) {
+        objectSprite?.ifBlank { null }
+    }
+    val objBitmap = remember(objSpriteName, projectId) {
+        if (projectId.isBlank() || objSpriteName == null) return@remember null
+        val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.png")
+            ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.jpg")
+        file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+    }
+
+    // Кэш bitmap для других объектов
+    val bitmapCache = remember { mutableStateMapOf<String, android.graphics.Bitmap?>() }
+    LaunchedEffect(projectId) {
+        if (projectId.isBlank()) return@LaunchedEffect
+        val spritesInBlocks = otherBlocks.mapNotNull { extractSpriteName(it) }.toSet()
+        spritesInBlocks.forEach { spriteName ->
+            if (!bitmapCache.containsKey(spriteName)) {
+                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
+                val bitmap = file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+                if (bitmap != null) bitmapCache[spriteName] = bitmap
+            }
+        }
+    }
+    
+    LaunchedEffect(otherBlocks) {
+        if (projectId.isBlank()) return@LaunchedEffect
+        val spritesInBlocks = otherBlocks.mapNotNull { extractSpriteName(it) }.toSet()
+        spritesInBlocks.forEach { spriteName ->
+            if (!bitmapCache.containsKey(spriteName)) {
+                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
+                val bitmap = file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+                if (bitmap != null) bitmapCache[spriteName] = bitmap
+            }
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Canvas(
@@ -143,10 +185,18 @@ fun PositionPickerScreen(
                             val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 60f).coerceAtLeast(1f)
                             val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f).coerceAtLeast(0f)
                             val bl = cx + bx - bw / 2f; val bt = cy - by - bh / 2f
-                            drawRoundRect(color = bc.copy(alpha = 0.35f), topLeft = Offset(bl, bt),
-                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
-                            drawRoundRect(color = bc.copy(alpha = 0.6f), topLeft = Offset(bl, bt),
-                                size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
+                            val spriteName = extractSpriteName(b)
+                            val bitmap = spriteName?.let { bitmapCache[it] }
+                            if (bitmap != null) {
+                                val paint = android.graphics.Paint().apply { isAntiAlias = true; alpha = 140 }
+                                drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null,
+                                    android.graphics.RectF(bl, bt, bl + bw, bt + bh), paint)
+                            } else {
+                                drawRoundRect(color = bc.copy(alpha = 0.35f), topLeft = Offset(bl, bt),
+                                    size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+                                drawRoundRect(color = bc.copy(alpha = 0.6f), topLeft = Offset(bl, bt),
+                                    size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
+                            }
                         }
                     }
                 }
@@ -188,7 +238,11 @@ fun PositionPickerScreen(
                 }
                 else -> {
                     // Обычный прямоугольник
-                    if (objectColor != Color.Transparent) {
+                    if (objBitmap != null) {
+                        val paint = android.graphics.Paint().apply { isAntiAlias = true }
+                        drawContext.canvas.nativeCanvas.drawBitmap(objBitmap, null,
+                            android.graphics.RectF(left, top, left + objectWidth, top + objectHeight), paint)
+                    } else if (objectColor != Color.Transparent) {
                         drawRoundRect(color = objectColor, topLeft = Offset(left, top),
                             size = Size(objectWidth, objectHeight), cornerRadius = cr)
                     }
@@ -281,4 +335,14 @@ fun toExpr(px: Float, screenDim: Float, isX: Boolean): String {
         }
     }
     return rounded.toString()
+}
+
+/**
+ * Извлекает имя спрайта из блока, учитывая разные типы блоков.
+ */
+private fun extractSpriteName(block: BlockDef): String? {
+    block.params["sprite"]?.value?.ifBlank { null }?.let { return it }
+    block.children["setup"]?.firstOrNull { it.type == "set_texture" }
+        ?.params?.get("sprite")?.value?.ifBlank { null }?.let { return it }
+    return null
 }

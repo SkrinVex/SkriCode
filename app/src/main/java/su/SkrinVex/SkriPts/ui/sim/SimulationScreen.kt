@@ -1,5 +1,7 @@
 package su.SkrinVex.SkriPts.ui.sim
 
+import android.graphics.BitmapFactory
+import android.graphics.Rect as AndroidRect
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,20 +24,27 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import su.SkrinVex.SkriPts.data.SpriteAsset
 import su.SkrinVex.SkriPts.engine.JoystickState
 import su.SkrinVex.SkriPts.engine.SimObject
 import su.SkrinVex.SkriPts.engine.SimState
 import su.SkrinVex.SkriPts.engine.HitboxType
 import su.SkrinVex.SkriPts.ui.theme.*
 import kotlin.math.*
+
+/** Кэш декодированных bitmap для спрайтов — живёт пока жив SimulationScreen */
+private val bitmapCache = mutableMapOf<String, android.graphics.Bitmap?>()
 
 @Composable
 fun SimulationScreen(
@@ -51,6 +60,23 @@ fun SimulationScreen(
     showHitboxes: Boolean = false
 ) {
     BackHandler(onBack = onBack)
+
+    val ctx = LocalContext.current
+    // Версия кэша — инкрементируется после загрузки bitmap, триггерит перерисовку Canvas
+    var bitmapCacheVersion by remember { mutableIntStateOf(0) }
+
+    // Предзагружаем bitmap для всех спрайтов при старте
+    LaunchedEffect(state.sprites, state.projectId) {
+        bitmapCache.clear()
+        state.sprites.forEach { sprite ->
+            val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, state.projectId, sprite.fileName)
+            bitmapCache[sprite.name] = file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+        }
+        bitmapCacheVersion++ // триггерим перерисовку
+    }
+
+    // Очищаем кэш при уходе
+    DisposableEffect(Unit) { onDispose { bitmapCache.clear() } }
 
     var panelTab by remember { mutableIntStateOf(-1) }  // -1=скрыто, 0=лог, 1=объекты
     var highlightedObj by remember { mutableStateOf<String?>(null) }
@@ -133,6 +159,8 @@ fun SimulationScreen(
             canvasSize = Pair(size.width, size.height)
             val cx = size.width / 2f
             val cy = size.height / 2f
+            // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap
+            @Suppress("UNUSED_EXPRESSION") bitmapCacheVersion
             if (debugMode) drawGrid(cx, cy)
 
             val cam = state.camera
@@ -144,7 +172,14 @@ fun SimulationScreen(
             state.objects.values.forEach { obj ->
                 if (!obj.visible) return@forEach
                 val isUi = obj.tags.any { it in uiTags }
-                if (!isUi) drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj)
+                if (!isUi) {
+                    // Culling: не рендерим если за пределами экрана
+                    val ox = cx + camOx + obj.x
+                    val oy = cy - camOy - obj.y
+                    val hw = obj.width / 2f; val hh = obj.height / 2f
+                    if (ox + hw < 0 || ox - hw > size.width || oy + hh < 0 || oy - hh > size.height) return@forEach
+                    drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj)
+                }
             }
             if (showHitboxes) {
                 state.objects.values.forEach { obj ->
@@ -402,15 +437,32 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
     val centerY = top + obj.height / 2f
 
     rotate(obj.rotation, Offset(centerX, centerY)) {
-        if (obj.color != Color.Transparent) {
+        // Фон (цвет) — рисуем если нет спрайта или цвет не прозрачный
+        if (obj.spriteName == null && obj.color != Color.Transparent) {
             drawRoundRect(color = obj.color, topLeft = Offset(left, top), size = Size(obj.width, obj.height), cornerRadius = cr)
+        }
+
+        // Спрайт
+        val bitmap = obj.spriteName?.let { bitmapCache[it] }
+        if (bitmap != null) {
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
+            }
+            val srcRect = if (obj.spriteCropW > 0 && obj.spriteCropH > 0) {
+                AndroidRect(obj.spriteCropX, obj.spriteCropY,
+                    obj.spriteCropX + obj.spriteCropW, obj.spriteCropY + obj.spriteCropH)
+            } else null
+            val dstRect = android.graphics.RectF(left, top, left + obj.width, top + obj.height)
+            drawContext.canvas.nativeCanvas.drawBitmap(bitmap, srcRect, dstRect, paint)
         }
 
         // Обводка
         val strokeColor = when {
             highlighted -> Color.Yellow
             obj.tapScriptId != null -> Color.White.copy(alpha = 0.7f)
-            obj.color == Color.Transparent -> Color.Transparent
+            obj.color == Color.Transparent && obj.spriteName == null -> Color.Transparent
+            obj.spriteName != null -> Color.Transparent  // нет обводки у спрайтов
             else -> obj.color.copy(alpha = 0.4f)
         }
         if (strokeColor != Color.Transparent) {

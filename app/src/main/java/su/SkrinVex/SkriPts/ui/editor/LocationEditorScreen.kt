@@ -40,7 +40,7 @@ import su.SkrinVex.SkriPts.ui.theme.*
 import java.util.UUID
 import kotlin.math.roundToInt
 
-private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text")
+private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text", "sim_sprite")
 
 /**
  * Редактор локации — бесконечный холст с зумом.
@@ -48,10 +48,12 @@ private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text")
  */
 @Composable
 fun LocationEditorScreen(
+    projectId: String,
     uiBlocks: List<BlockDef>,
     initialBlocks: List<SerializedBlock>,
     scenes: List<su.SkrinVex.SkriPts.data.Scene> = emptyList(),
     currentSceneId: String = "",
+    spriteNames: List<String> = emptyList(),
     onCopyToScene: (BlockDef, String) -> Unit = { _, _ -> },
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
@@ -80,11 +82,50 @@ fun LocationEditorScreen(
     // Сохраняем свёрнутость блоков между открытиями редактора объекта
     val setupCollapsedState = remember { mutableStateMapOf<String, Boolean>() }
 
+    // Кэш bitmap для спрайтов в редакторе локации
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val locBitmapCache = remember { mutableStateMapOf<String, android.graphics.Bitmap?>() }
+    
+    // Загружаем bitmap при первом появлении спрайта в блоке
+    LaunchedEffect(projectId) {
+        if (projectId.isBlank()) return@LaunchedEffect
+        val allBlocks = locBlocks + uiBlocks
+        val spritesInBlocks = allBlocks.mapNotNull { extractSpriteName(it) }.toSet()
+        spritesInBlocks.forEach { spriteName ->
+            if (!locBitmapCache.containsKey(spriteName)) {
+                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
+                val bitmap = file?.let { 
+                    runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() 
+                }
+                if (bitmap != null) locBitmapCache[spriteName] = bitmap
+            }
+        }
+    }
+    
+    // Обновляем кэш при изменении блоков
+    LaunchedEffect(locBlocks, uiBlocks) {
+        if (projectId.isBlank()) return@LaunchedEffect
+        val allBlocks = locBlocks + uiBlocks
+        val spritesInBlocks = allBlocks.mapNotNull { extractSpriteName(it) }.toSet()
+        spritesInBlocks.forEach { spriteName ->
+            if (!locBitmapCache.containsKey(spriteName)) {
+                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
+                val bitmap = file?.let { 
+                    runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() 
+                }
+                if (bitmap != null) locBitmapCache[spriteName] = bitmap
+            }
+        }
+    }
+
     // Открываем полноэкранный редактор объекта
     editingBlock?.let { block ->
         LocationObjectEditorScreen(
             objectBlock = block,
             collapsedState = setupCollapsedState,
+            spriteNames = spriteNames,
             onConfirm = { updated ->
                 val idx = locBlocks.indexOfFirst { it.id == updated.id }
                 locBlocks = if (idx >= 0) locBlocks.toMutableList().also { it[idx] = updated }
@@ -213,12 +254,12 @@ fun LocationEditorScreen(
 
             // UI-объекты из скриптов (полупрозрачные, нередактируемые)
             val emptyVars = emptyMap<String, String>()
-            uiBlocks.forEach { b -> drawBlock(b, cx, cy, zoom, alpha = 0.3f, emptyVars, density) }
+            uiBlocks.forEach { b -> drawBlock(b, cx, cy, zoom, alpha = 0.3f, emptyVars, density, bitmapCache = locBitmapCache) }
 
             // Объекты локации
             locBlocks.forEach { b ->
                 val isSelected = b.id == selectedId || b.id in selectedIds
-                drawBlock(b, cx, cy, zoom, alpha = 1f, emptyVars, density, isSelected)
+                drawBlock(b, cx, cy, zoom, alpha = 1f, emptyVars, density, isSelected, bitmapCache = locBitmapCache)
                 // Имя — фиксированный размер в экранных пикселях (не зависит от зума)
                 if (zoom > 0.05f) {
                     val bx = evalParam(b, "x"); val by = evalParam(b, "y")
@@ -522,6 +563,22 @@ fun LocationEditorScreen(
 private fun evalParam(b: BlockDef, key: String): Float =
     ExprEval.eval(b.params[key]?.value ?: "0", emptyMap()).value.toFloatOrNull() ?: 0f
 
+/**
+ * Извлекает имя спрайта из блока, учитывая разные типы блоков:
+ * - sim_sprite: параметр sprite
+ * - sim_create/sim_joystick: ищет set_texture в children.setup
+ */
+private fun extractSpriteName(block: BlockDef): String? {
+    // Прямой параметр sprite (sim_sprite)
+    block.params["sprite"]?.value?.ifBlank { null }?.let { return it }
+    
+    // Ищем set_texture в setup (sim_create)
+    block.children["setup"]?.firstOrNull { it.type == "set_texture" }
+        ?.params?.get("sprite")?.value?.ifBlank { null }?.let { return it }
+    
+    return null
+}
+
 private fun blockHalfW(b: BlockDef): Float = when (b.type) {
     "sim_joystick" -> b.params["baseRadius"]?.value?.toFloatOrNull() ?: 100f
     else -> (b.params["width"]?.value?.toFloatOrNull() ?: 100f) / 2f
@@ -534,7 +591,8 @@ private fun blockHalfH(b: BlockDef): Float = when (b.type) {
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlock(
     b: BlockDef, cx: Float, cy: Float, zoom: Float, alpha: Float,
-    vars: Map<String, String>, density: Float, isSelected: Boolean = false
+    vars: Map<String, String>, density: Float, isSelected: Boolean = false,
+    bitmapCache: Map<String, android.graphics.Bitmap?> = emptyMap()
 ) {
     val bx = evalParam(b, "x"); val by = evalParam(b, "y")
     val screenX = cx + bx * zoom; val screenY = cy - by * zoom
@@ -582,7 +640,19 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlock(
             val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 60f) * zoom
             val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f) * zoom
             val tl = Offset(screenX - bw / 2f, screenY - bh / 2f)
-            drawRoundRect(color = bc.copy(alpha = alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+            val spriteName = extractSpriteName(b)
+            val bitmap = spriteName?.let { bitmapCache[it] }
+            if (bitmap != null) {
+                val paint = android.graphics.Paint().apply { isAntiAlias = true; this.alpha = (alpha * 255).toInt() }
+                drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null,
+                    android.graphics.RectF(tl.x, tl.y, tl.x + bw, tl.y + bh), paint)
+            } else {
+                drawRoundRect(color = bc.copy(alpha = alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+                if (spriteName != null) {
+                    drawLine(Color.Yellow.copy(alpha = 0.5f * alpha), tl, Offset(tl.x + bw, tl.y + bh), 2f)
+                    drawLine(Color.Yellow.copy(alpha = 0.5f * alpha), Offset(tl.x + bw, tl.y), Offset(tl.x, tl.y + bh), 2f)
+                }
+            }
             if (isSelected) drawRoundRect(color = Color(0xFF00E5FF), topLeft = Offset(tl.x - 3f, tl.y - 3f), size = Size(bw + 6f, bh + 6f), cornerRadius = CornerRadius(br + 3f, br + 3f), style = Stroke(2.5f))
         }
     }
@@ -591,6 +661,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlock(
 private fun blockIcon(type: String) = when (type) {
     "sim_create"   -> Icons.Default.CropSquare
     "sim_text"     -> Icons.Default.TextFields
+    "sim_sprite"   -> Icons.Default.Image
     else           -> Icons.Default.Add
 }
 

@@ -50,7 +50,16 @@ data class SimObject(
     val rotation: Float = 0f,
     val tags: Set<String> = emptySet(),
     val physicsBody: PhysicsBody? = null,
-    val hitbox: Hitbox = Hitbox()
+    val hitbox: Hitbox = Hitbox(),
+    // Текстура
+    val spriteName: String? = null,
+    val spriteAlpha: Float = 1f,
+    val spriteScaleX: Float = 1f,
+    val spriteScaleY: Float = 1f,
+    val spriteCropX: Int = 0,
+    val spriteCropY: Int = 0,
+    val spriteCropW: Int = 0,   // 0 = вся ширина
+    val spriteCropH: Int = 0    // 0 = вся высота
 )
 
 data class JoystickState(
@@ -80,7 +89,9 @@ data class SimState(
     val physicsEnabled: Boolean = true,
     val activeCollisions: Set<Pair<String, String>> = emptySet(),
     val camera: SimCamera? = null,
-    val pendingSceneSwitch: String? = null  // имя сцены для перехода
+    val pendingSceneSwitch: String? = null,  // имя сцены для перехода
+    val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
+    val projectId: String = ""
 )
 
 /** Камера слежения */
@@ -105,6 +116,8 @@ object SimEngine {
         globalVarDefs: List<ProjectVar>,
         globalTableDefs: List<ProjectTable> = emptyList(),
         locationBlocks: List<su.SkrinVex.SkriPts.data.SerializedBlock> = emptyList(),
+        sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
+        projectId: String = "",
         onUpdate: (SimState) -> Unit = {}
     ): SimState {
         val objects = mutableMapOf<String, SimObject>()
@@ -115,6 +128,9 @@ object SimEngine {
         val globalTables = globalTableDefs.associate { it.name to it.entries.toMutableMap() }
             .mapValues { it.value }.toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = true
+
+        // Синхронизируем спрайты в ExprEval
+        ExprEval.sprites = sprites
 
         // Создаём объекты локации до выполнения скриптов
         locationBlocks.mapNotNull { it.deserialize() }.forEach { block ->
@@ -186,7 +202,7 @@ object SimEngine {
             runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                 allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
                 cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
-                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) })
+                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId)) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
             globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
         }
@@ -195,7 +211,8 @@ object SimEngine {
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
-            physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0])
+            physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0],
+            sprites = sprites, projectId = projectId)
     }
 
     /**
@@ -373,7 +390,7 @@ object SimEngine {
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId)) }
             } else null
         )
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
@@ -468,6 +485,58 @@ object SimEngine {
                     log += "  Переход на сцену «$sceneName»"
                     sceneSwitchRef[0] = sceneName
                     return false
+                }
+                "set_texture" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Установить текстуру»: «$nameOrTag» не найден"; continue }
+                    val sprite = getStr("sprite")
+                    val alpha = getF("alpha", 1f).coerceIn(0f, 1f)
+                    val sx = getF("scaleX", 1f)
+                    val sy = getF("scaleY", 1f)
+                    val cx = getF("cropX", 0f).toInt()
+                    val cy = getF("cropY", 0f).toInt()
+                    val cw = getF("cropW", 0f).toInt()
+                    val ch = getF("cropH", 0f).toInt()
+                    targets.forEach { (n, obj) ->
+                        // Не применяем текстуру к текстовым объектам
+                        if (obj.label.isNotEmpty() && obj.color == androidx.compose.ui.graphics.Color.Transparent) {
+                            errors += "Блок $num «Установить текстуру»: нельзя применить к текстовому объекту «$n»"
+                            return@forEach
+                        }
+                        objects[n] = obj.copy(
+                            spriteName = sprite.ifBlank { null },
+                            spriteAlpha = alpha, spriteScaleX = sx, spriteScaleY = sy,
+                            spriteCropX = cx, spriteCropY = cy, spriteCropW = cw, spriteCropH = ch
+                        )
+                    }
+                    log += "  «$nameOrTag» текстура -> «$sprite»"
+                }
+                "sim_sprite" -> {
+                    val name = getStr("name")
+                    if (name.isBlank()) { errors += "Блок $num «Создать спрайт-объект»: имя пустое"; continue }
+                    val sprite = getStr("sprite")
+                    val alpha = getF("alpha", 1f).coerceIn(0f, 1f)
+                    val existing = objects[name]
+                    // Размер: если 0 — берём из метаданных спрайта
+                    val spriteAsset = ExprEval.sprites.find { it.name == sprite }
+                    val rawW = getF("width", 0f)
+                    val rawH = getF("height", 0f)
+                    val w = if (rawW > 0f) rawW else (spriteAsset?.width?.toFloat() ?: 100f)
+                    val h = if (rawH > 0f) rawH else (spriteAsset?.height?.toFloat() ?: 100f)
+                    objects[name] = SimObject(
+                        name = name, x = getF("x"), y = getF("y"),
+                        width = w.coerceAtLeast(1f), height = h.coerceAtLeast(1f),
+                        radius = 0f, color = androidx.compose.ui.graphics.Color.Transparent,
+                        spriteName = sprite.ifBlank { null }, spriteAlpha = alpha,
+                        tapScriptId = existing?.tapScriptId,
+                        holdScriptId = existing?.holdScriptId,
+                        collisionScriptId = existing?.collisionScriptId,
+                        collisionEndScriptId = existing?.collisionEndScriptId,
+                        physicsBody = existing?.physicsBody,
+                        hitbox = existing?.hitbox ?: Hitbox()
+                    )
+                    log += "  ${if (existing != null) "Обновлён" else "Создан"} спрайт «$name» (${getStr("x")}, ${getStr("y")}) ${w.toInt()}x${h.toInt()}"
                 }
                 "if_block" -> {
                     val left  = block.params["left"]?.value ?: ""
@@ -701,6 +770,11 @@ object SimEngine {
                                 "physics_mass" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(mass = (resolved.toFloatOrNull() ?: (modified.physicsBody?.mass ?: 1f)).coerceAtLeast(0.01f)))
                                 "physics_vx" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(velocityX = resolved.toFloatOrNull() ?: (modified.physicsBody?.velocityX ?: 0f)))
                                 "physics_vy" -> modified.copy(physicsBody = (modified.physicsBody ?: PhysicsBody()).copy(velocityY = resolved.toFloatOrNull() ?: (modified.physicsBody?.velocityY ?: 0f)))
+                                // Спрайт-свойства
+                                "sprite" -> modified.copy(spriteName = resolved.ifBlank { null })
+                                "spriteAlpha" -> modified.copy(spriteAlpha = (resolved.toFloatOrNull() ?: modified.spriteAlpha).coerceIn(0f, 1f))
+                                "spriteScaleX" -> modified.copy(spriteScaleX = resolved.toFloatOrNull() ?: modified.spriteScaleX)
+                                "spriteScaleY" -> modified.copy(spriteScaleY = resolved.toFloatOrNull() ?: modified.spriteScaleY)
                                 else -> modified
                             }
                         }

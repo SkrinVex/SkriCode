@@ -10,6 +10,7 @@ enum class BlockCategory(val label: String) {
     STRING("Строки"),
     VARIABLE("Переменные"),
     SIMULATION("Симуляция"),
+    SPRITE("Спрайты"),
     PHYSICS("Физика"),
     CAMERA("Камера"),
 }

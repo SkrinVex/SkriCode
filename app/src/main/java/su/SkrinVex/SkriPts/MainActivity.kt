@@ -13,11 +13,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.engine.SimEngine
+import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
 import su.SkrinVex.SkriPts.ui.editor.EditorScreen
 import su.SkrinVex.SkriPts.ui.editor.EditorViewModel
 import su.SkrinVex.SkriPts.ui.home.HomeScreen
 import su.SkrinVex.SkriPts.ui.home.HomeViewModel
-import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
+import su.SkrinVex.SkriPts.ui.resources.ResourcesScreen
 import su.SkrinVex.SkriPts.ui.theme.AppTheme
 import su.SkrinVex.SkriPts.ui.theme.SkriPtsTheme
 import su.SkrinVex.SkriPts.ui.theme.ThemeManager
@@ -74,9 +75,18 @@ class MainActivity : ComponentActivity() {
                         showHitboxes = ThemeManager.showHitboxes
                     )
                     "editor" -> {
-                        BackHandler { screen = "home"; homeVm.refresh() }
+                        BackHandler { screen = "resources" }
                         EditorScreen(
                             vm = editorVm,
+                            onBack = { screen = "resources" }
+                        )
+                    }
+                    "resources" -> {
+                        BackHandler { screen = "home"; homeVm.refresh() }
+                        ResourcesScreen(
+                            vm = editorVm,
+                            projectName = editorState.projectName,
+                            onOpenEditor = { screen = "editor" },
                             onBack = { screen = "home"; homeVm.refresh() }
                         )
                     }
@@ -88,7 +98,7 @@ class MainActivity : ComponentActivity() {
                             onOpenProject = { id ->
                                 if (id != null) editorVm.loadProject(id)
                                 else editorVm.loadProject(homeVm.lastCreatedId)
-                                screen = "editor"
+                                screen = "resources"
                             },
                             onThemeChanged = { currentTheme = ThemeManager.getCurrentTheme() }
                         )

@@ -37,6 +37,8 @@ object ExprEval {
     var joysticks: Map<String, JoystickState> = emptyMap()
     // Таблицы — обновляются из SimEngine перед каждым вычислением
     var tables: Map<String, Map<String, String>> = emptyMap()
+    // Спрайты — обновляются из SimEngine
+    var sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList()
     // Контекст для проверки сохранений
     var appContext: android.content.Context? = null
 

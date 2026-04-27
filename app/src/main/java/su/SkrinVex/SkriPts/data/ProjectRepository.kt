@@ -68,6 +68,14 @@ data class Scene(
     val locationBlocks: List<SerializedBlock> = emptyList()
 )
 
+/** Метаданные спрайта — сам файл хранится в SpriteRepository */
+data class SpriteAsset(
+    val name: String,          // уникальный идентификатор (без расширения)
+    val fileName: String,      // имя файла с расширением (e.g. "hero.png")
+    val width: Int = 0,
+    val height: Int = 0
+)
+
 data class ScriptProject(
     val id: String,
     val name: String,
@@ -78,6 +86,7 @@ data class ScriptProject(
     val globalTags: List<ProjectTag>? = emptyList(),
     val globalTables: List<ProjectTable>? = emptyList(),
     val locationBlocks: List<SerializedBlock>? = emptyList(),
+    val sprites: List<SpriteAsset>? = emptyList(),
     // legacy
     val variables: List<ProjectVar>? = null,
     val blocks: List<SerializedBlock>? = null

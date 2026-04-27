@@ -20,7 +20,7 @@ import su.SkrinVex.SkriPts.ui.theme.*
 import java.util.UUID
 
 // Блоки которые имеют смысл как setup для объекта локации
-private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate")
+private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate", "set_texture")
 
 /**
  * Полноэкранный редактор setup-блоков объекта локации.
@@ -31,6 +31,7 @@ private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "
 fun LocationObjectEditorScreen(
     objectBlock: BlockDef,
     collapsedState: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Boolean>,
+    spriteNames: List<String> = emptyList(),
     onConfirm: (BlockDef) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -158,6 +159,7 @@ fun LocationObjectEditorScreen(
                     total = setupBlocks.size + 1,
                     variables = emptyList(),
                     allBlocks = emptyList(),
+                    spriteNames = spriteNames,
                     collapsed = mainCollapsed,
                     onToggleCollapse = { collapsedState[mainBlock.id] = !mainCollapsed },
                     onRemove = {},  // нельзя удалить основной блок
@@ -205,6 +207,7 @@ fun LocationObjectEditorScreen(
                     total = setupBlocks.size + 1,
                     variables = emptyList(),
                     allBlocks = emptyList(),
+                    spriteNames = spriteNames,
                     collapsed = collapsed,
                     onToggleCollapse = { collapsedState[block.id] = !collapsed },
                     onRemove = { showDelete = true },
