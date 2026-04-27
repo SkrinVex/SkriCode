@@ -31,6 +31,8 @@ data class EditorState(
 ) {
     val activeScript: Script get() = scripts.find { it.id == activeScriptId } ?: scripts.first()
     val activeBlocks: List<BlockDef> get() = activeScript.blocks.mapNotNull { it.deserialize() }
+    /** Блоки из всех скриптов — для позиционировщика */
+    val allScriptBlocks: List<BlockDef> get() = scripts.flatMap { it.blocks.mapNotNull { b -> b.deserialize() } }
     /** Переменные видимые в активном скрипте: глобальные + локальные этого скрипта */
     val visibleVars: List<ProjectVar> get() = globalVars + (activeScript.localVars ?: emptyList())
     /** Теги видимые в активном скрипте: глобальные + локальные этого скрипта */
@@ -468,7 +470,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         _state.update { s ->
                             val st = s.simState ?: return@update s
-                            s.copy(simState = st.copy(objects = st.objects + (joy.targetObject to newTarget)))
+                            val updated = st.copy(objects = st.objects + (joy.targetObject to newTarget))
+                            s.copy(simState = SimEngine.tickCamera(updated))
                         }
                     }
                     delay(16) // ~60fps

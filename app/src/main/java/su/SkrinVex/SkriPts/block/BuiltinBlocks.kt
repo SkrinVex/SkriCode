@@ -145,6 +145,17 @@ object BlockFactory {
         "physics_toggle" -> build("physics_toggle", "Переключить физику", "Включает или выключает физику симуляции", BlockCategory.PHYSICS, listOf(
             "enabled" to p("true", "Физика", "true = вкл, false = выкл")))
 
+        "sim_camera" -> build("sim_camera", "Создать камеру", "Создаёт камеру слежения за объектом", BlockCategory.CAMERA, listOf(
+            "name"      to p("cam1", "Имя камеры", "Уникальное имя"),
+            "target"    to p("", "Объект слежения", "Имя объекта или переменная"),
+            "smoothing" to p("0.1", "Плавность", "0.01 = очень плавно, 1 = мгновенно", ParamType.NUMBER),
+            "ui_tags"   to p("", "Теги интерфейса", "Теги через запятую: ui, hud"),
+            "enabled"   to p("true", "Включена", "true = активна сразу")))
+
+        "camera_toggle" -> build("camera_toggle", "Переключить камеру", "Включает или выключает камеру слежения", BlockCategory.CAMERA, listOf(
+            "name"    to p("cam1", "Имя камеры", "Какую камеру"),
+            "enabled" to p("true", "Включена", "true = вкл, false = выкл")))
+
         "table_set" -> build("table_set", "Таблица: записать", "Записывает значение по ключу в таблицу", BlockCategory.VARIABLE, listOf(
             "table" to p("", "Таблица", "Нажми чтобы выбрать"),
             "key"   to p("", "Ключ", "Строка или выражение"),

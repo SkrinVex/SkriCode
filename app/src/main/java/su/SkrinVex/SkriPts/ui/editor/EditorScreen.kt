@@ -152,7 +152,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             initialY = evalF("y", 0f),
             showOtherObjects = ThemeManager.showObjectsInPicker,
             otherBlocks = if (ThemeManager.showObjectsInPicker)
-                state.activeBlocks.filter { it.id != block.id && it.params.containsKey("x") && it.params.containsKey("y") }
+                state.allScriptBlocks.filter { it.id != block.id && it.params.containsKey("x") && it.params.containsKey("y") }
             else emptyList(),
             onConfirm = { xExpr, yExpr ->
                 vm.updateParam(blockIndex, "x", xExpr)
@@ -296,7 +296,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         index = index,
                         total = activeBlocks.size,
                         variables = state.visibleVars,
-                        allBlocks = activeBlocks,
+                        allBlocks = state.allScriptBlocks,
                         collapsed = collapsed,
                         scriptId = activeScriptId,
                         onToggleCollapse = {
@@ -725,6 +725,17 @@ private fun BlockCard(
                             val param = block.params["enabled"]!!
                             BoolToggle(param = param.copy(label = "Физика включена"), onChange = { onParamChange("enabled", it) })
                         }
+                        "camera_toggle" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            val nameParam = block.params["name"]!!
+                            ExprChip(param = nameParam, variables = variables,
+                                onClick = { onOpenExpr("name", nameParam.label, nameParam.value, false) })
+                            Spacer(Modifier.height(6.dp))
+                            val enabledParam = block.params["enabled"]!!
+                            BoolToggle(param = enabledParam.copy(label = "Камера включена"), onChange = { onParamChange("enabled", it) })
+                        }
                         "sim_stop" -> {
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -780,7 +791,8 @@ private fun BlockCard(
                                             MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
                                         (block.type == "sim_rotate") && key == "mode" ->
                                             RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ->
+                                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ||
+                                        (block.type == "sim_camera" && key == "enabled") ->
                                             BoolToggle(param = param, onChange = { onParamChange(key, it) })
                                         key == "op" || key == "op1" || key == "op2" ->
                                             OperatorSelector(param = param, onChange = { onParamChange(key, it) })
@@ -1580,6 +1592,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.VARIABLE   -> Color(0xFFFB923C)
     BlockCategory.SIMULATION -> Color(0xFFF472B6)
     BlockCategory.PHYSICS    -> Color(0xFF22D3EE)
+    BlockCategory.CAMERA     -> Color(0xFF4ADE80)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -1591,6 +1604,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.VARIABLE   -> Icons.Default.DataObject
     BlockCategory.SIMULATION -> Icons.Default.Widgets
     BlockCategory.PHYSICS    -> Icons.Default.Science
+    BlockCategory.CAMERA     -> Icons.Default.Videocam
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
@@ -1808,7 +1822,15 @@ private fun ModifyBlockContent(
                         "baseColor" to "Цвет базы", "knobColor" to "Цвет ручки",
                         "speed" to "Скорость", "directional" to "Поворот по направлению"
                     )
-                    else -> emptyList() // Объект не найден
+                    else -> {
+                        // Проверяем — может это камера
+                        val isCam = allBlocks.any { it.type == "sim_camera" && it.params["name"]?.value == objectName }
+                        if (isCam) listOf(
+                            "target"    to "Объект слежения",
+                            "smoothing" to "Плавность",
+                            "enabled"   to "Включена"
+                        ) else emptyList()
+                    }
                 }
             }
         }
@@ -1931,6 +1953,8 @@ private fun ModifyPropRow(
         "physics_mass" -> "Масса"
         "physics_vx" -> "Скорость X"
         "physics_vy" -> "Скорость Y"
+        "target"    -> "Объект слежения"
+        "smoothing" -> "Плавность камеры"
         else -> propKey
     }
 
@@ -1952,7 +1976,7 @@ private fun ModifyPropRow(
         when (propKey) {
             "color", "baseColor", "knobColor", "textColor" ->
                 ColorField(param = valueParam, onChange = { onParamChange("value", it) })
-            "visible", "bold", "directional", "physics_enabled", "physics_static" ->
+            "visible", "bold", "directional", "physics_enabled", "physics_static", "enabled" ->
                 BoolToggle(param = valueParam.copy(label = "Значение"), onChange = { onParamChange("value", it) })
             else ->
                 ExprChip(param = valueParam.copy(label = "Значение"), variables = variables,

@@ -78,8 +78,20 @@ data class SimState(
     val errors: List<String> = emptyList(),
     val isStopped: Boolean = false,
     val physicsEnabled: Boolean = true,
-    /** Пары имён объектов которые сейчас соприкасаются */
-    val activeCollisions: Set<Pair<String, String>> = emptySet()
+    val activeCollisions: Set<Pair<String, String>> = emptySet(),
+    val camera: SimCamera? = null
+)
+
+/** Камера слежения */
+data class SimCamera(
+    val name: String,
+    val enabled: Boolean = true,
+    val targetName: String = "",   // имя объекта за которым следим
+    val uiTags: Set<String> = emptySet(), // теги объектов-интерфейса (не двигаются с камерой)
+    val smoothing: Float = 1f,     // 0..1: 1 = мгновенно, 0.05 = очень плавно
+    // runtime — текущее смещение камеры
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f
 )
 
 object SimEngine {
@@ -100,6 +112,7 @@ object SimEngine {
         val globalTables = globalTableDefs.associate { it.name to it.entries.toMutableMap() }
             .mapValues { it.value }.toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = true
+        val cameraRef: Array<SimCamera?> = arrayOf(null)
 
         scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
             log += "Скрипт «${script.name}»"
@@ -109,7 +122,8 @@ object SimEngine {
             val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
             runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                 allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
-                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled)) })
+                cameraRef = cameraRef,
+                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) })
             globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
             globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
         }
@@ -118,7 +132,7 @@ object SimEngine {
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
-            physicsEnabled = physicsEnabled)
+            physicsEnabled = physicsEnabled, camera = cameraRef[0])
     }
 
     /**
@@ -235,8 +249,24 @@ object SimEngine {
 
         val newCollisions = currentCollisions - state.activeCollisions
         val endedCollisions = state.activeCollisions - currentCollisions
+
         val newState = state.copy(objects = objects, activeCollisions = currentCollisions)
         return Triple(newState, newCollisions, endedCollisions)
+    }
+
+    /** Обновляет позицию камеры мгновенно по текущему состоянию объектов. Вызывается после каждого движения. */
+    fun tickCamera(state: SimState): SimState {
+        val cam = state.camera ?: return state
+        if (!cam.enabled || cam.targetName.isBlank()) return state
+        val target = state.objects[cam.targetName] ?: return state
+        val targetOffX = -target.x
+        val targetOffY = target.y
+        val s = cam.smoothing.coerceIn(0.01f, 1f)
+        val newCam = cam.copy(
+            offsetX = cam.offsetX + (targetOffX - cam.offsetX) * s,
+            offsetY = cam.offsetY + (targetOffY - cam.offsetY) * s
+        )
+        return state.copy(camera = newCam)
     }
 
     private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, collisionTarget: String = "", collisionSelf: String = ""): SimState {
@@ -272,12 +302,14 @@ object SimEngine {
         val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
         val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = currentState.physicsEnabled
+        val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
 
         log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
+            cameraRef = cameraRef,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled)) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0])) }
             } else null
         )
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
@@ -287,7 +319,8 @@ object SimEngine {
         return currentState.copy(
             objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = allTables.mapValues { it.value.toMap() },
-            log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled
+            log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
+            camera = cameraRef[0]
         )
     }
 
@@ -302,6 +335,7 @@ object SimEngine {
         allowDelay: Boolean = true,
         physicsEnabledRef: () -> Boolean = { true },
         setPhysicsEnabled: (Boolean) -> Unit = {},
+        cameraRef: Array<SimCamera?> = arrayOf(null),
         onUpdate: (() -> Unit)? = null
     ): Boolean {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
@@ -375,7 +409,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -486,7 +520,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -502,7 +536,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -545,8 +579,29 @@ object SimEngine {
                 "sim_modify" -> {
                     val nameOrTag = getStr("name")
                     val targets = getObjectsByNameOrTag(nameOrTag)
-                    if (targets.isEmpty()) { errors += "Блок $num «Изменить свойства»: «$nameOrTag» не найден"; continue }
                     val props = block.children["props"] ?: emptyList()
+
+                    // Камера
+                    val cam = cameraRef[0]
+                    if (cam != null && cam.name == nameOrTag) {
+                        var modified: SimCamera = cam
+                        props.forEach { prop ->
+                            val propName = prop.params["prop"]?.value ?: return@forEach
+                            val propValue = prop.params["value"]?.value ?: return@forEach
+                            val resolved = ExprEval.eval(propValue, vars).value
+                            modified = when (propName) {
+                                "target"    -> modified.copy(targetName = resolved)
+                                "smoothing" -> modified.copy(smoothing = (resolved.toFloatOrNull() ?: modified.smoothing).coerceIn(0.01f, 1f))
+                                "enabled"   -> modified.copy(enabled = resolved == "true")
+                                else -> modified
+                            }
+                        }
+                        cameraRef[0] = modified
+                        log += "  Камера «$nameOrTag» свойства изменены"
+                        continue
+                    }
+
+                    if (targets.isEmpty()) { errors += "Блок $num «Изменить свойства»: «$nameOrTag» не найден"; continue }
                     targets.forEach { (name, obj) ->
                         var modified = obj
                         props.forEach { prop ->
@@ -647,6 +702,32 @@ object SimEngine {
                     val enabled = getStr("enabled", "true") == "true"
                     setPhysicsEnabled(enabled)
                     log += "  Физика: ${if (enabled) "включена" else "выключена"}"
+                }
+                "sim_camera" -> {
+                    val camName = getStr("name")
+                    if (camName.isBlank()) { errors += "Блок $num «Создать камеру»: имя пустое"; continue }
+                    // Проверяем что нет другой активной камеры
+                    val existing = cameraRef[0]
+                    if (existing != null && existing.name != camName && existing.enabled) {
+                        errors += "Блок $num «Создать камеру»: камера «${existing.name}» уже активна — нельзя использовать две камеры одновременно"
+                        continue
+                    }
+                    val target = getStr("target")
+                    val smoothing = getF("smoothing", 0.1f).coerceIn(0.01f, 1f)
+                    val uiTagsRaw = getStr("ui_tags")
+                    val uiTags = uiTagsRaw.split(",").map { it.trim().trimStart('#') }.filter { it.isNotBlank() }.toSet()
+                    val enabled = getStr("enabled", "true") == "true"
+                    cameraRef[0] = SimCamera(name = camName, enabled = enabled, targetName = target,
+                        smoothing = smoothing, uiTags = uiTags)
+                    log += "  Камера «$camName» создана, следит за «$target»"
+                }
+                "camera_toggle" -> {
+                    val camName = getStr("name")
+                    val enabled = getStr("enabled", "true") == "true"
+                    val cam = cameraRef[0]
+                    if (cam == null || cam.name != camName) { errors += "Блок $num «Переключить камеру»: камера «$camName» не найдена"; continue }
+                    cameraRef[0] = cam.copy(enabled = enabled)
+                    log += "  Камера «$camName»: ${if (enabled) "включена" else "выключена"}"
                 }
                 "table_set" -> {
                     val tableName = block.params["table"]?.value?.trim() ?: ""

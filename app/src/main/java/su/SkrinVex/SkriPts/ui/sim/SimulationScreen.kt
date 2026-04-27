@@ -96,9 +96,16 @@ fun SimulationScreen(
                                             val angle = atan2(rawDy, rawDx)
                                             onJoystickMove(joy.name, cos(angle) * len, -sin(angle) * len, pid)
                                         } else if (event.type == PointerEventType.Press) {
+                                            val cam = state.camera
+                                            val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
+                                            val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+                                            val uiTags = cam?.uiTags ?: emptySet()
                                             val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
-                                                val left = cx + obj.x - obj.width / 2f
-                                                val top  = cy - obj.y - obj.height / 2f
+                                                val isUi = obj.tags.any { it in uiTags }
+                                                val ox = if (isUi) cx else cx + camOx
+                                                val oy = if (isUi) cy else cy + camOy
+                                                val left = ox + obj.x - obj.width / 2f
+                                                val top  = oy - obj.y - obj.height / 2f
                                                 offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
                                             }
                                             if (hit != null) {
@@ -127,11 +134,39 @@ fun SimulationScreen(
             val cx = size.width / 2f
             val cy = size.height / 2f
             if (debugMode) drawGrid(cx, cy)
-            state.objects.values.forEach {
-                if (it.visible) drawSimObject(it, cx, cy, it.name == highlightedObj)
+
+            val cam = state.camera
+            val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
+            val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+            val uiTags = cam?.uiTags ?: emptySet()
+
+            // Мировые объекты — со смещением камеры
+            state.objects.values.forEach { obj ->
+                if (!obj.visible) return@forEach
+                val isUi = obj.tags.any { it in uiTags }
+                if (!isUi) drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj)
             }
             if (showHitboxes) {
-                state.objects.values.forEach { if (it.visible) drawHitbox(it, cx, cy) }
+                state.objects.values.forEach { obj ->
+                    if (obj.visible) {
+                        val isUi = obj.tags.any { it in uiTags }
+                        if (!isUi) drawHitbox(obj, cx + camOx, cy + camOy)
+                    }
+                }
+            }
+            // UI объекты — без смещения (поверх)
+            state.objects.values.forEach { obj ->
+                if (!obj.visible) return@forEach
+                val isUi = obj.tags.any { it in uiTags }
+                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj)
+            }
+            if (showHitboxes) {
+                state.objects.values.forEach { obj ->
+                    if (obj.visible) {
+                        val isUi = obj.tags.any { it in uiTags }
+                        if (isUi) drawHitbox(obj, cx, cy)
+                    }
+                }
             }
             state.joysticks.values.forEach { drawJoystick(it, cx, cy) }
         }
