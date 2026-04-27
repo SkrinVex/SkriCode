@@ -9,6 +9,7 @@ import su.SkrinVex.SkriPts.data.ScriptEvent
 import su.SkrinVex.SkriPts.data.ProjectVar
 import su.SkrinVex.SkriPts.data.ProjectTable
 import su.SkrinVex.SkriPts.data.deserialize
+import su.SkrinVex.SkriPts.engine.SaveCrypto
 
 /** Тип хитбокса */
 enum class HitboxType { AUTO, MANUAL }
@@ -674,8 +675,14 @@ object SimEngine {
                     val key = getStr("key")
                     if (key.isBlank()) { errors += "Блок $num «Сохранить переменную»: ключ не заполнен"; continue }
                     val value = getStr("value")
-                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString(key, value).apply()
-                    log += "  Сохранено: $key = «$value»"
+                    val encrypt = getStr("encrypt") == "true"
+                    val toStore = if (encrypt) {
+                        val cipherKey = SaveCrypto.getKey(ctx)
+                        if (cipherKey == null) { errors += "Блок $num «Сохранить переменную»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
+                        SaveCrypto.encrypt(value, cipherKey)
+                    } else value
+                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString(key, toStore).apply()
+                    log += "  Сохранено: $key${if (encrypt) " [🔒]" else ""}"
                 }
                 "load_var" -> {
                     val ctx = appContext
@@ -685,10 +692,21 @@ object SimEngine {
                     val varName = block.params["var"]?.value?.trim() ?: ""
                     if (varName.isBlank()) { errors += "Блок $num «Загрузить переменную»: имя переменной не заполнено"; continue }
                     val default = getStr("default")
+                    val encrypt = getStr("encrypt") == "true"
                     val prefs = ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE)
-                    val value = prefs.getString(key, default) ?: default
+                    val raw = prefs.getString(key, null)
+                    val value = if (raw == null) {
+                        default
+                    } else if (encrypt) {
+                        val cipherKey = SaveCrypto.getKey(ctx)
+                        if (cipherKey == null) { errors += "Блок $num «Загрузить переменную»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
+                        SaveCrypto.decrypt(raw, cipherKey) ?: run {
+                            errors += "Блок $num «Загрузить переменную»: не удалось расшифровать «$key» — неверный ключ?"
+                            continue
+                        }
+                    } else raw
                     vars[varName] = value
-                    log += "  Загружено: $varName = «$value» (ключ: $key)"
+                    log += "  Загружено: $varName = «$value»${if (encrypt) " [🔒]" else ""}"
                 }
                 "save_table" -> {
                     val ctx = appContext
@@ -697,10 +715,16 @@ object SimEngine {
                     if (key.isBlank()) { errors += "Блок $num «Сохранить таблицу»: ключ не заполнен"; continue }
                     val tableName = block.params["table"]?.value?.trim() ?: ""
                     if (tableName.isBlank()) { errors += "Блок $num «Сохранить таблицу»: имя таблицы не заполнено"; continue }
+                    val encrypt = getStr("encrypt") == "true"
                     val tbl = tables[tableName] ?: emptyMap<String, String>()
                     val json = tbl.entries.joinToString("|") { "${it.key}=${it.value}" }
-                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString("__table__$key", json).apply()
-                    log += "  Таблица «$tableName» сохранена как «$key» (${tbl.size} записей)"
+                    val toStore = if (encrypt) {
+                        val cipherKey = SaveCrypto.getKey(ctx)
+                        if (cipherKey == null) { errors += "Блок $num «Сохранить таблицу»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
+                        SaveCrypto.encrypt(json, cipherKey)
+                    } else json
+                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString("__table__$key", toStore).apply()
+                    log += "  Таблица «$tableName» сохранена как «$key» (${tbl.size} записей)${if (encrypt) " [🔒]" else ""}"
                 }
                 "load_table" -> {
                     val ctx = appContext
@@ -709,15 +733,24 @@ object SimEngine {
                     if (key.isBlank()) { errors += "Блок $num «Загрузить таблицу»: ключ не заполнен"; continue }
                     val tableName = block.params["table"]?.value?.trim() ?: ""
                     if (tableName.isBlank()) { errors += "Блок $num «Загрузить таблицу»: имя таблицы не заполнено"; continue }
+                    val encrypt = getStr("encrypt") == "true"
                     val prefs = ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE)
-                    val json = prefs.getString("__table__$key", null)
-                    if (json != null) {
+                    val raw = prefs.getString("__table__$key", null)
+                    if (raw != null) {
+                        val json = if (encrypt) {
+                            val cipherKey = SaveCrypto.getKey(ctx)
+                            if (cipherKey == null) { errors += "Блок $num «Загрузить таблицу»: ключ шифрования не задан — добавь его в Настройки → Хранилище ключей"; continue }
+                            SaveCrypto.decrypt(raw, cipherKey) ?: run {
+                                errors += "Блок $num «Загрузить таблицу»: не удалось расшифровать «$key» — неверный ключ?"
+                                continue
+                            }
+                        } else raw
                         val loaded = json.split("|").mapNotNull {
                             val eq = it.indexOf('='); if (eq == -1) null else it.substring(0, eq) to it.substring(eq + 1)
                         }.toMap().toMutableMap()
                         tables[tableName] = loaded
                         ExprEval.tables = tables.mapValues { it.value.toMap() }
-                        log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)"
+                        log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)${if (encrypt) " [🔒]" else ""}"
                     } else {
                         log += "  Таблица «$key» не найдена в памяти — «$tableName» не изменена"
                     }

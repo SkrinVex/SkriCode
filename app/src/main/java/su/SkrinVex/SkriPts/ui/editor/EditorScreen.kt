@@ -766,6 +766,8 @@ private fun BlockCard(
                                         block.type == "load_var" && key == "var" ->
                                             VarNameChip(value = param.value, label = param.label,
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
+                                            EncryptToggle(param = param, onChange = { onParamChange(key, it) })
                                         (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
                                             ObjectNameChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })
@@ -878,6 +880,59 @@ private fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EncryptToggle(param: BlockParam, onChange: (String) -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val isEncrypt = param.value == "true"
+    val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx)
+    var showKeyVault by remember { mutableStateOf(false) }
+
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+        ) {
+            listOf("false" to "Без шифрования", "true" to "Шифровать").forEach { (v, label) ->
+                val active = param.value == v
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active && v == "true") Success.copy(0.15f) else if (active) Accent.copy(0.1f) else Color.Transparent)
+                        .border(if (active) 1.dp else 0.dp, if (active && v == "true") Success.copy(0.6f) else if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onChange(v) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (active && v == "true") Success else if (active) Accent else TextSec,
+                        fontSize = 12.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+        if (isEncrypt && !hasKey) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                    .background(Warning.copy(0.1f))
+                    .border(1.dp, Warning.copy(0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Warning, null, tint = Warning, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Ключ шифрования не задан", color = Warning, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = { showKeyVault = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) { Text("Добавить", color = Warning, fontSize = 11.sp) }
+            }
+        }
+    }
+
+    if (showKeyVault) {
+        KeyVaultScreen(onDismiss = { showKeyVault = false })
     }
 }
 
@@ -1912,6 +1967,7 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
     var debugMode by remember { mutableStateOf(ThemeManager.debugMode) }
     var showObjectsInPicker by remember { mutableStateOf(ThemeManager.showObjectsInPicker) }
     var showHitboxes by remember { mutableStateOf(ThemeManager.showHitboxes) }
+    var showKeyVault by remember { mutableStateOf(false) }
 
     @Composable
     fun SettingRow(title: String, subtitle: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
@@ -1940,6 +1996,18 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
                 SettingRow("Режим отладки", "Сетка, логи, кнопка закрытия", debugMode) { debugMode = it }
                 SettingRow("Объекты в позиционировщике", "Показывать все объекты при перемещении", showObjectsInPicker) { showObjectsInPicker = it }
                 SettingRow("Показать хитбоксы", "Отображать хитбоксы объектов в симуляции", showHitboxes) { showHitboxes = it }
+
+                val hasKey = su.SkrinVex.SkriPts.engine.SaveCrypto.hasKey(ctx)
+                OutlinedButton(
+                    onClick = { showKeyVault = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (hasKey) Success else Warning),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (hasKey) Success.copy(0.5f) else Warning.copy(0.5f))
+                ) {
+                    Icon(Icons.Default.Key, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (hasKey) "Хранилище ключей (ключ задан)" else "Хранилище ключей (ключ не задан)")
+                }
             }
         },
         confirmButton = {
@@ -1955,4 +2023,8 @@ private fun SimSettingsDialog(onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
     )
+
+    if (showKeyVault) {
+        KeyVaultScreen(onDismiss = { showKeyVault = false })
+    }
 }
