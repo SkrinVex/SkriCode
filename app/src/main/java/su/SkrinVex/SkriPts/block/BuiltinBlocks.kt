@@ -133,7 +133,9 @@ object BlockFactory {
             "gravity"    to p("-9.8", "Гравитация", "px/тик² (0 = нет гравитации)", ParamType.NUMBER),
             "static"     to p("false", "Статический", "true = нельзя двигать физикой"),
             "bounciness" to p("0", "Упругость", "0..1 (0 = нет отскока)", ParamType.NUMBER),
-            "mass"       to p("1", "Масса", "Масса объекта", ParamType.NUMBER)))
+            "mass"       to p("1", "Масса", "Масса объекта", ParamType.NUMBER),
+            "vx"         to p("0", "Скорость X", "Начальная скорость по X", ParamType.NUMBER),
+            "vy"         to p("0", "Скорость Y", "Начальная скорость по Y", ParamType.NUMBER)))
 
         "sim_hitbox" -> build("sim_hitbox", "Хитбокс", "Настраивает хитбокс объекта", BlockCategory.PHYSICS, listOf(
             "name"   to p("rect1", "Имя объекта", "Какому объекту"),

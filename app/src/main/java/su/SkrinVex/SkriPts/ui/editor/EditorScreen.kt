@@ -1611,6 +1611,18 @@ private fun PhysicsBlockContent(
     val massParam = block.params["mass"]!!
     ExprChip(param = massParam, variables = variables,
         onClick = { onOpenExpr("mass", massParam.label, massParam.value, false) })
+    Spacer(Modifier.height(6.dp))
+
+    // Начальная скорость X
+    val vxParam = block.params["vx"]!!
+    ExprChip(param = vxParam, variables = variables,
+        onClick = { onOpenExpr("vx", vxParam.label, vxParam.value, false) })
+    Spacer(Modifier.height(6.dp))
+
+    // Начальная скорость Y
+    val vyParam = block.params["vy"]!!
+    ExprChip(param = vyParam, variables = variables,
+        onClick = { onOpenExpr("vy", vyParam.label, vyParam.value, false) })
 }
 
 @Composable
@@ -1700,21 +1712,28 @@ private fun ModifyBlockContent(
                     (it.type == "sim_create" || it.type == "sim_text" || it.type == "sim_joystick") &&
                     it.params["name"]?.value == objectName
                 }
+                val hasPhysics = allBlocks.any {
+                    it.type == "sim_physics" && it.params["name"]?.value == objectName
+                }
                 
                 when (creationBlock?.type) {
-                    "sim_create" -> listOf(
-                        "x" to "X позиция", "y" to "Y позиция",
-                        "width" to "Ширина", "height" to "Высота",
-                        "radius" to "Скругление", "color" to "Цвет",
-                        "visible" to "Видимость", "rotation" to "Вращение",
-                        "physics_enabled" to "Физика вкл/выкл",
-                        "physics_gravity" to "Гравитация",
-                        "physics_static" to "Статический",
-                        "physics_bounciness" to "Упругость",
-                        "physics_mass" to "Масса",
-                        "physics_vx" to "Скорость X",
-                        "physics_vy" to "Скорость Y"
-                    )
+                    "sim_create" -> buildList {
+                        addAll(listOf(
+                            "x" to "X позиция", "y" to "Y позиция",
+                            "width" to "Ширина", "height" to "Высота",
+                            "radius" to "Скругление", "color" to "Цвет",
+                            "visible" to "Видимость", "rotation" to "Вращение"
+                        ))
+                        if (hasPhysics) addAll(listOf(
+                            "physics_enabled" to "Физика вкл/выкл",
+                            "physics_gravity" to "Гравитация",
+                            "physics_static" to "Статический",
+                            "physics_bounciness" to "Упругость",
+                            "physics_mass" to "Масса",
+                            "physics_vx" to "Скорость X",
+                            "physics_vy" to "Скорость Y"
+                        ))
+                    }
                     "sim_text" -> listOf(
                         "x" to "X позиция", "y" to "Y позиция",
                         "width" to "Ширина", "height" to "Высота",

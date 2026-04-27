@@ -615,10 +615,13 @@ object SimEngine {
                     val isStatic = getStr("static", "false") == "true"
                     val bounciness = getF("bounciness", 0f).coerceIn(0f, 1f)
                     val mass = getF("mass", 1f).coerceAtLeast(0.01f)
+                    val vx = getF("vx", 0f)
+                    val vy = getF("vy", 0f)
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(physicsBody = PhysicsBody(
                             enabled = true, gravity = gravity, isStatic = isStatic,
-                            bounciness = bounciness, mass = mass
+                            bounciness = bounciness, mass = mass,
+                            velocityX = vx, velocityY = vy
                         ))
                     }
                     log += "  «$nameOrTag» физика: g=$gravity static=$isStatic (хитбокс AUTO по умолчанию)"
