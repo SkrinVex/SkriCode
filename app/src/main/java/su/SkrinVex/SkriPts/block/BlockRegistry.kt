@@ -10,6 +10,7 @@ object BlockRegistry {
 
     private val types = listOf(
         "set_var", "set_tag", "table_set", "table_get",
+        "save_var", "load_var", "save_table", "load_table",
         "if_block", "sim_stop",
         "for_loop", "while_loop", "wait",
         "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",

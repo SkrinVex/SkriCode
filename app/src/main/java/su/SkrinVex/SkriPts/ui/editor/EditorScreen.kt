@@ -760,6 +760,12 @@ private fun BlockCard(
                                         (block.type == "table_get") && key == "var" ->
                                             VarNameChip(value = param.value, label = param.label,
                                                 onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        (block.type == "save_table" || block.type == "load_table") && key == "table" ->
+                                            TableNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
+                                        block.type == "load_var" && key == "var" ->
+                                            VarNameChip(value = param.value, label = param.label,
+                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
                                         (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
                                             ObjectNameChip(param = param, variables = variables,
                                                 onClick = { onOpenExpr(key, param.label, param.value, false) })

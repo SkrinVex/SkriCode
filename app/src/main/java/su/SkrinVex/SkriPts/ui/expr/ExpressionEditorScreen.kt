@@ -453,6 +453,9 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$tableKey(scores, 0)", "Ключ по индексу", "Ключ записи по индексу (0, 1, 2, ...)",         Icons.Default.TableChart, TableAccent),
         BuiltinFn("\$tableVal(scores, 0)", "Значение по индексу", "Значение записи по индексу (0, 1, 2, ...)", Icons.Default.TableChart, TableAccent),
 
+        // Сохранения
+        BuiltinFn("\$saveExists(ключ)", "Есть сохранение?", "true если сохранение с таким ключом существует", Icons.Default.Save, Color(0xFF22C55E)),
+
         // Коллизия
         BuiltinFn("{collision_self}",          "Я (инициатор)",            "Имя объекта которому принадлежит этот скрипт",   Icons.Default.Bolt, Color(0xFFFF6B6B)),
         BuiltinFn("{collision_other}",         "Другой объект",            "Имя объекта с которым произошло столкновение",   Icons.Default.Bolt, Color(0xFFFF6B6B)),

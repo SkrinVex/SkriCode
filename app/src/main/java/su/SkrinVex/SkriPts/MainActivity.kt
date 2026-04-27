@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import su.SkrinVex.SkriPts.engine.ExprEval
+import su.SkrinVex.SkriPts.engine.SimEngine
 import su.SkrinVex.SkriPts.ui.editor.EditorScreen
 import su.SkrinVex.SkriPts.ui.editor.EditorViewModel
 import su.SkrinVex.SkriPts.ui.home.HomeScreen
@@ -32,6 +33,9 @@ class MainActivity : ComponentActivity() {
         val dm = resources.displayMetrics
         ExprEval.screenWidth = dm.widthPixels.toFloat()
         ExprEval.screenHeight = dm.heightPixels.toFloat()
+        // Контекст для сохранений
+        SimEngine.appContext = applicationContext
+        ExprEval.appContext = applicationContext
         
         // Проверяем, открыт ли файл .skripts
         val importUri = intent?.data

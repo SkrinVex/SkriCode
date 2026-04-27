@@ -37,6 +37,8 @@ object ExprEval {
     var joysticks: Map<String, JoystickState> = emptyMap()
     // Таблицы — обновляются из SimEngine перед каждым вычислением
     var tables: Map<String, Map<String, String>> = emptyMap()
+    // Контекст для проверки сохранений
+    var appContext: android.content.Context? = null
 
     data class EvalResult(val value: String, val error: String? = null)
 
@@ -144,7 +146,8 @@ object ExprEval {
             "sqrt(" to ::handleSqrt,
             "tableSize(" to ::handleTableSize,
             "tableKey(" to ::handleTableKey,
-            "tableVal(" to ::handleTableVal
+            "tableVal(" to ::handleTableVal,
+            "saveExists(" to ::handleSaveExists
         )
         
         for ((pattern, handler) in funcPatterns) {
@@ -327,6 +330,14 @@ object ExprEval {
         val idx = args[1].toIntOrNull() ?: return Triple("", consumed, "\$tableVal(): индекс «${args[1]}» не число")
         val value = tbl.values.toList().getOrNull(idx) ?: return Triple("", consumed, "\$tableVal(): индекс $idx вне диапазона (размер: ${tbl.size})")
         return Triple(value, consumed, null)
+    }
+
+    private fun handleSaveExists(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$saveExists() требует один аргумент: ключ сохранения")
+        val ctx = appContext ?: return Triple("false", consumed, null)
+        val prefs = ctx.getSharedPreferences("skripts_saves", android.content.Context.MODE_PRIVATE)
+        val exists = prefs.contains(args[0]) || prefs.contains("__table__${args[0]}")
+        return Triple(exists.toString(), consumed, null)
     }
 
     private fun tryArith(expr: String): String? {

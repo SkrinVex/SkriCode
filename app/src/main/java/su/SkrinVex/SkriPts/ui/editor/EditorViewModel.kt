@@ -561,6 +561,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if ((block.params["table"]?.value?.trim() ?: "").isBlank())
                             errors += "$prefix: имя таблицы не заполнено"
                     }
+                    "save_var", "load_var", "save_table", "load_table" -> {
+                        if ((block.params["key"]?.value?.trim() ?: "").isBlank())
+                            errors += "$prefix: ключ сохранения не заполнен"
+                    }
                 }
 
                 val allTableNames = (state.globalTables + (script.localTables ?: emptyList())).map { it.name }.toSet()
@@ -569,6 +573,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     if (block.type == "set_var" && key == "name") return@forEach
                     if ((block.type == "table_set" || block.type == "table_get") && key == "table") return@forEach
                     if (block.type == "table_get" && key == "var") return@forEach
+                    if ((block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "key") return@forEach
+                    if ((block.type == "load_var") && key == "var") return@forEach
+                    if ((block.type == "save_table" || block.type == "load_table") && key == "table") return@forEach
                     val v = param.value
                     if (v.count { it == '{' } != v.count { it == '}' })
                         errors += "$prefix [${param.label}]: незакрытая скобка в «$v»"

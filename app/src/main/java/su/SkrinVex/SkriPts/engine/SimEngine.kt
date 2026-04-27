@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriPts.engine
 
+import android.content.Context
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.delay
 import su.SkrinVex.SkriPts.block.BlockDef
@@ -81,6 +82,8 @@ data class SimState(
 )
 
 object SimEngine {
+
+    var appContext: Context? = null
 
     suspend fun run(
         scripts: List<Script>,
@@ -664,6 +667,60 @@ object SimEngine {
                     val value = tbl?.get(key) ?: ""
                     vars[varName] = value
                     log += "  $varName = $tableName[$key] → «$value»"
+                }
+                "save_var" -> {
+                    val ctx = appContext
+                    if (ctx == null) { errors += "Блок $num «Сохранить переменную»: контекст недоступен"; continue }
+                    val key = getStr("key")
+                    if (key.isBlank()) { errors += "Блок $num «Сохранить переменную»: ключ не заполнен"; continue }
+                    val value = getStr("value")
+                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString(key, value).apply()
+                    log += "  Сохранено: $key = «$value»"
+                }
+                "load_var" -> {
+                    val ctx = appContext
+                    if (ctx == null) { errors += "Блок $num «Загрузить переменную»: контекст недоступен"; continue }
+                    val key = getStr("key")
+                    if (key.isBlank()) { errors += "Блок $num «Загрузить переменную»: ключ не заполнен"; continue }
+                    val varName = block.params["var"]?.value?.trim() ?: ""
+                    if (varName.isBlank()) { errors += "Блок $num «Загрузить переменную»: имя переменной не заполнено"; continue }
+                    val default = getStr("default")
+                    val prefs = ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE)
+                    val value = prefs.getString(key, default) ?: default
+                    vars[varName] = value
+                    log += "  Загружено: $varName = «$value» (ключ: $key)"
+                }
+                "save_table" -> {
+                    val ctx = appContext
+                    if (ctx == null) { errors += "Блок $num «Сохранить таблицу»: контекст недоступен"; continue }
+                    val key = getStr("key")
+                    if (key.isBlank()) { errors += "Блок $num «Сохранить таблицу»: ключ не заполнен"; continue }
+                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    if (tableName.isBlank()) { errors += "Блок $num «Сохранить таблицу»: имя таблицы не заполнено"; continue }
+                    val tbl = tables[tableName] ?: emptyMap<String, String>()
+                    val json = tbl.entries.joinToString("|") { "${it.key}=${it.value}" }
+                    ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE).edit().putString("__table__$key", json).apply()
+                    log += "  Таблица «$tableName» сохранена как «$key» (${tbl.size} записей)"
+                }
+                "load_table" -> {
+                    val ctx = appContext
+                    if (ctx == null) { errors += "Блок $num «Загрузить таблицу»: контекст недоступен"; continue }
+                    val key = getStr("key")
+                    if (key.isBlank()) { errors += "Блок $num «Загрузить таблицу»: ключ не заполнен"; continue }
+                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    if (tableName.isBlank()) { errors += "Блок $num «Загрузить таблицу»: имя таблицы не заполнено"; continue }
+                    val prefs = ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE)
+                    val json = prefs.getString("__table__$key", null)
+                    if (json != null) {
+                        val loaded = json.split("|").mapNotNull {
+                            val eq = it.indexOf('='); if (eq == -1) null else it.substring(0, eq) to it.substring(eq + 1)
+                        }.toMap().toMutableMap()
+                        tables[tableName] = loaded
+                        ExprEval.tables = tables.mapValues { it.value.toMap() }
+                        log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)"
+                    } else {
+                        log += "  Таблица «$key» не найдена в памяти — «$tableName» не изменена"
+                    }
                 }
             }
         }
