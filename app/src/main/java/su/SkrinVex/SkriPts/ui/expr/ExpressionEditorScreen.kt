@@ -136,7 +136,7 @@ fun ExpressionEditorScreen(
     Box(Modifier.fillMaxSize().background(Navy900)) {
         Column(Modifier.fillMaxSize()) {
             Surface(color = Surface1, shadowElevation = 4.dp) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = TextPrim)

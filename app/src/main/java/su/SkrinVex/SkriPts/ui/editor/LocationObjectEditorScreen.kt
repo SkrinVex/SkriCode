@@ -32,6 +32,8 @@ fun LocationObjectEditorScreen(
     objectBlock: BlockDef,
     collapsedState: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Boolean>,
     spriteNames: List<String> = emptyList(),
+    projectId: String = "",
+    sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     onConfirm: (BlockDef) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -92,17 +94,25 @@ fun LocationObjectEditorScreen(
 
     // Редактор хитбокса
     hitboxTarget?.let { (idx, block) ->
+        val spriteName = mainBlock.params["sprite"]?.value?.ifBlank { null }
+        val spriteAsset = if (spriteName != null) sprites.find { it.name == spriteName } else null
+        val rawW = mainBlock.params["width"]?.value?.toFloatOrNull() ?: 0f
+        val rawH = mainBlock.params["height"]?.value?.toFloatOrNull() ?: 0f
+        val w = if (rawW > 0f) rawW else (spriteAsset?.width?.toFloat() ?: 100f)
+        val h = if (rawH > 0f) rawH else (spriteAsset?.height?.toFloat() ?: 60f)
         val fakeObj = su.SkrinVex.SkriPts.engine.SimObject(
             name = mainBlock.params["name"]?.value ?: "", x = 0f, y = 0f,
-            width = mainBlock.params["width"]?.value?.toFloatOrNull() ?: 100f,
-            height = mainBlock.params["height"]?.value?.toFloatOrNull() ?: 60f,
-            radius = mainBlock.params["radius"]?.value?.toFloatOrNull() ?: 8f,
-            color = su.SkrinVex.SkriPts.engine.SimEngine.parseColor(mainBlock.params["color"]?.value ?: "#4F8EF7")
+            width = w, height = h,
+            radius = mainBlock.params["radius"]?.value?.toFloatOrNull() ?: 0f,
+            color = su.SkrinVex.SkriPts.engine.SimEngine.parseColor(mainBlock.params["color"]?.value ?: "#4F8EF7"),
+            spriteName = spriteName
         )
         val existingPts = su.SkrinVex.SkriPts.engine.SimEngine.parseHitboxPoints(block.params["points"]?.value ?: "")
         HitboxEditorScreen(
             obj = fakeObj,
             initialPoints = existingPts,
+            projectId = projectId,
+            spriteName = fakeObj.spriteName,
             onConfirm = { pts ->
                 val serialized = su.SkrinVex.SkriPts.engine.SimEngine.serializeHitboxPoints(pts)
                 setupBlocks = setupBlocks.toMutableList().also { list ->
@@ -121,7 +131,7 @@ fun LocationObjectEditorScreen(
         topBar = {
             Surface(color = Surface1, shadowElevation = 4.dp) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onDismiss) {

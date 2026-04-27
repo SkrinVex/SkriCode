@@ -270,7 +270,7 @@ fun PositionPickerScreen(
         val yExpr = toExpr(objY, sh, isX = false)
 
         Surface(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+            modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 12.dp),
             color = Color(0xCC0A0E1A),
             shape = RoundedCornerShape(10.dp)
         ) {

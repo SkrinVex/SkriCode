@@ -70,6 +70,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             scenes = state.scenes,
             currentSceneId = state.activeSceneId,
             spriteNames = state.spriteNames,
+            sprites = state.sprites,
             onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
@@ -84,16 +85,21 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
     hitboxEditorTarget?.let { (blockIndex, block) ->
         val objName = block.params["name"]?.value ?: ""
         val simObj = state.activeBlocks.find {
-            (it.type == "sim_create" || it.type == "sim_text") && it.params["name"]?.value == objName
+            (it.type == "sim_create" || it.type == "sim_text" || it.type == "sim_sprite") && it.params["name"]?.value == objName
         }
         val fakeObj = simObj?.let {
+            val spriteName = it.params["sprite"]?.value?.ifBlank { null }
+            val spriteAsset = if (spriteName != null) state.sprites.find { s -> s.name == spriteName } else null
+            val rawW = it.params["width"]?.value?.toFloatOrNull() ?: 0f
+            val rawH = it.params["height"]?.value?.toFloatOrNull() ?: 0f
+            val w = if (rawW > 0f) rawW else (spriteAsset?.width?.toFloat() ?: 100f)
+            val h = if (rawH > 0f) rawH else (spriteAsset?.height?.toFloat() ?: 60f)
             su.SkrinVex.SkriPts.engine.SimObject(
-                name = objName,
-                x = 0f, y = 0f,
-                width = it.params["width"]?.value?.toFloatOrNull() ?: 100f,
-                height = it.params["height"]?.value?.toFloatOrNull() ?: 60f,
-                radius = it.params["radius"]?.value?.toFloatOrNull() ?: 8f,
-                color = su.SkrinVex.SkriPts.engine.SimEngine.parseColor(it.params["color"]?.value ?: "#4F8EF7")
+                name = objName, x = 0f, y = 0f,
+                width = w, height = h,
+                radius = it.params["radius"]?.value?.toFloatOrNull() ?: 0f,
+                color = su.SkrinVex.SkriPts.engine.SimEngine.parseColor(it.params["color"]?.value ?: "#4F8EF7"),
+                spriteName = spriteName
             )
         } ?: su.SkrinVex.SkriPts.engine.SimObject(
             name = objName, x = 0f, y = 0f, width = 100f, height = 60f, radius = 8f,
@@ -105,6 +111,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
         HitboxEditorScreen(
             obj = fakeObj,
             initialPoints = existingPoints,
+            projectId = state.projectId,
+            spriteName = fakeObj.spriteName,
             onConfirm = { pts ->
                 val serialized = su.SkrinVex.SkriPts.engine.SimEngine.serializeHitboxPoints(pts)
                 vm.updateParam(blockIndex, "type", if (pts.isEmpty()) "auto" else "manual")
@@ -228,7 +236,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             Surface(color = Surface1, shadowElevation = 4.dp) {
                 Column {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBack) {

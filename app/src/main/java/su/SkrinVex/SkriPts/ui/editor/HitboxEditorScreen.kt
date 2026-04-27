@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriPts.ui.editor
 
+import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -18,10 +19,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import su.SkrinVex.SkriPts.data.SpriteRepository
 import su.SkrinVex.SkriPts.engine.SimObject
 import su.SkrinVex.SkriPts.ui.theme.*
 import kotlin.math.hypot
@@ -30,10 +35,20 @@ import kotlin.math.hypot
 fun HitboxEditorScreen(
     obj: SimObject,
     initialPoints: List<Pair<Float, Float>>,
+    projectId: String = "",
+    spriteName: String? = null,
     onConfirm: (List<Pair<Float, Float>>) -> Unit,
     onDismiss: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
+
+    val ctx = LocalContext.current
+    val bitmap = remember(spriteName, projectId) {
+        if (spriteName.isNullOrBlank() || projectId.isBlank()) return@remember null
+        val file = SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+            ?: SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
+        file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+    }
 
     var points by remember { mutableStateOf(initialPoints.toMutableList()) }
     var selectedIdx by remember { mutableIntStateOf(-1) }
@@ -123,8 +138,16 @@ fun HitboxEditorScreen(
             val w = obj.width * scale; val h = obj.height * scale
             val left = cxF + obj.x * scale - w / 2f
             val top  = cyF - obj.y * scale - h / 2f
-            drawRoundRect(color = obj.color.copy(alpha = 0.4f), topLeft = Offset(left, top),
-                size = Size(w, h), cornerRadius = CornerRadius(obj.radius * scale, obj.radius * scale))
+            if (bitmap != null) {
+                drawIntoCanvas { canvas ->
+                    canvas.nativeCanvas.drawBitmap(bitmap, null,
+                        android.graphics.RectF(left, top, left + w, top + h),
+                        android.graphics.Paint().apply { isAntiAlias = true })
+                }
+            } else {
+                drawRoundRect(color = obj.color.copy(alpha = 0.4f), topLeft = Offset(left, top),
+                    size = Size(w, h), cornerRadius = CornerRadius(obj.radius * scale, obj.radius * scale))
+            }
             drawRoundRect(color = Color.White.copy(0.3f), topLeft = Offset(left, top),
                 size = Size(w, h), cornerRadius = CornerRadius(obj.radius * scale, obj.radius * scale), style = Stroke(1f))
 
@@ -146,7 +169,7 @@ fun HitboxEditorScreen(
 
         // Топбар
         Surface(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = Surface1.copy(0.95f)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null, tint = TextSec) }
                 Text("Хитбокс: ${obj.name}", color = TextPrim, fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp, modifier = Modifier.weight(1f))

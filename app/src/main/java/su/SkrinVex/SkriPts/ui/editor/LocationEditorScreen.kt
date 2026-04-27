@@ -54,6 +54,7 @@ fun LocationEditorScreen(
     scenes: List<su.SkrinVex.SkriPts.data.Scene> = emptyList(),
     currentSceneId: String = "",
     spriteNames: List<String> = emptyList(),
+    sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     onCopyToScene: (BlockDef, String) -> Unit = { _, _ -> },
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
@@ -126,6 +127,8 @@ fun LocationEditorScreen(
             objectBlock = block,
             collapsedState = setupCollapsedState,
             spriteNames = spriteNames,
+            projectId = projectId,
+            sprites = sprites,
             onConfirm = { updated ->
                 val idx = locBlocks.indexOfFirst { it.id == updated.id }
                 locBlocks = if (idx >= 0) locBlocks.toMutableList().also { it[idx] = updated }
@@ -285,7 +288,7 @@ fun LocationEditorScreen(
             val obj = locBlocks.find { it.id == sid }
             if (obj != null) {
                 Surface(
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                    modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 12.dp),
                     color = Color(0xCC0A0E1A), shape = RoundedCornerShape(10.dp)
                 ) {
                     Row(
@@ -326,7 +329,7 @@ fun LocationEditorScreen(
         }
 
         // Зум
-        Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Color(0xAA0A0E1A), shape = RoundedCornerShape(8.dp)) {
+        Surface(Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.statusBars).padding(12.dp), color = Color(0xAA0A0E1A), shape = RoundedCornerShape(8.dp)) {
             Text("${(zoom * 100).roundToInt()}%", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
         }
 

@@ -40,7 +40,7 @@ fun TableEditorScreen(
     Column(Modifier.fillMaxSize().background(Navy900)) {
         Surface(color = Surface1, shadowElevation = 4.dp) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
