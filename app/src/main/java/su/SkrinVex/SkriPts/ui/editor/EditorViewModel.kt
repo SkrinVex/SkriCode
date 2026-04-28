@@ -467,7 +467,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA)
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _state.value.simState ?: sim })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
                                 _state.update { it.copy(simState = result) }
@@ -478,7 +478,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB)
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _state.value.simState ?: sim })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
                                 _state.update { it.copy(simState = result) }
@@ -495,7 +495,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA)
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _state.value.simState ?: sim })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
                                 _state.update { it.copy(simState = result) }
@@ -506,7 +506,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB)
+                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _state.value.simState ?: sim })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
                                 _state.update { it.copy(simState = result) }

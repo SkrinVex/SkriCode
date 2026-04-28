@@ -278,10 +278,10 @@ object SimEngine {
         return runScriptOnState(script, scripts, currentState, onUpdate)
     }
 
-    suspend fun runCollision(scriptId: String, scripts: List<Script>, currentState: SimState, otherName: String = "", selfName: String = ""): SimState {
+    suspend fun runCollision(scriptId: String, scripts: List<Script>, currentState: SimState, otherName: String = "", selfName: String = "", onUpdate: ((SimState) -> Unit)? = null, getLatestState: (() -> SimState)? = null): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, scripts, currentState, collisionTarget = otherName, collisionSelf = selfName)
+        return runScriptOnState(script, scripts, currentState, onUpdate = onUpdate, collisionTarget = otherName, collisionSelf = selfName, getLatestState = getLatestState)
     }
 
     /** Применяет один тик физики. Возвращает новое состояние + пары новых/завершённых коллизий. */
@@ -376,7 +376,7 @@ object SimEngine {
         return state.copy(camera = newCam)
     }
 
-    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, collisionTarget: String = "", collisionSelf: String = ""): SimState {
+    private suspend fun runScriptOnState(script: Script, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, collisionTarget: String = "", collisionSelf: String = "", getLatestState: (() -> SimState)? = null): SimState {
         val objects = currentState.objects.toMutableMap()
         val joysticks = currentState.joysticks.toMutableMap()
         val log = currentState.log.toMutableList()
@@ -416,6 +416,7 @@ object SimEngine {
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
+            getLatestState = getLatestState,
             onUpdate = if (onUpdate != null) {
                 { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId)) }
             } else null
@@ -424,11 +425,41 @@ object SimEngine {
 
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
-        return currentState.copy(
-            objects = objects, joysticks = joysticks, globalVars = globalVars,
+        // Если есть getLatestState — мёрджим: берём свежие позиции из живого состояния,
+        // но применяем изменения видимости/переменных/тегов из скрипта
+        val baseState = getLatestState?.invoke() ?: currentState
+        val mergedObjects = baseState.objects.toMutableMap()
+        objects.forEach { (name, scriptObj) ->
+            val liveObj = mergedObjects[name]
+            if (liveObj != null) {
+                // Переносим только то что скрипт мог изменить (не позицию/физику — их ведёт физический тик)
+                mergedObjects[name] = liveObj.copy(
+                    visible = scriptObj.visible,
+                    label = scriptObj.label,
+                    color = scriptObj.color,
+                    tags = scriptObj.tags,
+                    spriteName = scriptObj.spriteName,
+                    spriteAlpha = scriptObj.spriteAlpha,
+                    zOrder = scriptObj.zOrder,
+                    collisionIgnore = scriptObj.collisionIgnore
+                )
+            } else {
+                // Объект создан скриптом — добавляем как есть
+                mergedObjects[name] = scriptObj
+            }
+        }
+        // Объекты удалённые скриптом (sim_delete) — убираем
+        baseState.objects.keys.filter { it !in objects }.forEach { mergedObjects.remove(it) }
+
+        return baseState.copy(
+            objects = mergedObjects,
+            joysticks = joysticks,
+            globalVars = globalVars,
             tables = allTables.mapValues { it.value.toMap() },
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
-            camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0]
+            // Камеру берём из живого состояния, если скрипт её не менял
+            camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
+            pendingSceneSwitch = sceneSwitchRef[0]
         )
     }
 
@@ -445,6 +476,7 @@ object SimEngine {
         setPhysicsEnabled: (Boolean) -> Unit = {},
         cameraRef: Array<SimCamera?> = arrayOf(null),
         sceneSwitchRef: Array<String?> = arrayOf(null),
+        getLatestState: (() -> SimState)? = null,
         onUpdate: (() -> Unit)? = null
     ): Boolean {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
@@ -577,7 +609,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -690,7 +722,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -706,7 +738,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -717,11 +749,15 @@ object SimEngine {
                     log += "  Таймер: ${seconds}с × $count"
                     if (allowDelay) {
                         repeat(count) {
-                            onUpdate?.invoke()
                             delay((seconds * 1000).toLong())
-                            if (bodyBlocks.isNotEmpty()) {
-                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
+                            // Синхронизируем позиции из живого состояния после паузы
+                            getLatestState?.invoke()?.objects?.forEach { (name, liveObj) ->
+                                objects[name]?.let { objects[name] = it.copy(x = liveObj.x, y = liveObj.y, rotation = liveObj.rotation, physicsBody = liveObj.physicsBody) }
                             }
+                            if (bodyBlocks.isNotEmpty()) {
+                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
+                            }
+                            onUpdate?.invoke()
                         }
                     }
                 }
