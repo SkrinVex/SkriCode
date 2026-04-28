@@ -75,6 +75,7 @@ data class JoystickState(
     val targetObject: String,            // имя объекта которым управляет
     val speed: Float,                    // скорость движения px/tick
     val directional: Boolean,            // вращать объект по направлению
+    val visible: Boolean = true,
     // runtime
     val knobDx: Float = 0f,             // смещение ручки от центра (-1..1)
     val knobDy: Float = 0f,
@@ -290,7 +291,7 @@ object SimEngine {
         val objects = state.objects.toMutableMap()
 
         val dynamics = objects.entries.filter { (_, obj) ->
-            val b = obj.physicsBody; b != null && b.enabled && !b.isStatic
+            val b = obj.physicsBody; b != null && b.enabled && !b.isStatic && obj.visible
         }
         if (dynamics.isEmpty()) return Triple(state, emptySet(), emptySet())
 
@@ -301,7 +302,7 @@ object SimEngine {
                 physicsBody = body.copy(velocityY = vy))
         }
 
-        val allPhysics = objects.values.filter { it.physicsBody != null }
+        val allPhysics = objects.values.filter { it.physicsBody != null && it.visible }
         val currentCollisions = mutableSetOf<Pair<String, String>>()
 
         repeat(3) {
@@ -389,15 +390,13 @@ object SimEngine {
         if (collisionTarget.isNotBlank()) {
             val other = objects[collisionTarget]
             val self  = if (collisionSelf.isNotBlank()) objects[collisionSelf] else null
-            // Другой объект
             vars["collision_other"]    = collisionTarget
-            vars["collision_name"]     = collisionTarget  // алиас
+            vars["collision_name"]     = collisionTarget
             vars["collision_x"]        = other?.x?.let { "%.1f".format(it) } ?: "0"
             vars["collision_y"]        = other?.y?.let { "%.1f".format(it) } ?: "0"
             vars["collision_width"]    = other?.width?.let { "%.1f".format(it) } ?: "0"
             vars["collision_height"]   = other?.height?.let { "%.1f".format(it) } ?: "0"
             vars["collision_rotation"] = other?.rotation?.let { "%.1f".format(it) } ?: "0"
-            // Свой объект
             vars["collision_self"]          = collisionSelf
             vars["collision_self_x"]        = self?.x?.let { "%.1f".format(it) } ?: "0"
             vars["collision_self_y"]        = self?.y?.let { "%.1f".format(it) } ?: "0"
@@ -412,11 +411,16 @@ object SimEngine {
         val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
 
+        // Отслеживаем дифф: что скрипт явно удалил
+        val deletedObjects = mutableSetOf<String>()
+        val deletedJoysticks = mutableSetOf<String>()
+
         log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
             getLatestState = getLatestState,
+            deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
             onUpdate = if (onUpdate != null) {
                 { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId)) }
             } else null
@@ -425,14 +429,18 @@ object SimEngine {
 
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
-        // Если есть getLatestState — мёрджим: берём свежие позиции из живого состояния,
-        // но применяем изменения видимости/переменных/тегов из скрипта
+        // Берём свежее живое состояние как базу
         val baseState = getLatestState?.invoke() ?: currentState
+
+        // Применяем дифф скрипта поверх живого состояния:
         val mergedObjects = baseState.objects.toMutableMap()
+        // 1. Удаляем то что скрипт явно удалил
+        deletedObjects.forEach { mergedObjects.remove(it) }
+        // 2. Применяем изменения/создания скрипта
         objects.forEach { (name, scriptObj) ->
             val liveObj = mergedObjects[name]
             if (liveObj != null) {
-                // Переносим только то что скрипт мог изменить (не позицию/физику — их ведёт физический тик)
+                // Объект существовал — переносим только то что скрипт мог изменить (не позицию/физику)
                 mergedObjects[name] = liveObj.copy(
                     visible = scriptObj.visible,
                     label = scriptObj.label,
@@ -443,21 +451,31 @@ object SimEngine {
                     zOrder = scriptObj.zOrder,
                     collisionIgnore = scriptObj.collisionIgnore
                 )
-            } else {
-                // Объект создан скриптом — добавляем как есть
+            } else if (name !in currentState.objects) {
+                // Объект создан скриптом (не существовал в начале) — добавляем
                 mergedObjects[name] = scriptObj
             }
+            // Если объект был в currentState но не в baseState (удалён другим скриптом) — не восстанавливаем
         }
-        // Объекты удалённые скриптом (sim_delete) — убираем
-        baseState.objects.keys.filter { it !in objects }.forEach { mergedObjects.remove(it) }
+
+        // Аналогично для джойстиков
+        val mergedJoysticks = baseState.joysticks.toMutableMap()
+        deletedJoysticks.forEach { mergedJoysticks.remove(it) }
+        joysticks.forEach { (name, scriptJoy) ->
+            val liveJoy = mergedJoysticks[name]
+            if (liveJoy != null) {
+                mergedJoysticks[name] = liveJoy.copy(visible = scriptJoy.visible)
+            } else if (name !in currentState.joysticks) {
+                mergedJoysticks[name] = scriptJoy
+            }
+        }
 
         return baseState.copy(
             objects = mergedObjects,
-            joysticks = joysticks,
+            joysticks = mergedJoysticks,
             globalVars = globalVars,
             tables = allTables.mapValues { it.value.toMap() },
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
-            // Камеру берём из живого состояния, если скрипт её не менял
             camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
             pendingSceneSwitch = sceneSwitchRef[0]
         )
@@ -477,6 +495,8 @@ object SimEngine {
         cameraRef: Array<SimCamera?> = arrayOf(null),
         sceneSwitchRef: Array<String?> = arrayOf(null),
         getLatestState: (() -> SimState)? = null,
+        deletedObjects: MutableSet<String> = mutableSetOf(),
+        deletedJoysticks: MutableSet<String> = mutableSetOf(),
         onUpdate: (() -> Unit)? = null
     ): Boolean {
         // Синхронизируем объекты с ExprEval чтобы $objX/$objY/$objRot работали
@@ -609,7 +629,7 @@ object SimEngine {
                     val rightVal = ExprEval.eval(right, vars).value
                     log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
                     if (branchBlocks.isNotEmpty()) {
-                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
+                        if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
                     }
                 }
                 "sim_create" -> {
@@ -705,15 +725,19 @@ object SimEngine {
                 "sim_hide" -> {
                     val nameOrTag = getStr("name")
                     val targets = getObjectsByNameOrTag(nameOrTag)
-                    if (targets.isEmpty()) { errors += "Блок $num «Скрыть»: «$nameOrTag» не найден"; continue }
+                    val joy = joysticks[nameOrTag]
+                    if (targets.isEmpty() && joy == null) { errors += "Блок $num «Скрыть»: «$nameOrTag» не найден"; continue }
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = false) }
+                    if (joy != null) joysticks[nameOrTag] = joy.copy(visible = false)
                     log += "  «$nameOrTag» скрыт"
                 }
                 "sim_show" -> {
                     val nameOrTag = getStr("name")
                     val targets = getObjectsByNameOrTag(nameOrTag)
-                    if (targets.isEmpty()) { errors += "Блок $num «Показать»: «$nameOrTag» не найден"; continue }
+                    val joy = joysticks[nameOrTag]
+                    if (targets.isEmpty() && joy == null) { errors += "Блок $num «Показать»: «$nameOrTag» не найден"; continue }
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = true) }
+                    if (joy != null) joysticks[nameOrTag] = joy.copy(visible = true)
                     log += "  «$nameOrTag» показан"
                 }
                 "for_loop" -> {
@@ -722,7 +746,7 @@ object SimEngine {
                     log += "  Цикл: $count раз"
                     repeat(count) { i ->
                         vars["i"] = i.toString()
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
                     }
                     vars.remove("i")
                 }
@@ -738,7 +762,7 @@ object SimEngine {
                         if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
                         if (!result) break
                         iterations++
-                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
                     }
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
@@ -755,7 +779,7 @@ object SimEngine {
                                 objects[name]?.let { objects[name] = it.copy(x = liveObj.x, y = liveObj.y, rotation = liveObj.rotation, physicsBody = liveObj.physicsBody) }
                             }
                             if (bodyBlocks.isNotEmpty()) {
-                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, onUpdate)) return false
+                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
                             }
                             onUpdate?.invoke()
                         }
@@ -881,10 +905,11 @@ object SimEngine {
                 "sim_delete" -> {
                     val nameOrTag = getStr("name")
                     val targets = getObjectsByNameOrTag(nameOrTag)
-                    if (targets.isEmpty()) { errors += "Блок $num «Удалить объект»: «$nameOrTag» не найден"; continue }
-                    targets.forEach { (name, _) -> objects.remove(name) }
-                    joysticks.remove(nameOrTag)
-                    log += "  Удалён «$nameOrTag» (${targets.size} объект(ов))"
+                    val hasJoy = joysticks.containsKey(nameOrTag)
+                    if (targets.isEmpty() && !hasJoy) { errors += "Блок $num «Удалить объект»: «$nameOrTag» не найден"; continue }
+                    targets.forEach { (name, _) -> objects.remove(name); deletedObjects += name }
+                    if (hasJoy) { joysticks.remove(nameOrTag); deletedJoysticks += nameOrTag }
+                    log += "  Удалён «$nameOrTag»"
                 }
                 "sim_physics" -> {
                     val nameOrTag = getStr("name")

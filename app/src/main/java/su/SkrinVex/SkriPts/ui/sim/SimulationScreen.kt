@@ -104,12 +104,11 @@ fun SimulationScreen(
                                         val offset = change.position
                                         val pid = change.id.value.toLong()
                                         // Джойстик уже захвачен этим пальцем — продолжаем независимо от позиции
-                                        val capturedJoy = state.joysticks.values.firstOrNull { j -> j.pointerId == pid }
+                                        val capturedJoy = state.joysticks.values.firstOrNull { j -> j.pointerId == pid && j.visible }
                                         // Или новое нажатие в пределах базы
                                         val joy = capturedJoy ?: if (event.type == PointerEventType.Press)
                                             state.joysticks.values.firstOrNull { j ->
-                                                val jx = cx + j.x; val jy = cy - j.y
-                                                hypot(offset.x - jx, offset.y - jy) <= j.baseRadius
+                                                j.visible && hypot(offset.x - (cx + j.x), offset.y - (cy - j.y)) <= j.baseRadius
                                             } else null
                                         if (joy != null) {
                                             val jx = cx + joy.x; val jy = cy - joy.y
@@ -201,7 +200,7 @@ fun SimulationScreen(
                     }
                 }
             }
-            state.joysticks.values.forEach { drawJoystick(it, cx, cy) }
+            state.joysticks.values.forEach { if (it.visible) drawJoystick(it, cx, cy) }
         }
 
         // Кнопка закрыть — только в debug или при ошибках
