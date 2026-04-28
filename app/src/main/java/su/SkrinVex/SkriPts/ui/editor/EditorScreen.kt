@@ -377,7 +377,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                             val childBlock = state.activeScript.blocks[index].deserialize()
                                 ?.children?.get(branch)?.getOrNull(ci) ?: b
                             positionPickerBlock = index to childBlock
-                        }
+                        },
+                        onUpdateChild = { branch, ci, updated -> vm.replaceChildBlock(index, branch, ci, updated) }
                     )
                 }
             }
@@ -676,6 +677,72 @@ private fun EmptyState() {
 }
 
 @Composable
+internal fun BlockParamContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList(),
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+) {
+    block.paramOrder.forEach { key ->
+        val param = block.params[key] ?: return@forEach
+        when {
+            block.type == "set_var" && key == "name" ->
+                VarNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "set_tag" && key == "tag" ->
+                TagNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "set_tag" && key == "object" ->
+                ObjectNameChip(param = param, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, false) })
+            (block.type == "table_set" || block.type == "table_get") && key == "table" ->
+                TableNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            (block.type == "table_get") && key == "var" ->
+                VarNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            (block.type == "save_table" || block.type == "load_table") && key == "table" ->
+                TableNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "load_var" && key == "var" ->
+                VarNameChip(value = param.value, label = param.label,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "scene_switch" && key == "scene" ->
+                SceneChip(param = param, sceneNames = sceneNames,
+                    onChange = { onParamChange(key, it) })
+            (block.type == "set_texture" || block.type == "sim_sprite") && key == "sprite" ->
+                SpriteChip(param = param, spriteNames = spriteNames,
+                    onChange = { onParamChange(key, it) })
+            (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
+                EncryptToggle(param = param, onChange = { onParamChange(key, it) })
+            (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
+                ObjectNameChip(param = param, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, false) })
+            key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick") ->
+                ExprChip(param = param, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, false) })
+            key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
+                ColorField(param = param, onChange = { onParamChange(key, it) })
+            block.type == "sim_move" && key == "mode" ->
+                MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+            (block.type == "sim_rotate") && key == "mode" ->
+                RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
+            key == "bold" || (block.type == "sim_joystick" && key == "directional") ||
+            (block.type == "sim_camera" && key == "enabled") ->
+                BoolToggle(param = param, onChange = { onParamChange(key, it) })
+            key == "op" || key == "op1" || key == "op2" ->
+                OperatorSelector(param = param, onChange = { onParamChange(key, it) })
+            else ->
+                ExprChip(param = param, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, false) })
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
 internal fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
@@ -700,7 +767,8 @@ internal fun BlockCard(
     onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> },
-    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null
 ) {
     val accent = categoryColor(block.category)
     var showContextMenu by remember { mutableStateOf(false) }
@@ -752,13 +820,15 @@ internal fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             IfBlockContent(
                                 block = block, variables = variables,
+                                allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
                                 isChildCollapsed = isChildCollapsed,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
-                                onOpenChildPositionPicker = onOpenChildPositionPicker
+                                onOpenChildPositionPicker = onOpenChildPositionPicker,
+                                onUpdateChild = onUpdateChild
                             )
                         }
                         "for_loop", "while_loop", "wait" -> {
@@ -767,12 +837,14 @@ internal fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             LoopBlockContent(
                                 block = block, variables = variables,
+                                allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
                                 isChildCollapsed = isChildCollapsed,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
-                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
+                                onUpdateChild = onUpdateChild
                             )
                         }
                         "sim_modify" -> {
@@ -839,61 +911,11 @@ internal fun BlockCard(
                                 Spacer(Modifier.height(10.dp))
                                 HorizontalDivider(color = Surface3)
                                 Spacer(Modifier.height(10.dp))
-                                block.paramOrder.forEach { key ->
-                                    val param = block.params[key] ?: return@forEach
-                                    when {
-                                        block.type == "set_var" && key == "name" ->
-                                            VarNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        block.type == "set_tag" && key == "tag" ->
-                                            TagNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        block.type == "set_tag" && key == "object" ->
-                                            ObjectNameChip(param = param, variables = variables,
-                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
-                                        (block.type == "table_set" || block.type == "table_get") && key == "table" ->
-                                            TableNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        (block.type == "table_get") && key == "var" ->
-                                            VarNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        (block.type == "save_table" || block.type == "load_table") && key == "table" ->
-                                            TableNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        block.type == "load_var" && key == "var" ->
-                                            VarNameChip(value = param.value, label = param.label,
-                                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                                        block.type == "scene_switch" && key == "scene" ->
-                                            SceneChip(param = param, sceneNames = sceneNames,
-                                                onChange = { onParamChange(key, it) })
-                                        (block.type == "set_texture" || block.type == "sim_sprite") && key == "sprite" ->
-                                            SpriteChip(param = param, spriteNames = spriteNames,
-                                                onChange = { onParamChange(key, it) })
-                                        (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
-                                            EncryptToggle(param = param, onChange = { onParamChange(key, it) })
-                                        (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
-                                            ObjectNameChip(param = param, variables = variables,
-                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
-                                        key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick") ->
-                                            ExprChip(param = param, variables = variables,
-                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
-                                        key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
-                                            ColorField(param = param, onChange = { onParamChange(key, it) })
-                                        block.type == "sim_move" && key == "mode" ->
-                                            MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                                        (block.type == "sim_rotate") && key == "mode" ->
-                                            RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ||
-                                        (block.type == "sim_camera" && key == "enabled") ->
-                                            BoolToggle(param = param, onChange = { onParamChange(key, it) })
-                                        key == "op" || key == "op1" || key == "op2" ->
-                                            OperatorSelector(param = param, onChange = { onParamChange(key, it) })
-                                        else ->
-                                            ExprChip(param = param, variables = variables,
-                                                onClick = { onOpenExpr(key, param.label, param.value, false) })
-                                    }
-                                    Spacer(Modifier.height(6.dp))
-                                }
+                                BlockParamContent(
+                                    block = block, variables = variables,
+                                    sceneNames = sceneNames, spriteNames = spriteNames,
+                                    onParamChange = onParamChange, onOpenExpr = onOpenExpr
+                                )
                             }
                         }
                     }
@@ -1127,6 +1149,9 @@ internal fun OperatorSelector(param: BlockParam, onChange: (String) -> Unit) {
 internal fun IfBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
+    allBlocks: List<BlockDef> = emptyList(),
+    sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList(),
     scriptId: String = "",
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
@@ -1136,12 +1161,14 @@ internal fun IfBlockContent(
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
-    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null
 ) {
+
+    // Левое значение
     val ops = listOf("==", "!=", ">", "<", ">=", "<=")
     val opLabels = mapOf("==" to "равно", "!=" to "≠", ">" to "больше", "<" to "меньше", ">=" to "≥", "<=" to "≤")
 
-    // Левое значение
     val leftParam = block.params["left"]!!
     ExprChip(param = leftParam, variables = variables,
         onClick = { onOpenExpr("left", leftParam.label, leftParam.value, false) })
@@ -1194,7 +1221,9 @@ internal fun IfBlockContent(
         isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
-        onOpenChildPositionPicker = onOpenChildPositionPicker
+        onOpenChildPositionPicker = onOpenChildPositionPicker,
+        onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("then", ci, upd) }} else null,
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
     )
     Spacer(Modifier.height(6.dp))
     IfBranchSection(
@@ -1208,7 +1237,9 @@ internal fun IfBlockContent(
         isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
-        onOpenChildPositionPicker = onOpenChildPositionPicker
+        onOpenChildPositionPicker = onOpenChildPositionPicker,
+        onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("else", ci, upd) }} else null,
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
     )
 }
 
@@ -1227,7 +1258,11 @@ internal fun IfBranchSection(
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
-    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onUpdateChild: ((childIndex: Int, updated: BlockDef) -> Unit)? = null,
+    allBlocks: List<BlockDef> = emptyList(),
+    sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList()
 ) {
     var showPicker by remember { mutableStateOf(false) }
 
@@ -1255,6 +1290,9 @@ internal fun IfBranchSection(
                 ChildBlockRow(
                     block = child, childIndex = ci, branch = branch,
                     variables = variables,
+                    allBlocks = allBlocks,
+                    sceneNames = sceneNames,
+                    spriteNames = spriteNames,
                     accentColor = color,
                     collapsed = collapsedState.value,
                     onToggleCollapse = {
@@ -1264,7 +1302,30 @@ internal fun IfBranchSection(
                     onRemove = { onRemoveChild(branch, ci) },
                     onParamChange = { k, v -> onChildParamChange(branch, ci, k, v) },
                     onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) },
-                    onOpenPositionPicker = if (onOpenChildPositionPicker != null) {{ onOpenChildPositionPicker(branch, ci, child) }} else null
+                    onOpenPositionPicker = if (onOpenChildPositionPicker != null) {{ onOpenChildPositionPicker(branch, ci, child) }} else null,
+                    onAddGrandchild = { childBranch, type ->
+                        val newBlock = BlockRegistry.create(type) ?: return@ChildBlockRow
+                        val newChildren = child.children.toMutableMap()
+                        newChildren[childBranch] = (newChildren[childBranch] ?: emptyList()) + newBlock
+                        onUpdateChild?.invoke(ci, child.copy(children = newChildren))
+                    },
+                    onRemoveGrandchild = { childBranch, gci ->
+                        val newChildren = child.children.toMutableMap()
+                        newChildren[childBranch] = (newChildren[childBranch] ?: emptyList()).toMutableList().also { it.removeAt(gci) }
+                        onUpdateChild?.invoke(ci, child.copy(children = newChildren))
+                    },
+                    onGrandchildParamChange = { childBranch, gci, k, v ->
+                        val grandchildren = (child.children[childBranch] ?: emptyList()).toMutableList()
+                        if (gci < grandchildren.size) {
+                            grandchildren[gci] = grandchildren[gci].withParam(k, v)
+                            val newChildren = child.children.toMutableMap()
+                            newChildren[childBranch] = grandchildren
+                            onUpdateChild?.invoke(ci, child.copy(children = newChildren))
+                        }
+                    },
+                    onOpenGrandchildExpr = { childBranch, gci, k, lbl, cur, isId ->
+                        onOpenChildExpr(branch, ci, k, lbl, cur, isId)
+                    }
                 )
                 if (ci < blocks.size - 1) Spacer(Modifier.height(4.dp))
             }
@@ -1283,13 +1344,20 @@ internal fun IfBranchSection(
 internal fun ChildBlockRow(
     block: BlockDef, childIndex: Int, branch: String,
     variables: List<ProjectVar>,
+    allBlocks: List<BlockDef> = emptyList(),
+    sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList(),
     accentColor: Color,
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
     onRemove: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
-    onOpenPositionPicker: (() -> Unit)? = null
+    onOpenPositionPicker: (() -> Unit)? = null,
+    onAddGrandchild: (childBranch: String, type: String) -> Unit = { _, _ -> },
+    onRemoveGrandchild: (childBranch: String, grandchildIndex: Int) -> Unit = { _, _ -> },
+    onGrandchildParamChange: (childBranch: String, grandchildIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
+    onOpenGrandchildExpr: (childBranch: String, grandchildIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> }
 ) {
     val accent = categoryColor(block.category)
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -1313,25 +1381,36 @@ internal fun ChildBlockRow(
             }
             if (!collapsed && block.params.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                block.paramOrder.forEach { key ->
-                    val param = block.params[key] ?: return@forEach
-                    when {
-                        block.type == "set_var" && key == "name" ->
-                            VarNameChip(value = param.value, label = param.label,
-                                onClick = { onOpenExpr(key, param.label, param.value, true) })
-                        key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
-                            ColorField(param = param, onChange = { onParamChange(key, it) })
-                        block.type == "sim_move" && key == "mode" ->
-                            MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                        (block.type == "sim_rotate") && key == "mode" ->
-                            RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
-                        key == "bold" || (block.type == "sim_joystick" && key == "directional") ->
-                            BoolToggle(param = param, onChange = { onParamChange(key, it) })
-                        else ->
-                            ExprChip(param = param, variables = variables,
-                                onClick = { onOpenExpr(key, param.label, param.value, false) })
-                    }
-                    Spacer(Modifier.height(4.dp))
+                BlockParamContent(
+                    block = block, variables = variables,
+                    sceneNames = sceneNames, spriteNames = spriteNames,
+                    onParamChange = onParamChange, onOpenExpr = onOpenExpr
+                )
+            }
+            // Рендеринг children для специальных блоков
+            if (!collapsed && block.children.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                when (block.type) {
+                    "sim_modify" -> ModifyBlockContent(
+                        block = block, variables = variables, allBlocks = allBlocks,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                        onAddChild = onAddGrandchild, onRemoveChild = onRemoveGrandchild,
+                        onChildParamChange = onGrandchildParamChange, onOpenChildExpr = onOpenGrandchildExpr
+                    )
+                    "if_block" -> IfBlockContent(
+                        block = block, variables = variables,
+                        allBlocks = allBlocks,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                        onAddChild = onAddGrandchild, onRemoveChild = onRemoveGrandchild,
+                        onChildParamChange = onGrandchildParamChange, onOpenChildExpr = onOpenGrandchildExpr
+                    )
+                    "for_loop", "while_loop", "wait" -> LoopBlockContent(
+                        block = block, variables = variables,
+                        allBlocks = allBlocks,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                        onAddChild = onAddGrandchild, onRemoveChild = onRemoveGrandchild,
+                        onChildParamChange = onGrandchildParamChange, onOpenChildExpr = onOpenGrandchildExpr
+                    )
                 }
             }
         }
@@ -1706,6 +1785,9 @@ fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
 internal fun LoopBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
+    allBlocks: List<BlockDef> = emptyList(),
+    sceneNames: List<String> = emptyList(),
+    spriteNames: List<String> = emptyList(),
     scriptId: String = "",
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
@@ -1714,7 +1796,8 @@ internal fun LoopBlockContent(
     onAddChild: (branch: String, type: String) -> Unit,
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
-    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null
 ) {
     block.paramOrder.forEach { key ->
         val param = block.params[key] ?: return@forEach
@@ -1741,7 +1824,9 @@ internal fun LoopBlockContent(
         onAddChild = onAddChild,
         onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange,
-        onOpenChildExpr = onOpenChildExpr
+        onOpenChildExpr = onOpenChildExpr,
+        onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("body", ci, upd) }} else null,
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
     )
 }
 
@@ -1867,6 +1952,18 @@ internal fun ModifyBlockContent(
     // Список свойств
     val props = block.children["props"] ?: emptyList()
     var showPropPicker by remember { mutableStateOf(false) }
+    var pendingPropKey by remember { mutableStateOf<String?>(null) }
+    
+    // Устанавливаем параметр prop после добавления нового блока
+    LaunchedEffect(props.size, pendingPropKey) {
+        pendingPropKey?.let { propKey ->
+            val lastIndex = props.size - 1
+            if (lastIndex >= 0) {
+                onChildParamChange("props", lastIndex, "prop", propKey)
+                pendingPropKey = null
+            }
+        }
+    }
     
     // Определяем доступные свойства на основе имени объекта
     val objectName = nameParam.value.trim()
@@ -2012,7 +2109,7 @@ internal fun ModifyBlockContent(
                     val (propKey, propLabel) = selectableProps[i]
                     Card(onClick = {
                         onAddChild("props", "modify_prop")
-                        onChildParamChange("props", props.size, "prop", propKey)
+                        pendingPropKey = propKey
                         showPropPicker = false
                     },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),

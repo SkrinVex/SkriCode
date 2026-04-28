@@ -34,6 +34,8 @@ data class EditorState(
     val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     val simState: SimState? = null,
     val simRunCount: Int = 0,
+    /** Скрипты сцены которая сейчас симулируется (может отличаться от scripts при переходе между сценами) */
+    val simScripts: List<Script> = emptyList(),
     val validationErrors: List<String> = emptyList(),
     // Буфер обмена — null = пусто, true = скрипт, false = блок
     val clipboardIsScript: Boolean? = null
@@ -227,6 +229,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Заменить дочерний блок целиком (для обновления grandchildren) */
+    fun replaceChildBlock(blockIndex: Int, branch: String, childIndex: Int, updated: BlockDef) = modifyActiveBlocks { list ->
+        list.toMutableList().also { mutable ->
+            val block = mutable[blockIndex].deserialize() ?: return@also
+            val newChildren = block.children.toMutableMap()
+            val branchList = (newChildren[branch] ?: emptyList()).toMutableList()
+            if (childIndex < branchList.size) branchList[childIndex] = updated
+            newChildren[branch] = branchList
+            mutable[blockIndex] = block.copy(children = newChildren).serialize()
+        }
+    }
+
     private fun modifyActiveBlocks(transform: (List<SerializedBlock>) -> List<SerializedBlock>) {
         updateScript(_state.value.activeScriptId) { it.copy(blocks = transform(it.blocks)) }
     }
@@ -369,7 +383,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
         SimEngine.projectName = state.projectName
         val initial = SimState()
-        _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList()) }
+        _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList(), simScripts = state.scripts) }
         viewModelScope.launch {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks,
                 sprites = state.sprites, projectId = projectId) { liveState ->
@@ -384,13 +398,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         // Запускаем физический тик ~60fps
+        startPhysicsLoop()
+    }
+
+    private fun startPhysicsLoop() {
         _physicsJob?.cancel()
+        _activeHolds.clear()
         _physicsJob = viewModelScope.launch {
             val runningCollisionScripts = mutableSetOf<String>()
             val runningHoldScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
-                // Применяем джойстики и физику в одном атомарном обновлении
                 _state.update { s ->
                     var sim = s.simState ?: return@update s
                     for ((_, joy) in sim.joysticks) {
@@ -428,24 +446,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
                 _state.update { it.copy(simState = SimEngine.tickCamera(newSim)) }
 
-                // Hold-скрипты — каждый тик
                 for ((_, pair) in _activeHolds.toMap()) {
                     val (scriptId, _) = pair
                     if (scriptId in runningHoldScripts) continue
                     runningHoldScripts += scriptId
                     launch {
                         val currentSim = _state.value.simState ?: run { runningHoldScripts -= scriptId; return@launch }
-                        val newHoldSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
+                        val newHoldSim = SimEngine.runHold(scriptId, _state.value.simScripts, currentSim)
                         runningHoldScripts -= scriptId
                         if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
                         _state.update { it.copy(simState = newHoldSim) }
                     }
                 }
 
-                // Запускаем ON_COLLISION для новых коллизий — в отдельных корутинах
                 for ((nameA, nameB) in newCols) {
                     val sim = _state.value.simState ?: break
-                    val scripts = _state.value.scripts
+                    val scripts = _state.value.simScripts
                     _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Коллизия: «$nameA» ↔ «$nameB»") }) }
                     sim.objects[nameA]?.collisionScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
@@ -471,10 +487,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
-                // Запускаем ON_COLLISION_END для завершённых коллизий
                 for ((nameA, nameB) in endedCols) {
                     val sim = _state.value.simState ?: break
-                    val scripts = _state.value.scripts
+                    val scripts = _state.value.simScripts
                     _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Конец коллизии: «$nameA» ↔ «$nameB»") }) }
                     sim.objects[nameA]?.collisionEndScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
@@ -511,7 +526,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _tapMutex.withLock {
                 val currentSim = _state.value.simState ?: return@withLock
-                val newSim = SimEngine.runTap(scriptId, _state.value.scripts, currentSim) { liveState ->
+                val newSim = SimEngine.runTap(scriptId, _state.value.simScripts, currentSim) { liveState ->
                     _state.update { it.copy(simState = liveState) }
                 }
                 if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@withLock }
@@ -675,43 +690,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val updatedGlobalVarDefs = s.globalVars.map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
-        // simRunCount++ заставит MainActivity перейти на "sim" экран заново (сброс SimulationScreen)
         _state.update { it.copy(
             simState = SimState(globalVars = globalVars),
             simRunCount = it.simRunCount + 1,
-            globalVars = updatedGlobalVarDefs
+            globalVars = updatedGlobalVarDefs,
+            simScripts = targetScene.scripts
         )}
         viewModelScope.launch {
             val result = SimEngine.run(
-                targetScene.scripts, updatedGlobalVarDefs, s.globalTables, targetScene.locationBlocks
+                targetScene.scripts, updatedGlobalVarDefs, s.globalTables,
+                targetScene.locationBlocks, sprites = s.sprites, projectId = s.projectId
             ) { liveState -> _state.update { it.copy(simState = liveState) } }
             val nextSwitch = result.pendingSceneSwitch
             if (nextSwitch != null) switchScene(nextSwitch, result.globalVars)
             else _state.update { it.copy(simState = result) }
         }
-        _physicsJob?.cancel()
-        _physicsJob = viewModelScope.launch {
-            while (true) {
-                delay(16)
-                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
-                _state.update { it.copy(simState = newSim) }
-                for ((nameA, nameB) in newCols) {
-                    val sim = _state.value.simState ?: break
-                    val scripts = targetScene.scripts
-                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Коллизия: «$nameA» ↔ «$nameB»") }) }
-                    sim.objects[nameA]?.collisionScriptId?.let { sid ->
-                        val r = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameB, selfName = nameA)
-                        if (r.pendingSceneSwitch != null) { switchScene(r.pendingSceneSwitch, r.globalVars); return@launch }
-                        _state.update { it.copy(simState = r) }
-                    }
-                    sim.objects[nameB]?.collisionScriptId?.let { sid ->
-                        val r = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@let, otherName = nameA, selfName = nameB)
-                        if (r.pendingSceneSwitch != null) { switchScene(r.pendingSceneSwitch, r.globalVars); return@launch }
-                        _state.update { it.copy(simState = r) }
-                    }
-                }
-            }
-        }
+        startPhysicsLoop()
     }
 
     // UI-состояние (не в EditorState — не вызывает рекомпозицию всего экрана)
