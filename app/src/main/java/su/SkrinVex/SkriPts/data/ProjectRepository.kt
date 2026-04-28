@@ -83,6 +83,10 @@ data class ScriptProject(
     val name: String,
     val orientation: ProjectOrientation? = ProjectOrientation.PORTRAIT,
     val packageName: String? = null,
+    val appLabel: String? = null,       // кастомное название приложения (null = имя проекта)
+    val versionName: String? = null,    // e.g. "1.0"
+    val versionCode: Int? = null,       // e.g. 1
+    val iconFileName: String? = null,   // имя файла иконки в SpriteRepository (null = дефолтная)
     val scenes: List<Scene>? = null,           // null = legacy (нет сцен)
     val activeSceneId: String? = null,
     val scripts: List<Script>? = emptyList(),  // legacy / сцена по умолчанию

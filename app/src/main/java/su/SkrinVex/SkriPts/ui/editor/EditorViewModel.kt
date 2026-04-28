@@ -34,6 +34,10 @@ data class EditorState(
     val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     val orientation: su.SkrinVex.SkriPts.data.ProjectOrientation = su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
     val packageName: String = "",
+    val appLabel: String = "",
+    val versionName: String = "1.0",
+    val versionCode: Int = 1,
+    val iconFileName: String = "",
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     /** Скрипты сцены которая сейчас симулируется (может отличаться от scripts при переходе между сценами) */
@@ -114,6 +118,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             projectName = project.name,
             orientation = project.orientation ?: su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
             packageName = project.packageName ?: "",
+            appLabel = project.appLabel ?: "",
+            versionName = project.versionName ?: "1.0",
+            versionCode = project.versionCode ?: 1,
+            iconFileName = project.iconFileName ?: "",
             scenes = scenes,
             activeSceneId = activeScene.id,
             scripts = activeScene.scripts,
@@ -748,6 +756,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             id = projectId, name = s.projectName,
             orientation = s.orientation,
             packageName = s.packageName.ifBlank { null },
+            appLabel = s.appLabel.ifBlank { null },
+            versionName = s.versionName.ifBlank { null },
+            versionCode = s.versionCode,
+            iconFileName = s.iconFileName.ifBlank { null },
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
             sprites = s.sprites
@@ -756,6 +768,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setOrientation(o: su.SkrinVex.SkriPts.data.ProjectOrientation) = _state.update { it.copy(orientation = o) }
     fun setPackageName(pkg: String) = _state.update { it.copy(packageName = pkg) }
+    fun setAppLabel(v: String) = _state.update { it.copy(appLabel = v) }
+    fun setVersionName(v: String) = _state.update { it.copy(versionName = v) }
+    fun setVersionCode(v: Int) = _state.update { it.copy(versionCode = v) }
+    fun setIconFileName(v: String) = _state.update { it.copy(iconFileName = v) }
 
     /** Собирает текущий ScriptProject из состояния для экспорта */
     fun buildProject(): su.SkrinVex.SkriPts.data.ScriptProject {
@@ -768,11 +784,16 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (scene.id == s.activeSceneId) scene.copy(scripts = updatedScripts, locationBlocks = s.locationBlocks)
             else scene
         }
+        // В APK всегда запускается первая сцена, независимо от того какая открыта в редакторе
         return su.SkrinVex.SkriPts.data.ScriptProject(
             id = projectId, name = s.projectName,
             orientation = s.orientation,
             packageName = s.packageName.ifBlank { null },
-            scenes = updatedScenes, activeSceneId = s.activeSceneId,
+            appLabel = s.appLabel.ifBlank { null },
+            versionName = s.versionName.ifBlank { null },
+            versionCode = s.versionCode,
+            iconFileName = s.iconFileName.ifBlank { null },
+            scenes = updatedScenes, activeSceneId = updatedScenes.first().id,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
             sprites = s.sprites
         )

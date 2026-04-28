@@ -101,7 +101,7 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /home/komari/.gradle/caches
 		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:6:9-36
 	android:theme
 		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:9:9-52
-activity#su.SkrinVex.SkriPts.runtime.runtime.RuntimeActivity
+activity#su.SkrinVex.SkriPts.runtime.RuntimeActivity
 ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:10:9-19:20
 	android:windowSoftInputMode
 		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:14:13-55
@@ -110,7 +110,7 @@ ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/Andro
 	android:configChanges
 		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:13:13-87
 	android:name
-		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:11:13-52
+		ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:11:13-71
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
 ADDED from /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:15:13-18:29
 action#android.intent.action.MAIN

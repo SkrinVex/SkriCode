@@ -273,7 +273,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                                 onOrientationChange = { vm.setOrientation(it) },
                                 packageName = state.packageName,
                                 onPackageNameChange = { vm.setPackageName(it) },
-                                onDismiss = { showProjectSettings = false }
+                                onDismiss = { showProjectSettings = false },
+                                vm = vm,
+                                projectName = state.projectName
                             )
                         }
                         IconButton(onClick = { showLocationEditor = true }) {
@@ -2468,8 +2470,22 @@ fun ProjectSettingsDialog(
     onOrientationChange: (su.SkrinVex.SkriPts.data.ProjectOrientation) -> Unit,
     packageName: String = "",
     onPackageNameChange: (String) -> Unit = {},
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // Новые параметры для настроек сборки
+    vm: EditorViewModel? = null,
+    projectName: String = ""
 ) {
+    var showBuildSettings by remember { mutableStateOf(false) }
+
+    if (showBuildSettings && vm != null) {
+        ApkBuildSettingsDialog(
+            vm = vm,
+            projectName = projectName,
+            onDismiss = { showBuildSettings = false }
+        )
+        return
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
@@ -2496,23 +2512,18 @@ fun ProjectSettingsDialog(
                         )
                     }
                 }
-                Text("Имя пакета (для экспорта APK)", color = TextSec, fontSize = 13.sp)
-                OutlinedTextField(
-                    value = packageName,
-                    onValueChange = onPackageNameChange,
-                    placeholder = { Text("com.example.mygame", color = TextSec) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent, focusedLabelColor = Accent,
-                        cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
-                    ),
-                    isError = packageName.isNotBlank() && !isValidPackageName(packageName),
-                    supportingText = {
-                        if (packageName.isNotBlank() && !isValidPackageName(packageName))
-                            Text("Формат: com.example.app", color = Danger, fontSize = 11.sp)
+                // Кнопка настроек сборки APK
+                if (vm != null) {
+                    OutlinedButton(
+                        onClick = { showBuildSettings = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Success.copy(0.5f))
+                    ) {
+                        Icon(Icons.Default.Android, null, tint = Success, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Настройки сборки APK", color = Success)
                     }
-                )
+                }
             }
         },
         confirmButton = {
@@ -2523,5 +2534,176 @@ fun ProjectSettingsDialog(
     )
 }
 
+@Composable
+private fun ApkBuildSettingsDialog(
+    vm: EditorViewModel,
+    projectName: String,
+    onDismiss: () -> Unit
+) {
+    val state by vm.state.collectAsState()
+    val packageName = state.packageName
+    val appLabel = state.appLabel
+    val versionName = state.versionName
+    val versionCode = state.versionCode
+    val iconFileName = state.iconFileName
+    val sprites = state.sprites
+
+    var pkgField by remember(packageName) { mutableStateOf(packageName) }
+    var labelField by remember(appLabel) { mutableStateOf(appLabel) }
+    var verNameField by remember(versionName) { mutableStateOf(versionName) }
+    var verCodeField by remember(versionCode) { mutableStateOf(versionCode.toString()) }
+    var showIconPicker by remember { mutableStateOf(false) }
+
+    val pkgValid = pkgField.isBlank() || isValidPackageName(pkgField)
+    val verCodeInt = verCodeField.toIntOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        icon = { Icon(Icons.Default.Android, null, tint = Success) },
+        title = { Text("Настройки сборки APK", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Имя пакета
+                OutlinedTextField(
+                    value = pkgField,
+                    onValueChange = { pkgField = it; vm.setPackageName(it) },
+                    label = { Text("Имя пакета") },
+                    placeholder = { Text("com.example.mygame", color = TextSec) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = pkgField.isNotBlank() && !pkgValid,
+                    supportingText = {
+                        if (pkgField.isNotBlank() && !pkgValid)
+                            Text("Формат: com.example.app или su.myname.game", color = Danger, fontSize = 11.sp)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, focusedLabelColor = Accent,
+                        cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    )
+                )
+                // Название приложения
+                OutlinedTextField(
+                    value = labelField,
+                    onValueChange = { labelField = it; vm.setAppLabel(it) },
+                    label = { Text("Название приложения") },
+                    placeholder = { Text(projectName, color = TextSec) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, focusedLabelColor = Accent,
+                        cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    )
+                )
+                // Версия и код версии
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = verNameField,
+                        onValueChange = { verNameField = it; vm.setVersionName(it) },
+                        label = { Text("Версия") },
+                        placeholder = { Text("1.0", color = TextSec) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent, focusedLabelColor = Accent,
+                            cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                        )
+                    )
+                    OutlinedTextField(
+                        value = verCodeField,
+                        onValueChange = { v ->
+                            verCodeField = v
+                            v.toIntOrNull()?.let { vm.setVersionCode(it) }
+                        },
+                        label = { Text("Код версии") },
+                        placeholder = { Text("1", color = TextSec) },
+                        singleLine = true,
+                        isError = verCodeInt == null && verCodeField.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent, focusedLabelColor = Accent,
+                            cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                        )
+                    )
+                }
+                // Иконка
+                Text("Иконка приложения", color = TextSec, fontSize = 13.sp)
+                if (sprites.isEmpty()) {
+                    Text("Добавьте спрайты в проект чтобы выбрать иконку", color = TextSec, fontSize = 12.sp)
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(Surface3).clickable { showIconPicker = true }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Image, null, tint = if (iconFileName.isBlank()) TextSec else Accent, modifier = Modifier.size(20.dp))
+                        Text(
+                            if (iconFileName.isBlank()) "По умолчанию (иконка SkriPts)" else iconFileName,
+                            color = if (iconFileName.isBlank()) TextSec else TextPrim,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Default.ChevronRight, null, tint = TextSec, modifier = Modifier.size(16.dp))
+                    }
+                }
+                // Подсказка про подпись
+                Text(
+                    "⚠ Тестовая подпись — APK нельзя опубликовать в Google Play или RuStore. Для публикации нужна собственная подпись.",
+                    color = Warning, fontSize = 11.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
+                Text("Готово", color = Navy900)
+            }
+        }
+    )
+
+    if (showIconPicker) {
+        AlertDialog(
+            onDismissRequest = { showIconPicker = false },
+            containerColor = Surface2,
+            title = { Text("Выбрать иконку", color = TextPrim) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Вариант "по умолчанию"
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(if (iconFileName.isBlank()) Accent.copy(0.15f) else Surface3)
+                            .clickable { vm.setIconFileName(""); showIconPicker = false }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Android, null, tint = if (iconFileName.isBlank()) Accent else TextSec, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("По умолчанию", color = if (iconFileName.isBlank()) Accent else TextPrim, fontSize = 14.sp)
+                    }
+                    sprites.take(10).forEach { sprite ->
+                        val selected = iconFileName == sprite.fileName
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) Accent.copy(0.15f) else Surface3)
+                                .clickable { vm.setIconFileName(sprite.fileName); showIconPicker = false }
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Image, null, tint = if (selected) Accent else TextSec, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(sprite.name, color = if (selected) Accent else TextPrim, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            if (selected) Icon(Icons.Default.Check, null, tint = Accent, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIconPicker = false }) { Text("Отмена", color = TextSec) }
+            }
+        )
+    }
+}
+
 private fun isValidPackageName(pkg: String): Boolean =
-    pkg.matches(Regex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,}\$"))
+    pkg.matches(Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*){1,}\$"))

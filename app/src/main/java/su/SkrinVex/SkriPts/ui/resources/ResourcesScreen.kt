@@ -133,7 +133,7 @@ private fun ResourcesHub(
                 ResourceCard(
                     icon = Icons.Default.Android,
                     title = "Экспорт в APK",
-                    subtitle = if (state.packageName.isBlank()) "Укажите имя пакета в настройках" else state.packageName,
+                    subtitle = if (state.packageName.isBlank()) "Укажите имя пакета в настройках (⚙)" else state.packageName,
                     color = su.SkrinVex.SkriPts.ui.theme.Success,
                     onClick = { showApkDialog = true }
                 )
@@ -418,7 +418,7 @@ private fun ApkExportDialog(
             containerColor = su.SkrinVex.SkriPts.ui.theme.Surface2,
             icon = { Icon(Icons.Default.Android, null, tint = su.SkrinVex.SkriPts.ui.theme.Warning) },
             title = { Text("Имя пакета не указано", color = su.SkrinVex.SkriPts.ui.theme.TextPrim) },
-            text = { Text("Укажите имя пакета в настройках проекта (кнопка ⚙ в редакторе).\n\nПример: com.example.mygame", color = su.SkrinVex.SkriPts.ui.theme.TextSec) },
+            text = { Text("Укажите имя пакета в настройках проекта (кнопка ⚙ → «Настройки сборки APK»).\n\nПример: com.example.mygame или su.myname.game", color = su.SkrinVex.SkriPts.ui.theme.TextSec) },
             confirmButton = {
                 Button(onClick = onGoToSettings, colors = ButtonDefaults.buttonColors(containerColor = su.SkrinVex.SkriPts.ui.theme.Accent)) {
                     Text("Понял", color = su.SkrinVex.SkriPts.ui.theme.Navy900)
@@ -488,7 +488,7 @@ private fun ApkExportDialog(
                         Text("Проект: $projectName", color = su.SkrinVex.SkriPts.ui.theme.TextPrim)
                         Text("Пакет: $packageName", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 13.sp)
                         Text("Подпись: тестовая (debug)", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 12.sp)
-                        Text("⚠ APK с тестовой подписью нельзя опубликовать в Google Play", color = su.SkrinVex.SkriPts.ui.theme.Warning, fontSize = 11.sp)
+                        Text("⚠ Тестовая подпись — для публикации в Google Play или RuStore нужна собственная подпись.", color = su.SkrinVex.SkriPts.ui.theme.Warning, fontSize = 11.sp)
                     }
                 }
             }

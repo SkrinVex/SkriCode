@@ -82,6 +82,10 @@ data class ScriptProject(
     val id: String,
     val name: String,
     val orientation: ProjectOrientation? = ProjectOrientation.PORTRAIT,
+    val appLabel: String? = null,
+    val versionName: String? = null,
+    val versionCode: Int? = null,
+    val iconFileName: String? = null,
     val scenes: List<Scene>? = null,           // null = legacy (нет сцен)
     val activeSceneId: String? = null,
     val scripts: List<Script>? = emptyList(),  // legacy / сцена по умолчанию

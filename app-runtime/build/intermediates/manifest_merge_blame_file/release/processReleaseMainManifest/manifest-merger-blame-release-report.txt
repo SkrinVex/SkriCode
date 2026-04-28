@@ -45,8 +45,8 @@
 27-->/home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:9:9-52
 28        <activity
 28-->/home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:10:9-19:20
-29            android:name="su.SkrinVex.SkriPts.runtime.runtime.RuntimeActivity"
-29-->/home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:11:13-52
+29            android:name="su.SkrinVex.SkriPts.runtime.RuntimeActivity"
+29-->/home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:11:13-71
 30            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
 30-->/home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/AndroidManifest.xml:13:13-87
 31            android:exported="true"

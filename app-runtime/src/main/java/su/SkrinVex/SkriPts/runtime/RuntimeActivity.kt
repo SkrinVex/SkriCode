@@ -29,7 +29,7 @@ class RuntimeActivity : ComponentActivity() {
         ExprEval.screenWidth = dm.widthPixels.toFloat()
         ExprEval.screenHeight = dm.heightPixels.toFloat()
 
-        val project = loadProject() ?: run {
+        val (project, key) = loadProject() ?: run {
             setContent { Text("Ошибка загрузки проекта") }
             return
         }
@@ -39,7 +39,7 @@ class RuntimeActivity : ComponentActivity() {
         else
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
-        extractSprites(project)
+        extractSprites(project, key)
         SimEngine.projectName = project.name
         vm.start(project)
 
@@ -63,29 +63,34 @@ class RuntimeActivity : ComponentActivity() {
         }
     }
 
-    private fun loadProject(): ScriptProject? {
+    private fun loadProject(): Pair<ScriptProject, ByteArray>? {
         return try {
-            val encrypted = assets.open("project.dat").readBytes()
             val key = assets.open("key.dat").readBytes()
+            val encrypted = assets.open("project.dat").readBytes()
             val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
             val json = String(cipher.doFinal(encrypted), Charsets.UTF_8)
-            Gson().fromJson(json, ScriptProject::class.java)
+            val project = Gson().fromJson(json, ScriptProject::class.java)
+            project to key
         } catch (_: Exception) {
             try {
                 val json = assets.open("project.dat").bufferedReader().readText()
-                Gson().fromJson(json, ScriptProject::class.java)
+                val project = Gson().fromJson(json, ScriptProject::class.java)
+                project to ByteArray(0)
             } catch (_: Exception) { null }
         }
     }
 
-    private fun extractSprites(project: ScriptProject) {
+    private fun extractSprites(project: ScriptProject, key: ByteArray) {
         val spritesDir = File(filesDir, "sprites/${project.id}").also { it.mkdirs() }
+        val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
         project.sprites.orEmpty().forEach { sprite ->
             val dest = File(spritesDir, sprite.fileName)
             if (!dest.exists()) {
                 try {
-                    assets.open("sprites/${sprite.fileName}").use { it.copyTo(dest.outputStream()) }
+                    val encrypted = assets.open("sprites/${sprite.fileName}").readBytes()
+                    dest.writeBytes(cipher.doFinal(encrypted))
                 } catch (_: Exception) {}
             }
         }

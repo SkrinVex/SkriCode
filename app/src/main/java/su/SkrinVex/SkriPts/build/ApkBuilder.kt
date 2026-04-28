@@ -185,20 +185,25 @@ object ApkBuilder {
                 }
             }
 
-            // 3. Патчим манифест (меняем packageName) и resources.arsc (меняем app_name)
+            // 3. Патчим манифест (меняем packageName, versionName, versionCode) и resources.arsc (меняем app_name)
             onStep(StepManifest)
             val manifestBytes = ZipFile(templateApk).use { zip ->
                 zip.getEntry("AndroidManifest.xml")?.let { zip.getInputStream(it).readBytes() }
             }
             if (manifestBytes != null) {
-                zipOut.writeEntry("AndroidManifest.xml", patchManifestPackage(manifestBytes, packageName), stored = false)
+                var patched = patchManifestPackage(manifestBytes, packageName)
+                val verName = project.versionName?.ifBlank { null } ?: "1.0"
+                val verCode = project.versionCode?.takeIf { it > 0 } ?: 1
+                patched = patchManifestVersion(patched, verName, verCode)
+                zipOut.writeEntry("AndroidManifest.xml", patched, stored = false)
             }
 
+            val appName = project.appLabel?.ifBlank { null } ?: project.name
             val arscBytes = ZipFile(templateApk).use { zip ->
                 zip.getEntry("resources.arsc")?.let { zip.getInputStream(it).readBytes() }
             }
             if (arscBytes != null) {
-                zipOut.writeEntry("resources.arsc", patchArscAppName(arscBytes, project.name), stored = true, alignTo = 4)
+                zipOut.writeEntry("resources.arsc", patchArscAppName(arscBytes, appName), stored = true, alignTo = 4)
             }
 
             // 4. Добавляем зашифрованный проект
@@ -208,12 +213,21 @@ object ApkBuilder {
                 zipOut.writeEntry("assets/savekey.dat", saveKey.toByteArray(Charsets.UTF_8), stored = false)
             }
 
-            // 5. Добавляем спрайты
+            // 5. Добавляем зашифрованные спрайты
             project.sprites.orEmpty().forEach { sprite ->
                 val spriteFile = SpriteRepository.getFile(ctx, project.id, sprite.fileName)
                 if (spriteFile?.exists() == true) {
-                    zipOut.writeEntry("assets/sprites/${sprite.fileName}", spriteFile.readBytes(), stored = false)
+                    val encryptedSprite = aesEncrypt(spriteFile.readBytes(), aesKey)
+                    zipOut.writeEntry("assets/sprites/${sprite.fileName}", encryptedSprite, stored = false)
                 }
+            }
+
+            // 6. Иконка приложения (если указана)
+            val iconFile = project.iconFileName?.ifBlank { null }?.let {
+                SpriteRepository.getFile(ctx, project.id, it)
+            }
+            if (iconFile?.exists() == true) {
+                zipOut.writeEntry("assets/icon.dat", aesEncrypt(iconFile.readBytes(), aesKey), stored = false)
             }
 
             zipOut.finish()
@@ -258,6 +272,89 @@ object ApkBuilder {
      * Заменяет packageName runtime-шаблона на пользовательский.
      * Placeholder — applicationId из build.gradle.kts модуля app-runtime.
      */
+    /**
+     * Патчит versionName и versionCode в бинарном AndroidManifest.xml.
+     * Placeholder-значения: versionName="1.0", versionCode=1 (из app-runtime/build.gradle.kts).
+     */
+    private fun patchManifestVersion(manifest: ByteArray, versionName: String, versionCode: Int): ByteArray {
+        // Патчим строку versionName
+        var data = manifest.copyOf()
+        val chunkStart = 8
+        val bb = java.nio.ByteBuffer.wrap(data).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        bb.position(chunkStart)
+        if ((bb.short.toInt() and 0xFFFF) == 0x0001) {
+            val chunkHeaderSize = bb.short.toInt() and 0xFFFF
+            val chunkSizeOffset = chunkStart + 4
+            val chunkSize = bb.int
+            val stringCount = bb.int
+            bb.int
+            val flags = bb.int
+            val isUtf8 = (flags and 0x100) != 0
+            val stringsStartOffset = bb.int
+            val offsetsBase = chunkStart + chunkHeaderSize
+            val stringsBase = chunkStart + stringsStartOffset
+            for (i in 0 until stringCount) {
+                bb.position(offsetsBase + i * 4)
+                val strOff = bb.int
+                val absPos = stringsBase + strOff
+                val str = try {
+                    if (isUtf8) readUtf8Str(data, absPos) else readUtf16Str(data, absPos)
+                } catch (_: Exception) { continue }
+                if (str == "1.0" && versionName != "1.0") {
+                    data = patchStringInPool(data, chunkStart, chunkSizeOffset, chunkSize,
+                        stringCount, offsetsBase, stringsBase, stringsStartOffset,
+                        i, strOff, str, versionName, isUtf8)
+                    break
+                }
+            }
+        }
+        // Патчим versionCode (атрибут 0x0101021b) в XML-дереве
+        if (versionCode != 1) {
+            val buf = java.nio.ByteBuffer.wrap(data).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            var pos = 0
+            while (pos < data.size - 4) {
+                buf.position(pos)
+                val chunk = buf.short.toInt() and 0xFFFF
+                if (chunk == 0x0102) { // START_ELEMENT
+                    val hdrSize = buf.short.toInt() and 0xFFFF
+                    buf.int // chunkSize
+                    buf.int; buf.int // lineNumber, comment
+                    buf.int; buf.int // ns, name
+                    val attrStart = buf.short.toInt() and 0xFFFF
+                    val attrSize = buf.short.toInt() and 0xFFFF
+                    val attrCount = buf.short.toInt() and 0xFFFF
+                    val attrBase = pos + hdrSize
+                    for (a in 0 until attrCount) {
+                        val attrOff = attrBase + a * attrSize
+                        if (attrOff + 20 > data.size) break
+                        buf.position(attrOff + 4) // skip ns
+                        buf.int // name index
+                        buf.int // rawValue
+                        val dataType = buf.short.toInt() and 0xFFFF
+                        buf.short // res0
+                        val attrNs = run { buf.position(attrOff); buf.int }
+                        buf.position(attrOff + 4)
+                        val nameIdx = buf.int
+                        // versionCode attribute id = 0x0101021b
+                        buf.position(attrOff + 12)
+                        val dt = buf.short.toInt() and 0xFFFF
+                        buf.short
+                        val dv = buf.int
+                        // Check by attribute name string index — we look for dataType=INT and value=1 (placeholder)
+                        if (dt == 0x10 && dv == 1) {
+                            // Patch value
+                            buf.position(attrOff + 16)
+                            buf.putInt(versionCode)
+                            break
+                        }
+                    }
+                }
+                pos++
+            }
+        }
+        return data
+    }
+
     private fun patchManifestPackage(manifest: ByteArray, newPackage: String): ByteArray {
         // Placeholder = applicationId из app-runtime/build.gradle.kts
         val placeholder = "su.SkrinVex.SkriPts.runtime.template"
