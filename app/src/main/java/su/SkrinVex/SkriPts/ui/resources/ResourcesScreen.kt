@@ -28,6 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import su.SkrinVex.SkriPts.build.ApkBuilder
 import su.SkrinVex.SkriPts.data.SpriteAsset
 import su.SkrinVex.SkriPts.ui.editor.EditorViewModel
 import su.SkrinVex.SkriPts.ui.theme.*
@@ -41,7 +44,6 @@ fun ResourcesScreen(
     onBack: () -> Unit
 ) {
     val state by vm.state.collectAsState()
-    // null = хаб, "sprites" = экран спрайтов
     var subScreen by remember { mutableStateOf<String?>(null) }
 
     when (subScreen) {
@@ -51,6 +53,7 @@ fun ResourcesScreen(
             onBack = { subScreen = null }
         )
         else -> ResourcesHub(
+            vm = vm,
             projectName = projectName,
             spriteCount = state.sprites.size,
             onOpenEditor = onOpenEditor,
@@ -62,12 +65,15 @@ fun ResourcesScreen(
 
 @Composable
 private fun ResourcesHub(
+    vm: EditorViewModel,
     projectName: String,
     spriteCount: Int,
     onOpenEditor: () -> Unit,
     onOpenSprites: () -> Unit,
     onBack: () -> Unit
 ) {
+    val state by vm.state.collectAsState()
+    var showApkDialog by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Navy900)) {
         Surface(color = Surface1, shadowElevation = 4.dp) {
             Row(
@@ -122,7 +128,27 @@ private fun ResourcesHub(
                     onClick = {}
                 )
             }
+            // Экспорт в APK
+            item {
+                ResourceCard(
+                    icon = Icons.Default.Android,
+                    title = "Экспорт в APK",
+                    subtitle = if (state.packageName.isBlank()) "Укажите имя пакета в настройках" else state.packageName,
+                    color = su.SkrinVex.SkriPts.ui.theme.Success,
+                    onClick = { showApkDialog = true }
+                )
+            }
         }
+    }
+
+    if (showApkDialog) {
+        ApkExportDialog(
+            vm = vm,
+            packageName = state.packageName,
+            projectName = projectName,
+            onGoToSettings = { showApkDialog = false },
+            onDismiss = { showApkDialog = false }
+        )
     }
 }
 
@@ -376,4 +402,149 @@ private fun SpritePreviewDialog(sprite: SpriteAsset, file: java.io.File?, onDism
             }
         }
     }
+}
+
+@Composable
+private fun ApkExportDialog(
+    vm: EditorViewModel,
+    packageName: String,
+    projectName: String,
+    onGoToSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (packageName.isBlank()) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = su.SkrinVex.SkriPts.ui.theme.Surface2,
+            icon = { Icon(Icons.Default.Android, null, tint = su.SkrinVex.SkriPts.ui.theme.Warning) },
+            title = { Text("Имя пакета не указано", color = su.SkrinVex.SkriPts.ui.theme.TextPrim) },
+            text = { Text("Укажите имя пакета в настройках проекта (кнопка ⚙ в редакторе).\n\nПример: com.example.mygame", color = su.SkrinVex.SkriPts.ui.theme.TextSec) },
+            confirmButton = {
+                Button(onClick = onGoToSettings, colors = ButtonDefaults.buttonColors(containerColor = su.SkrinVex.SkriPts.ui.theme.Accent)) {
+                    Text("Понял", color = su.SkrinVex.SkriPts.ui.theme.Navy900)
+                }
+            }
+        )
+        return
+    }
+
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Состояния: null = ожидание, "..." = прогресс, "done" = готово, "error:..." = ошибка
+    var buildStep by remember { mutableStateOf<String?>(null) }
+    var buildError by remember { mutableStateOf<String?>(null) }
+    // Путь к готовому tmp файлу — устанавливается после успешной сборки
+    var builtTmpFile by remember { mutableStateOf<java.io.File?>(null) }
+
+    // Лаунчер открывается ТОЛЬКО после того как builtTmpFile != null
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")
+    ) { uri ->
+        val tmp = builtTmpFile ?: return@rememberLauncherForActivityResult
+        if (uri == null) {
+            // Пользователь отменил — оставляем tmp, можно попробовать снова
+            buildStep = null
+            return@rememberLauncherForActivityResult
+        }
+        buildStep = "Сохранение файла..."
+        scope.launch(Dispatchers.IO) {
+            try {
+                ctx.contentResolver.openOutputStream(uri)?.use { out ->
+                    tmp.inputStream().use { it.copyTo(out) }
+                }
+                tmp.delete()
+                builtTmpFile = null
+                buildStep = "done"
+            } catch (e: Exception) {
+                buildError = e.message ?: "Ошибка сохранения"
+                buildStep = null
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (buildStep == null && buildStep != "done") onDismiss() },
+        containerColor = su.SkrinVex.SkriPts.ui.theme.Surface2,
+        icon = { Icon(Icons.Default.Android, null, tint = su.SkrinVex.SkriPts.ui.theme.Success) },
+        title = { Text("Экспорт в APK", color = su.SkrinVex.SkriPts.ui.theme.TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    buildStep == "done" -> {
+                        Text("✓ APK успешно сохранён!", color = su.SkrinVex.SkriPts.ui.theme.Success)
+                    }
+                    buildError != null -> {
+                        Text("Ошибка: $buildError", color = su.SkrinVex.SkriPts.ui.theme.Danger)
+                    }
+                    buildStep != null -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            CircularProgressIndicator(color = su.SkrinVex.SkriPts.ui.theme.Accent, modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text(buildStep!!, color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 13.sp)
+                        }
+                    }
+                    else -> {
+                        Text("Проект: $projectName", color = su.SkrinVex.SkriPts.ui.theme.TextPrim)
+                        Text("Пакет: $packageName", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 13.sp)
+                        Text("Подпись: тестовая (debug)", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 12.sp)
+                        Text("⚠ APK с тестовой подписью нельзя опубликовать в Google Play", color = su.SkrinVex.SkriPts.ui.theme.Warning, fontSize = 11.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                buildStep == null && buildError == null && builtTmpFile == null -> {
+                    Button(
+                        onClick = {
+                            buildError = null
+                            buildStep = "Шифрование проекта..."
+                            scope.launch(Dispatchers.IO) {
+                                val project = vm.buildProject()
+                                val tmp = java.io.File(ctx.cacheDir, "skripts_export_${project.id}.apk")
+                                var lastError: String? = null
+                                su.SkrinVex.SkriPts.build.ApkBuilder.build(ctx, project, packageName, tmp) { step ->
+                                    if (step is su.SkrinVex.SkriPts.build.ApkBuilder.StepError) lastError = step.error
+                                    buildStep = step.message
+                                }
+                                if (lastError != null) {
+                                    buildError = lastError
+                                    buildStep = null
+                                    tmp.delete()
+                                } else if (tmp.exists() && tmp.length() > 0) {
+                                    builtTmpFile = tmp
+                                    val safeName = projectName.replace(Regex("[^a-zA-Zа-яА-Я0-9_]"), "_")
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        buildStep = null
+                                        saveLauncher.launch("$safeName.apk")
+                                    }
+                                } else {
+                                    buildError = "Файл APK не был создан"
+                                    buildStep = null
+                                    tmp.delete()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = su.SkrinVex.SkriPts.ui.theme.Success)
+                    ) { Text("Собрать APK") }
+                }
+                buildStep == "done" || buildError != null -> {
+                    Button(
+                        onClick = {
+                            builtTmpFile?.delete()
+                            builtTmpFile = null
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = su.SkrinVex.SkriPts.ui.theme.Accent)
+                    ) { Text("Закрыть", color = su.SkrinVex.SkriPts.ui.theme.Navy900) }
+                }
+            }
+        },
+        dismissButton = {
+            if (buildStep == null && buildStep != "done" && buildError == null) {
+                TextButton(onClick = onDismiss) { Text("Отмена", color = su.SkrinVex.SkriPts.ui.theme.TextSec) }
+            }
+        }
+    )
 }

@@ -271,6 +271,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                             ProjectSettingsDialog(
                                 orientation = state.orientation,
                                 onOrientationChange = { vm.setOrientation(it) },
+                                packageName = state.packageName,
+                                onPackageNameChange = { vm.setPackageName(it) },
                                 onDismiss = { showProjectSettings = false }
                             )
                         }
@@ -2464,6 +2466,8 @@ internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: 
 fun ProjectSettingsDialog(
     orientation: su.SkrinVex.SkriPts.data.ProjectOrientation,
     onOrientationChange: (su.SkrinVex.SkriPts.data.ProjectOrientation) -> Unit,
+    packageName: String = "",
+    onPackageNameChange: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -2472,7 +2476,7 @@ fun ProjectSettingsDialog(
         icon = { Icon(Icons.Default.Tune, null, tint = Accent) },
         title = { Text("Настройки проекта", color = TextPrim) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Ориентация экрана", color = TextSec, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     su.SkrinVex.SkriPts.data.ProjectOrientation.entries.forEach { o ->
@@ -2492,6 +2496,23 @@ fun ProjectSettingsDialog(
                         )
                     }
                 }
+                Text("Имя пакета (для экспорта APK)", color = TextSec, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = packageName,
+                    onValueChange = onPackageNameChange,
+                    placeholder = { Text("com.example.mygame", color = TextSec) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, focusedLabelColor = Accent,
+                        cursorColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                    ),
+                    isError = packageName.isNotBlank() && !isValidPackageName(packageName),
+                    supportingText = {
+                        if (packageName.isNotBlank() && !isValidPackageName(packageName))
+                            Text("Формат: com.example.app", color = Danger, fontSize = 11.sp)
+                    }
+                )
             }
         },
         confirmButton = {
@@ -2501,3 +2522,6 @@ fun ProjectSettingsDialog(
         }
     )
 }
+
+private fun isValidPackageName(pkg: String): Boolean =
+    pkg.matches(Regex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,}\$"))

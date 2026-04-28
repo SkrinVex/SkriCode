@@ -33,6 +33,7 @@ data class EditorState(
     val globalTables: List<ProjectTable> = emptyList(),
     val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     val orientation: su.SkrinVex.SkriPts.data.ProjectOrientation = su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
+    val packageName: String = "",
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     /** Скрипты сцены которая сейчас симулируется (может отличаться от scripts при переходе между сценами) */
@@ -112,6 +113,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             projectId = project.id,
             projectName = project.name,
             orientation = project.orientation ?: su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
+            packageName = project.packageName ?: "",
             scenes = scenes,
             activeSceneId = activeScene.id,
             scripts = activeScene.scripts,
@@ -745,6 +747,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
             orientation = s.orientation,
+            packageName = s.packageName.ifBlank { null },
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
             sprites = s.sprites
@@ -752,6 +755,28 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setOrientation(o: su.SkrinVex.SkriPts.data.ProjectOrientation) = _state.update { it.copy(orientation = o) }
+    fun setPackageName(pkg: String) = _state.update { it.copy(packageName = pkg) }
+
+    /** Собирает текущий ScriptProject из состояния для экспорта */
+    fun buildProject(): su.SkrinVex.SkriPts.data.ScriptProject {
+        val s = _state.value
+        val updatedScripts = s.scripts.map { script ->
+            val collapsed = _collapsedBlocks[script.id]
+            if (collapsed != null) script.copy(collapsedBlockIds = collapsed.toSet()) else script
+        }
+        val updatedScenes = s.scenes.map { scene ->
+            if (scene.id == s.activeSceneId) scene.copy(scripts = updatedScripts, locationBlocks = s.locationBlocks)
+            else scene
+        }
+        return su.SkrinVex.SkriPts.data.ScriptProject(
+            id = projectId, name = s.projectName,
+            orientation = s.orientation,
+            packageName = s.packageName.ifBlank { null },
+            scenes = updatedScenes, activeSceneId = s.activeSceneId,
+            globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
+            sprites = s.sprites
+        )
+    }
 
     // --- Спрайты ---
     fun addSprite(uri: android.net.Uri, name: String): String? {

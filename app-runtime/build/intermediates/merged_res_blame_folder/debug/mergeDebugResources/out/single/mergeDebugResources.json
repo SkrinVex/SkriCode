@@ -1,0 +1,22 @@
+[
+    {
+        "merged": "su.SkrinVex.SkriPts.runtime.app-runtime-debug-47:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "su.SkrinVex.SkriPts.runtime.app-runtime-main-49:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "su.SkrinVex.SkriPts.runtime.app-runtime-debug-47:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "su.SkrinVex.SkriPts.runtime.app-runtime-main-49:/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "su.SkrinVex.SkriPts.runtime.app-runtime-debug-47:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "su.SkrinVex.SkriPts.runtime.app-runtime-main-49:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "su.SkrinVex.SkriPts.runtime.app-runtime-debug-47:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "su.SkrinVex.SkriPts.runtime.app-runtime-main-49:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "su.SkrinVex.SkriPts.runtime.app-runtime-debug-47:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "su.SkrinVex.SkriPts.runtime.app-runtime-main-49:/mipmap-xxxhdpi/ic_launcher.png"
+    }
+]

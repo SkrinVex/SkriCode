@@ -1,0 +1,7 @@
+su.SkrinVex.SkriPts.runtime.app-runtime-pngs-0 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/build/generated/res/pngs/debug
+su.SkrinVex.SkriPts.runtime.app-runtime-updated_navigation_xml-1 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/build/generated/updated_navigation_xml/debug
+su.SkrinVex.SkriPts.runtime.app-runtime-packageDebugResources-2 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+su.SkrinVex.SkriPts.runtime.app-runtime-packageDebugResources-3 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+su.SkrinVex.SkriPts.runtime.app-runtime-debug-4 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/build/intermediates/merged_res/debug/mergeDebugResources
+su.SkrinVex.SkriPts.runtime.app-runtime-debug-5 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/debug/res
+su.SkrinVex.SkriPts.runtime.app-runtime-main-6 /home/komari/AndroidStudioProjects/SkriPts/app-runtime/src/main/res

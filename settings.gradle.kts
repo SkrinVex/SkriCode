@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SkriPts"
 include(":app")
+include(":app-runtime")
