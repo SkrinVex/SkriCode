@@ -67,7 +67,16 @@ fun SimulationScreen(
 ) {
     BackHandler(onBack = onBack)
 
-    // Скрываем статусбар и навигацию
+    // Если симуляция остановлена и debug выключен — сразу выходим
+    LaunchedEffect(state.isStopped) {
+        if (state.isStopped && !debugMode) onBack()
+    }
+
+    // Если симуляция остановлена и debug включён — открываем лог
+    var panelTab by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(state.isStopped) {
+        if (state.isStopped && debugMode) panelTab = 0
+    }
     val view = LocalView.current
     DisposableEffect(Unit) {
         val window = (view.context as android.app.Activity).window
@@ -94,7 +103,6 @@ fun SimulationScreen(
         bitmapCacheVersion++
     }
 
-    var panelTab by remember { mutableIntStateOf(-1) }  // -1=скрыто, 0=лог, 1=объекты
     var highlightedObj by remember { mutableStateOf<String?>(null) }
     var canvasSize by remember { mutableStateOf(Pair(0f, 0f)) }
 
@@ -110,10 +118,11 @@ fun SimulationScreen(
         Canvas(
             Modifier
                 .fillMaxSize()
-                .pointerInput(state.objects, state.joysticks) {
+                .pointerInput(state.objects, state.joysticks, state.isStopped) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent()
+                            if (state.isStopped) continue  // симуляция остановлена — игнорируем все касания
                             val cx = canvasSize.first / 2f
                             val cy = canvasSize.second / 2f
                             when (event.type) {

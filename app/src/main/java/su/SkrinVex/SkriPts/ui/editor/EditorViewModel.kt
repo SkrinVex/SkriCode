@@ -411,6 +411,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val runningHoldScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
+                if (_state.value.simState?.isStopped == true) continue
                 _state.update { s ->
                     var sim = s.simState ?: return@update s
                     for ((_, joy) in sim.joysticks) {
