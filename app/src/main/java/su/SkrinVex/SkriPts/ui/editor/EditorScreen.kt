@@ -1272,73 +1272,10 @@ internal fun IfBranchSection(
     }
 
     if (showPicker) {
-        var searchQuery by remember { mutableStateOf("") }
-        ModalBottomSheet(onDismissRequest = { showPicker = false; searchQuery = "" }, containerColor = Surface1,
-            dragHandle = {
-                Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface3))
-                }
-            }
-        ) {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                Text("Добавить в «$label»", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                    modifier = Modifier.padding(bottom = 8.dp))
-                OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it },
-                    placeholder = { Text("Поиск блока...", color = TextSec) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
-                        focusedTextColor = TextPrim, unfocusedTextColor = TextPrim,
-                        cursorColor = Accent
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec, modifier = Modifier.size(18.dp)) }
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            val allBlocks = BlockRegistry.all()
-            val filtered = remember(searchQuery) {
-                if (searchQuery.isBlank()) allBlocks
-                else allBlocks.filter {
-                    it.displayName.contains(searchQuery, ignoreCase = true) ||
-                    it.description.contains(searchQuery, ignoreCase = true)
-                }
-            }
-            val grouped = filtered.groupBy { it.category }
-            LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 32.dp)) {
-                grouped.entries.forEach { (category, metas) ->
-                    item(key = category.name) {
-                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(categoryIcon(category), null, tint = categoryColor(category), modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(category.name.lowercase().replaceFirstChar { it.uppercase() },
-                                color = categoryColor(category), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                    items(metas, key = { it.type }) { meta ->
-                        val c = categoryColor(meta.category)
-                        Card(onClick = { onAddChild(branch, meta.type); showPicker = false; searchQuery = "" },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Surface2)) {
-                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(0.15f)),
-                                    contentAlignment = Alignment.Center) {
-                                    Icon(categoryIcon(meta.category), null, tint = c, modifier = Modifier.size(16.dp))
-                                }
-                                Spacer(Modifier.width(10.dp))
-                                Column {
-                                    Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                    Text(meta.description, color = TextSec, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        BlockPickerSheet(
+            onDismiss = { showPicker = false },
+            onPick = { type -> onAddChild(branch, type); showPicker = false }
+        )
     }
 }
 
@@ -1787,8 +1724,13 @@ internal fun LoopBlockContent(
     }
     Spacer(Modifier.height(8.dp))
     val bodyBlocks = block.children["body"] ?: emptyList()
+    val branchLabel = when (block.type) {
+        "wait" -> "Блоки таймера"
+        "while_loop" -> "Тело цикла (пока)"
+        else -> "Тело цикла"
+    }
     IfBranchSection(
-        label = "Тело цикла",
+        label = branchLabel,
         color = categoryColor(BlockCategory.CONTROL),
         branch = "body",
         blocks = bodyBlocks,
