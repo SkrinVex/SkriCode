@@ -176,7 +176,7 @@ fun SimulationScreen(
                     val oy = cy + camOy - obj.y
                     val hw = obj.width / 2f; val hh = obj.height / 2f
                     if (ox + hw < 0 || ox - hw > size.width || oy + hh < 0 || oy - hh > size.height) return@forEach
-                    drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj)
+                    drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode)
                 }
             }
             if (showHitboxes) {
@@ -191,7 +191,7 @@ fun SimulationScreen(
             sortedObjects.forEach { obj ->
                 if (!obj.visible) return@forEach
                 val isUi = obj.tags.any { it in uiTags }
-                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj)
+                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj, debugMode)
             }
             if (showHitboxes) {
                 sortedObjects.forEach { obj ->
@@ -427,7 +427,7 @@ private fun DrawScope.drawHitbox(obj: SimObject, cx: Float, cy: Float) {
     }
 }
 
-private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean) {
+private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean, debugMode: Boolean = true) {
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
     val cr = CornerRadius(obj.radius, obj.radius)
@@ -456,11 +456,12 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
         }
 
         // Обводка
+        val isTextOnly = obj.color == Color.Transparent && obj.spriteName == null
         val strokeColor = when {
             highlighted -> Color.Yellow
-            obj.tapScriptId != null -> Color.White.copy(alpha = 0.7f)
-            obj.color == Color.Transparent && obj.spriteName == null -> Color.Transparent
-            obj.spriteName != null -> Color.Transparent  // нет обводки у спрайтов
+            isTextOnly -> Color.Transparent
+            obj.tapScriptId != null && debugMode -> Color.White.copy(alpha = 0.7f)
+            obj.spriteName != null -> Color.Transparent
             else -> obj.color.copy(alpha = 0.4f)
         }
         if (strokeColor != Color.Transparent) {
