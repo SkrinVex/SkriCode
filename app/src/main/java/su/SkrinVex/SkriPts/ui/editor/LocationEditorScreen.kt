@@ -65,6 +65,7 @@ fun LocationEditorScreen(
 
     var locBlocks by remember { mutableStateOf(initialBlocks.mapNotNull { it.deserialize() }) }
     var selectedId by remember { mutableStateOf<String?>(null) }
+    var lockedIds by remember { mutableStateOf(setOf<String>()) }
     // Мультивыделение
     var multiSelectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
@@ -168,13 +169,28 @@ fun LocationEditorScreen(
                             worldX in (bx - hw)..(bx + hw) && worldY in (by - hh)..(by + hh)
                         }
 
-                        if (hit != null) {
+                        if (hit != null && hit.id in lockedIds) {
+                            // Заблокированный — только выбираем, не двигаем
+                            selectedId = hit.id
+                            do {
+                                val event = awaitPointerEvent()
+                                val ch = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!ch.pressed) break
+                                ch.consume()
+                            } while (true)
+                        } else if (hit != null) {
                             if (multiSelectMode) {
                                 selectedIds = if (hit.id in selectedIds) selectedIds - hit.id else selectedIds + hit.id
                                 selectedId = null
                                 var moved = false; var lastPos = down.position
                                 do {
                                     val event = awaitPointerEvent()
+                                    if (event.changes.size >= 2) {
+                                        // Щипок — переключаемся в зум, снимаем выделение
+                                        zoom = (zoom * event.calculateZoom()).coerceIn(0.1f, 6f)
+                                        val pan = event.calculatePan(); panX += pan.x; panY += pan.y
+                                        event.changes.forEach { it.consume() }; continue
+                                    }
                                     val ch = event.changes.firstOrNull { it.id == down.id } ?: break
                                     if (!ch.pressed) break
                                     val delta = ch.position - lastPos
@@ -196,6 +212,12 @@ fun LocationEditorScreen(
                                 var moved = false; var lastPos = down.position
                                 do {
                                     val event = awaitPointerEvent()
+                                    if (event.changes.size >= 2) {
+                                        // Щипок — переключаемся в зум, не двигаем объект
+                                        zoom = (zoom * event.calculateZoom()).coerceIn(0.1f, 6f)
+                                        val pan = event.calculatePan(); panX += pan.x; panY += pan.y
+                                        event.changes.forEach { it.consume() }; continue
+                                    }
                                     val ch = event.changes.firstOrNull { it.id == down.id } ?: break
                                     if (!ch.pressed) break
                                     val delta = ch.position - lastPos
@@ -241,46 +263,27 @@ fun LocationEditorScreen(
             val cx = size.width / 2f + panX
             val cy = size.height / 2f + panY
 
-            // Сетка — яркость растёт при отдалении чтобы всегда была видна
-            val step = 50f * zoom
-            val gridAlpha = (0x18 + (0x40 * (1f - zoom.coerceIn(0.1f, 1f))).toInt()).coerceIn(0x18, 0x55)
-            val gridColor = Color(gridAlpha shl 24 or 0xFFFFFF)
-            val gridStroke = (0.5f + 0.5f * (1f - zoom.coerceIn(0.1f, 1f))).coerceIn(0.5f, 1f)
-            var gx = cx % step; while (gx < size.width) { drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), gridStroke); gx += step }
-            var gy = cy % step; while (gy < size.height) { drawLine(gridColor, Offset(0f, gy), Offset(size.width, gy), gridStroke); gy += step }
-            drawLine(Color(0x2AFFFFFF), Offset(cx, 0f), Offset(cx, size.height), 1f)
-            drawLine(Color(0x2AFFFFFF), Offset(0f, cy), Offset(size.width, cy), 1f)
-
-            // Граница экрана (пунктир)
-            val sw2 = sw * zoom; val sh2 = sh * zoom
-            val sl = cx - sw2 / 2f; val st = cy - sh2 / 2f
-            drawRect(
-                color = Color(0x55FFFFFF),
-                topLeft = Offset(sl, st), size = Size(sw2, sh2),
-                style = Stroke(1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
-            )
-            drawContext.canvas.nativeCanvas.drawText("Экран", sl + 8f, st - 6f,
-                android.graphics.Paint().apply { color = android.graphics.Color.argb(90, 255, 255, 255); textSize = 28f; isAntiAlias = true })
-
-            // UI-объекты из скриптов (полупрозрачные, нередактируемые)
+            // Объекты локации — под сеткой, отсортированные по zOrder
             val emptyVars = emptyMap<String, String>()
-            uiBlocks.forEach { b -> drawBlock(b, cx, cy, zoom, alpha = 0.3f, emptyVars, density, bitmapCache = locBitmapCache) }
-
-            // Объекты локации
-            locBlocks.forEach { b ->
+            val sortedLocBlocks = locBlocks.sortedBy { b ->
+                b.children["setup"]?.firstOrNull { it.type == "sim_layer" }
+                    ?.params?.get("layer")?.value?.toIntOrNull() ?: 0
+            }
+            sortedLocBlocks.forEach { b ->
                 val isSelected = b.id == selectedId || b.id in selectedIds
-                drawBlock(b, cx, cy, zoom, alpha = 1f, emptyVars, density, isSelected, bitmapCache = locBitmapCache)
-                // Имя — фиксированный размер в экранных пикселях (не зависит от зума)
+                drawBlock(b, cx, cy, zoom, alpha = if (b.id in lockedIds) 0.7f else 1f, emptyVars, density, isSelected, bitmapCache = locBitmapCache)
                 if (zoom > 0.05f) {
                     val bx = evalParam(b, "x"); val by = evalParam(b, "y")
                     val screenX = cx + bx * zoom; val screenY = cy - by * zoom
                     val labelY = screenY - blockHalfH(b) * zoom - 6f
                     val labelSize = (13f * density).coerceIn(28f, 52f)
+                    val label = (if (b.id in lockedIds) "🔒 " else "") + (b.params["name"]?.value ?: "")
                     drawContext.canvas.nativeCanvas.drawText(
-                        b.params["name"]?.value ?: "",
+                        label,
                         screenX, labelY,
                         android.graphics.Paint().apply {
-                            color = android.graphics.Color.argb(200, 255, 255, 255)
+                            color = if (b.id in lockedIds) android.graphics.Color.argb(200, 255, 179, 0)
+                                    else android.graphics.Color.argb(200, 255, 255, 255)
                             textSize = labelSize
                             textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
                             setShadowLayer(3f, 0f, 1f, android.graphics.Color.argb(160, 0, 0, 0))
@@ -288,6 +291,35 @@ fun LocationEditorScreen(
                     )
                 }
             }
+
+            // Сетка и рамка экрана — поверх объектов локации
+            val step = 50f * zoom
+            val gridAlpha = (0x28 + (0x50 * (1f - zoom.coerceIn(0.1f, 1f))).toInt()).coerceIn(0x28, 0x70)
+            val gridColor = Color(gridAlpha shl 24 or 0xFFFFFF)
+            val gridStroke = (0.5f + 0.5f * (1f - zoom.coerceIn(0.1f, 1f))).coerceIn(0.5f, 1f)
+            var gx = cx % step; while (gx < size.width) { drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), gridStroke); gx += step }
+            var gy = cy % step; while (gy < size.height) { drawLine(gridColor, Offset(0f, gy), Offset(size.width, gy), gridStroke); gy += step }
+            drawLine(Color(0x55FFFFFF), Offset(cx, 0f), Offset(cx, size.height), 1.5f)
+            drawLine(Color(0x55FFFFFF), Offset(0f, cy), Offset(size.width, cy), 1.5f)
+
+            // Граница экрана (пунктир) — яркая, всегда видна
+            val sw2 = sw * zoom; val sh2 = sh * zoom
+            val sl = cx - sw2 / 2f; val st = cy - sh2 / 2f
+            drawRect(
+                color = Color(0xAAFFFFFF),
+                topLeft = Offset(sl, st), size = Size(sw2, sh2),
+                style = Stroke(2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+            )
+            // Подложка под текст "Экран" чтобы читался поверх спрайта
+            drawContext.canvas.nativeCanvas.drawText("Экран", sl + 8f, st - 6f,
+                android.graphics.Paint().apply {
+                    color = android.graphics.Color.argb(200, 255, 255, 255)
+                    textSize = 28f; isAntiAlias = true
+                    setShadowLayer(4f, 0f, 0f, android.graphics.Color.BLACK)
+                })
+
+            // UI-объекты из скриптов — поверх всего (полупрозрачные)
+            uiBlocks.forEach { b -> drawBlock(b, cx, cy, zoom, alpha = 0.5f, emptyVars, density, bitmapCache = locBitmapCache) }
         }
 
         // Инфо выбранного объекта
@@ -305,8 +337,21 @@ fun LocationEditorScreen(
                     ) {
                         Text(obj.params["name"]?.value ?: obj.type, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text("X: ${evalParam(obj, "x").roundToInt()}  Y: ${evalParam(obj, "y").roundToInt()}", color = Color.White, fontSize = 12.sp)
+                        val isLocked = obj.id in lockedIds
+                        IconButton(onClick = {
+                            lockedIds = if (isLocked) lockedIds - obj.id else lockedIds + obj.id
+                        }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                null,
+                                tint = if (isLocked) Color(0xFFFFB300) else TextSec,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (!isLocked) {
                         IconButton(onClick = { editingBlock = obj }, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Default.Edit, null, tint = Accent, modifier = Modifier.size(18.dp))
+                        }
                         }
                         if (scenes.size > 1) {
                             IconButton(onClick = { copyToSceneBlock = obj }, modifier = Modifier.size(28.dp)) {

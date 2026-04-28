@@ -14,10 +14,10 @@ object BlockRegistry {
         "if_block", "sim_stop",
         "for_loop", "while_loop", "wait",
         "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",
-        "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete",
+        "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete", "sim_layer",
         "set_texture", "sim_sprite",
         "sim_physics", "sim_hitbox", "physics_toggle",
-        "physics_impulse", "physics_move",
+        "physics_impulse", "physics_move", "sim_no_collision",
         "sim_camera", "camera_toggle",
         "scene_switch"
     )

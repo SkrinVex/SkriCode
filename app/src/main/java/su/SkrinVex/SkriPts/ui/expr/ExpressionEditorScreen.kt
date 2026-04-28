@@ -453,6 +453,7 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$objDirY(Button)", "Направление Y",      "Y-компонент вектора направления (по повороту)", Icons.Default.Navigation,   screenColor),
         BuiltinFn("\$objFrontX(Button, 80)", "Точка перед X", "X позиции перед объектом на расстоянии",       Icons.Default.Navigation,   screenColor),
         BuiltinFn("\$objFrontY(Button, 80)", "Точка перед Y", "Y позиции перед объектом на расстоянии",       Icons.Default.Navigation,   screenColor),
+        BuiltinFn("\$objGrounded(Button)",   "На земле?",     "true если объект стоит на статическом объекте", Icons.Default.VerticalAlignBottom, screenColor),
 
         // Таблицы
         BuiltinFn("\$tableSize(scores)", "Размер таблицы",  "Количество записей в таблице",                    Icons.Default.TableChart, TableAccent),

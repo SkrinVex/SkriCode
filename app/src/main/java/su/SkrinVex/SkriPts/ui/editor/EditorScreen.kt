@@ -188,7 +188,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                     androidx.compose.ui.graphics.Color(0xFF000000 or c)
                 }.getOrNull()
             } ?: androidx.compose.ui.graphics.Color(0xFF4F8EF7),
-            objectSprite = block.params["sprite"]?.value?.ifBlank { null },
+            objectSprite = block.params["sprite"]?.value?.ifBlank { null }
+                ?: block.children["setup"]?.firstOrNull { it.type == "set_texture" }?.params?.get("sprite")?.value?.ifBlank { null },
             sprites = state.sprites,
             initialX = evalF("x", 0f),
             initialY = evalF("y", 0f),
@@ -371,7 +372,12 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         onAddChild = { branch, type -> vm.addChildBlock(index, branch, type) },
                         onRemoveChild = { branch, ci -> vm.removeChildBlock(index, branch, ci) },
                         onChildParamChange = { branch, ci, k, v -> vm.updateChildParam(index, branch, ci, k, v) },
-                        onOpenChildExpr = { branch, ci, key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId, branch, ci) }
+                        onOpenChildExpr = { branch, ci, key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId, branch, ci) },
+                        onOpenChildPositionPicker = { branch, ci, b ->
+                            val childBlock = state.activeScript.blocks[index].deserialize()
+                                ?.children?.get(branch)?.getOrNull(ci) ?: b
+                            positionPickerBlock = index to childBlock
+                        }
                     )
                 }
             }
@@ -693,7 +699,8 @@ internal fun BlockCard(
     onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
     onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
-    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> }
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> },
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
 ) {
     val accent = categoryColor(block.category)
     var showContextMenu by remember { mutableStateOf(false) }
@@ -750,10 +757,11 @@ internal fun BlockCard(
                                 isChildCollapsed = isChildCollapsed,
                                 onParamChange = onParamChange, onOpenExpr = onOpenExpr,
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
-                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+                                onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
+                                onOpenChildPositionPicker = onOpenChildPositionPicker
                             )
                         }
-                        "for_loop", "while_loop" -> {
+                        "for_loop", "while_loop", "wait" -> {
                             Spacer(Modifier.height(10.dp))
                             HorizontalDivider(color = Surface3)
                             Spacer(Modifier.height(10.dp))
@@ -1127,7 +1135,8 @@ internal fun IfBlockContent(
     onAddChild: (branch: String, type: String) -> Unit,
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
-    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
 ) {
     val ops = listOf("==", "!=", ">", "<", ">=", "<=")
     val opLabels = mapOf("==" to "равно", "!=" to "≠", ">" to "больше", "<" to "меньше", ">=" to "≥", "<=" to "≤")
@@ -1184,7 +1193,8 @@ internal fun IfBlockContent(
         onToggleChildCollapsed = onToggleChildCollapsed,
         isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
-        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
+        onOpenChildPositionPicker = onOpenChildPositionPicker
     )
     Spacer(Modifier.height(6.dp))
     IfBranchSection(
@@ -1197,7 +1207,8 @@ internal fun IfBlockContent(
         onToggleChildCollapsed = onToggleChildCollapsed,
         isChildCollapsed = isChildCollapsed,
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
-        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr
+        onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
+        onOpenChildPositionPicker = onOpenChildPositionPicker
     )
 }
 
@@ -1215,7 +1226,8 @@ internal fun IfBranchSection(
     onAddChild: (branch: String, type: String) -> Unit,
     onRemoveChild: (branch: String, childIndex: Int) -> Unit,
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
-    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+    onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null
 ) {
     var showPicker by remember { mutableStateOf(false) }
 
@@ -1251,7 +1263,8 @@ internal fun IfBranchSection(
                     },
                     onRemove = { onRemoveChild(branch, ci) },
                     onParamChange = { k, v -> onChildParamChange(branch, ci, k, v) },
-                    onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) }
+                    onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) },
+                    onOpenPositionPicker = if (onOpenChildPositionPicker != null) {{ onOpenChildPositionPicker(branch, ci, child) }} else null
                 )
                 if (ci < blocks.size - 1) Spacer(Modifier.height(4.dp))
             }
@@ -1259,34 +1272,67 @@ internal fun IfBranchSection(
     }
 
     if (showPicker) {
-        ModalBottomSheet(onDismissRequest = { showPicker = false }, containerColor = Surface1,
+        var searchQuery by remember { mutableStateOf("") }
+        ModalBottomSheet(onDismissRequest = { showPicker = false; searchQuery = "" }, containerColor = Surface1,
             dragHandle = {
                 Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                     Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface3))
                 }
             }
         ) {
-            Text("Добавить в «$label»", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            // Показываем только блоки без вложенности (не if_block внутри if_block)
-            val allowed = BlockRegistry.all().filter { it.type != "if_block" }
-            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                items(allowed.size) { i ->
-                    val meta = allowed[i]
-                    val c = categoryColor(meta.category)
-                    Card(onClick = { onAddChild(branch, meta.type); showPicker = false },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = Surface2)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(0.15f)),
-                                contentAlignment = Alignment.Center) {
-                                Icon(categoryIcon(meta.category), null, tint = c, modifier = Modifier.size(18.dp))
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                Text(meta.description, color = TextSec, fontSize = 11.sp)
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                Text("Добавить в «$label»", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                    modifier = Modifier.padding(bottom = 8.dp))
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it },
+                    placeholder = { Text("Поиск блока...", color = TextSec) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
+                        focusedTextColor = TextPrim, unfocusedTextColor = TextPrim,
+                        cursorColor = Accent
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec, modifier = Modifier.size(18.dp)) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            val allBlocks = BlockRegistry.all()
+            val filtered = remember(searchQuery) {
+                if (searchQuery.isBlank()) allBlocks
+                else allBlocks.filter {
+                    it.displayName.contains(searchQuery, ignoreCase = true) ||
+                    it.description.contains(searchQuery, ignoreCase = true)
+                }
+            }
+            val grouped = filtered.groupBy { it.category }
+            LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 32.dp)) {
+                grouped.entries.forEach { (category, metas) ->
+                    item(key = category.name) {
+                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(categoryIcon(category), null, tint = categoryColor(category), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(category.name.lowercase().replaceFirstChar { it.uppercase() },
+                                color = categoryColor(category), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(metas, key = { it.type }) { meta ->
+                        val c = categoryColor(meta.category)
+                        Card(onClick = { onAddChild(branch, meta.type); showPicker = false; searchQuery = "" },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Surface2)) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(0.15f)),
+                                    contentAlignment = Alignment.Center) {
+                                    Icon(categoryIcon(meta.category), null, tint = c, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(meta.displayName, color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                    Text(meta.description, color = TextSec, fontSize = 11.sp)
+                                }
                             }
                         }
                     }
@@ -1305,7 +1351,8 @@ internal fun ChildBlockRow(
     onToggleCollapse: () -> Unit,
     onRemove: () -> Unit,
     onParamChange: (String, String) -> Unit,
-    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenPositionPicker: (() -> Unit)? = null
 ) {
     val accent = categoryColor(block.category)
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -1321,6 +1368,9 @@ internal fun ChildBlockRow(
                 Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(block.displayName, color = TextPrim, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                if (onOpenPositionPicker != null && block.params.containsKey("x") && block.params.containsKey("y")) {
+                    SmallBtn(Icons.Default.OpenWith, tint = Accent.copy(0.7f), onClick = onOpenPositionPicker)
+                }
                 SmallBtn(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, onClick = onToggleCollapse)
                 SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = { showDeleteConfirm = true })
             }

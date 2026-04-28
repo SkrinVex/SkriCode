@@ -51,6 +51,9 @@ data class SimObject(
     val tags: Set<String> = emptySet(),
     val physicsBody: PhysicsBody? = null,
     val hitbox: Hitbox = Hitbox(),
+    val zOrder: Int = 0,
+    /** Имена или теги (#tag) объектов с которыми не считать коллизии */
+    val collisionIgnore: Set<String> = emptySet(),
     // Текстура
     val spriteName: String? = null,
     val spriteAlpha: Float = 1f,
@@ -58,8 +61,8 @@ data class SimObject(
     val spriteScaleY: Float = 1f,
     val spriteCropX: Int = 0,
     val spriteCropY: Int = 0,
-    val spriteCropW: Int = 0,   // 0 = вся ширина
-    val spriteCropH: Int = 0    // 0 = вся высота
+    val spriteCropW: Int = 0,
+    val spriteCropH: Int = 0
 )
 
 data class JoystickState(
@@ -140,6 +143,7 @@ object SimEngine {
             fun pf(key: String, def: Float) = p(key).toFloatOrNull() ?: def
 
             val tags = p("_tags").split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+            val zOrder = p("_zOrder").toIntOrNull() ?: 0
             val hasPhysics = p("_physics") == "true"
             val physicsBody = if (hasPhysics) PhysicsBody(
                 enabled = true,
@@ -163,7 +167,7 @@ object SimEngine {
                     height = pf("height", 60f).coerceAtLeast(1f),
                     radius = pf("radius", 8f).coerceAtLeast(0f),
                     color = parseColor(p("color").ifBlank { "#4F8EF7" }),
-                    tags = tags, physicsBody = physicsBody, hitbox = hitbox
+                    tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
                 )
                 "sim_text" -> objects[name] = SimObject(
                     name = name,
@@ -176,8 +180,24 @@ object SimEngine {
                     label = p("text"),
                     fontSize = pf("size", 16f),
                     bold = p("bold") == "true",
-                    tags = tags, physicsBody = physicsBody, hitbox = hitbox
+                    tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
                 )
+                "sim_sprite" -> {
+                    val spriteAsset = sprites.find { it.name == p("sprite") }
+                    val rawW = pf("width", 0f); val rawH = pf("height", 0f)
+                    val w = if (rawW > 0f) rawW else (spriteAsset?.width?.toFloat() ?: 100f)
+                    val h = if (rawH > 0f) rawH else (spriteAsset?.height?.toFloat() ?: 100f)
+                    objects[name] = SimObject(
+                        name = name,
+                        x = ExprEval.eval(p("x").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                        y = ExprEval.eval(p("y").ifBlank { "0" }, emptyMap()).value.toFloatOrNull() ?: 0f,
+                        width = w.coerceAtLeast(1f), height = h.coerceAtLeast(1f),
+                        radius = 0f, color = androidx.compose.ui.graphics.Color.Transparent,
+                        spriteName = p("sprite").ifBlank { null },
+                        spriteAlpha = pf("alpha", 1f).coerceIn(0f, 1f),
+                        tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
+                    )
+                }
             }
             // Выполняем setup-блоки объекта (sim_physics, sim_hitbox, set_tag и т.д.)
             val setupBlocks = block.children["setup"] ?: emptyList()
@@ -293,6 +313,13 @@ object SimEngine {
                     val bBody = b.physicsBody ?: continue
                     if (aBody.isStatic && bBody.isStatic) continue
                     if (!aBody.enabled && !bBody.enabled) continue
+
+                    // Проверяем collisionIgnore
+                    fun ignores(obj: SimObject, other: SimObject): Boolean {
+                        if (other.name in obj.collisionIgnore) return true
+                        return obj.collisionIgnore.any { it.startsWith("#") && it.substring(1) in other.tags }
+                    }
+                    if (ignores(a, b) || ignores(b, a)) continue
 
                     val overlapX = (a.width / 2f + b.width / 2f) - kotlin.math.abs(a.x - b.x)
                     val overlapY = (a.height / 2f + b.height / 2f) - kotlin.math.abs(a.y - b.y)
@@ -684,11 +711,18 @@ object SimEngine {
                     if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
                 }
                 "wait" -> {
-                    val seconds = getF("seconds", 1f).coerceIn(0f, 60f)
-                    log += "  Ждём ${seconds}с"
+                    val seconds = getF("seconds", 1f).coerceIn(0.016f, 60f)
+                    val count = getF("count", 1f).toInt().let { if (it <= 0) Int.MAX_VALUE else it }
+                    val bodyBlocks = block.children["body"] ?: emptyList()
+                    log += "  Таймер: ${seconds}с × $count"
                     if (allowDelay) {
-                        onUpdate?.invoke()
-                        delay((seconds * 1000).toLong())
+                        repeat(count) {
+                            onUpdate?.invoke()
+                            delay((seconds * 1000).toLong())
+                            if (bodyBlocks.isNotEmpty()) {
+                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, onUpdate)) return false
+                            }
+                        }
                     }
                 }
                 "sim_rotate" -> {
@@ -777,6 +811,8 @@ object SimEngine {
                                 "spriteAlpha" -> modified.copy(spriteAlpha = (resolved.toFloatOrNull() ?: modified.spriteAlpha).coerceIn(0f, 1f))
                                 "spriteScaleX" -> modified.copy(spriteScaleX = resolved.toFloatOrNull() ?: modified.spriteScaleX)
                                 "spriteScaleY" -> modified.copy(spriteScaleY = resolved.toFloatOrNull() ?: modified.spriteScaleY)
+                                "zOrder", "layer" -> modified.copy(zOrder = resolved.toIntOrNull() ?: modified.zOrder)
+                                "collisionIgnore" -> modified.copy(collisionIgnore = resolved.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet())
                                 else -> modified
                             }
                         }
@@ -887,6 +923,22 @@ object SimEngine {
                         objects[name] = obj.copy(hitbox = Hitbox(type = hbType, points = pts))
                     }
                     log += "  «$nameOrTag» хитбокс: $hbType (${pts.size} точек)"
+                }
+                "sim_layer" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Слой объекта»: «$nameOrTag» не найден"; continue }
+                    val layer = getF("layer", 0f).toInt()
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(zOrder = layer) }
+                    log += "  «$nameOrTag» слой -> $layer"
+                }
+                "sim_no_collision" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Игнорировать коллизию»: «$nameOrTag» не найден"; continue }
+                    val ignore = getStr("ignore").split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                    targets.forEach { (name, obj) -> objects[name] = obj.copy(collisionIgnore = obj.collisionIgnore + ignore) }
+                    log += "  «$nameOrTag» игнорирует коллизии с: ${ignore.joinToString()}"
                 }
                 "physics_toggle" -> {
                     val enabled = getStr("enabled", "true") == "true"

@@ -177,8 +177,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateParam(blockIndex: Int, key: String, value: String) = modifyActiveBlocks { list ->
         list.toMutableList().also { mutable ->
-            val block = mutable[blockIndex].deserialize() ?: return@also
-            mutable[blockIndex] = block.withParam(key, value).serialize()
+            var block = mutable[blockIndex].deserialize() ?: return@also
+            block = block.withParam(key, value)
+            // sim_sprite: при выборе спрайта автоматически подставляем размер если 0
+            if (key == "sprite" && block.type == "sim_sprite") {
+                val asset = _state.value.sprites.find { it.name == value }
+                if (asset != null) {
+                    val curW = block.params["width"]?.value?.toFloatOrNull() ?: 0f
+                    val curH = block.params["height"]?.value?.toFloatOrNull() ?: 0f
+                    if (curW == 0f) block = block.withParam("width", asset.width.toString())
+                    if (curH == 0f) block = block.withParam("height", asset.height.toString())
+                }
+            }
+            mutable[blockIndex] = block.serialize()
         }
     }
 
@@ -376,8 +387,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _physicsJob?.cancel()
         _physicsJob = viewModelScope.launch {
             val runningCollisionScripts = mutableSetOf<String>()
-            // Hold-скрипты: выполняем каждые 3 тика (~50мс) чтобы не перегружать
-            var holdTickCounter = 0
             val runningHoldScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
@@ -419,21 +428,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
                 _state.update { it.copy(simState = SimEngine.tickCamera(newSim)) }
 
-                // Hold-скрипты — каждые 3 тика (~50мс)
-                holdTickCounter++
-                if (holdTickCounter >= 3) {
-                    holdTickCounter = 0
-                    for ((_, pair) in _activeHolds.toMap()) {
-                        val (scriptId, _) = pair
-                        if (scriptId in runningHoldScripts) continue
-                        runningHoldScripts += scriptId
-                        launch {
-                            val currentSim = _state.value.simState ?: run { runningHoldScripts -= scriptId; return@launch }
-                            val newHoldSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
-                            runningHoldScripts -= scriptId
-                            if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
-                            _state.update { it.copy(simState = newHoldSim) }
-                        }
+                // Hold-скрипты — каждый тик
+                for ((_, pair) in _activeHolds.toMap()) {
+                    val (scriptId, _) = pair
+                    if (scriptId in runningHoldScripts) continue
+                    runningHoldScripts += scriptId
+                    launch {
+                        val currentSim = _state.value.simState ?: run { runningHoldScripts -= scriptId; return@launch }
+                        val newHoldSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
+                        runningHoldScripts -= scriptId
+                        if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
+                        _state.update { it.copy(simState = newHoldSim) }
                     }
                 }
 

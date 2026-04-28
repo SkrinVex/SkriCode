@@ -20,7 +20,7 @@ import su.SkrinVex.SkriPts.ui.theme.*
 import java.util.UUID
 
 // Блоки которые имеют смысл как setup для объекта локации
-private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate", "set_texture")
+private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate", "set_texture", "sim_layer")
 
 /**
  * Полноэкранный редактор setup-блоков объекта локации.
@@ -175,7 +175,18 @@ fun LocationObjectEditorScreen(
                     onRemove = {},  // нельзя удалить основной блок
                     onMoveUp = {}, onMoveDown = {}, onDuplicate = {},
                     onParamChange = { key, value ->
-                        mainBlock = mainBlock.withParam(key, value)
+                        var updated = mainBlock.withParam(key, value)
+                        // Для sim_sprite: при выборе спрайта автоматически подставляем размер
+                        if (key == "sprite" && mainBlock.type == "sim_sprite") {
+                            val asset = sprites.find { it.name == value }
+                            if (asset != null) {
+                                val curW = updated.params["width"]?.value?.toFloatOrNull() ?: 0f
+                                val curH = updated.params["height"]?.value?.toFloatOrNull() ?: 0f
+                                if (curW == 0f) updated = updated.withParam("width", asset.width.toString())
+                                if (curH == 0f) updated = updated.withParam("height", asset.height.toString())
+                            }
+                        }
+                        mainBlock = updated
                         if (key == "name") syncName(value)
                     },
                     onOpenExpr = { key, label, cur, isId ->

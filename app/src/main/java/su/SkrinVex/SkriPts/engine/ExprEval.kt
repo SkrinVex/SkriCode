@@ -151,6 +151,7 @@ object ExprEval {
             "objDirY(" to ::handleObjDirY,
             "objFrontX(" to ::handleObjFrontX,
             "objFrontY(" to ::handleObjFrontY,
+            "objGrounded(" to ::handleObjGrounded,
             "sqrt(" to ::handleSqrt,
             "tableSize(" to ::handleTableSize,
             "tableKey(" to ::handleTableKey,
@@ -366,6 +367,25 @@ object ExprEval {
         val dist = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontY(): «${args[1]}» не число")
         val rad = Math.toRadians(obj.rotation.toDouble())
         return Triple(fmt(obj.y + kotlin.math.cos(rad) * dist), consumed, null)
+    }
+
+    /** Возвращает true если объект стоит на статическом объекте (на земле) */
+    private fun handleObjGrounded(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("false", consumed, "\$objGrounded() требует один аргумент: имя объекта")
+        val obj = objects[args[0]] ?: return Triple("false", consumed, null)
+        val body = obj.physicsBody ?: return Triple("false", consumed, null)
+        // Считаем "на земле" если скорость Y близка к нулю и снизу есть статический объект
+        if (kotlin.math.abs(body.velocityY) > 2f) return Triple("false", consumed, null)
+        val bottom = obj.y - obj.height / 2f
+        val grounded = objects.values.any { other ->
+            if (other.name == obj.name) return@any false
+            val otherBody = other.physicsBody ?: return@any false
+            if (!otherBody.isStatic) return@any false
+            val otherTop = other.y + other.height / 2f
+            val overlapX = (obj.width / 2f + other.width / 2f) - kotlin.math.abs(obj.x - other.x)
+            overlapX > 0f && kotlin.math.abs(bottom - otherTop) < 4f
+        }
+        return Triple(grounded.toString(), consumed, null)
     }
 
     private fun handleSqrt(args: List<String>, consumed: Int): Triple<String, Int, String?> {

@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriPts.ui.home
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +58,12 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                     Column(Modifier.weight(1f)) {
                         Text("SkriPts", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrim)
                         Text("Визуальный конструктор программ", fontSize = 12.sp, color = TextSec)
+                    }
+                    val ctx = LocalContext.current
+                    IconButton(onClick = {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/SkriPts_Community")))
+                    }) {
+                        Icon(Icons.Default.Forum, "Сообщество", tint = TextSec)
                     }
                     IconButton(onClick = { importLauncher.launch(arrayOf("*/*", "application/json")) }) {
                         Icon(Icons.Default.FileDownload, "Импорт проекта", tint = TextSec)
@@ -280,7 +288,7 @@ private fun ProjectCard(
 @Composable
 private fun SettingsDialog(onDismiss: () -> Unit, onThemeChanged: () -> Unit) {
     var selectedTheme by remember { mutableStateOf(ThemeManager.getCurrentTheme()) }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
@@ -288,7 +296,7 @@ private fun SettingsDialog(onDismiss: () -> Unit, onThemeChanged: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Тема оформления", color = TextPrim, fontWeight = FontWeight.SemiBold)
-                
+
                 AppTheme.entries.forEach { theme ->
                     Row(
                         Modifier.fillMaxWidth()
@@ -303,7 +311,7 @@ private fun SettingsDialog(onDismiss: () -> Unit, onThemeChanged: () -> Unit) {
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            theme.displayName, 
+                            theme.displayName,
                             color = if (selectedTheme == theme) theme.accent else TextPrim,
                             fontWeight = if (selectedTheme == theme) FontWeight.SemiBold else FontWeight.Normal
                         )
@@ -460,6 +468,7 @@ private fun HelpDialog(onDismiss: () -> Unit) {
             "\$objDirY(имя) — Y-компонент направления (cos угла поворота)",
             "\$objFrontX(имя, дист) — X точки перед объектом на расстоянии",
             "\$objFrontY(имя, дист) — Y точки перед объектом на расстоянии",
+            "\$objGrounded(имя) — true если объект стоит на статическом объекте",
             "Стрельба: x=\$objFrontX(player,80), vx=\$mul(\$objDirX(player),500)"
         )),
         HelpEntry(Icons.Default.Tune, "Блоки управления", listOf(
@@ -488,10 +497,70 @@ private fun HelpDialog(onDismiss: () -> Unit) {
         )),
         HelpEntry(Icons.Default.Science, "Физика объектов", listOf(
             "Блок «Физика объекта» — добавляет физическое тело к объекту",
-            "Гравитация: отрицательное значение = падение вниз",
-            "Статический объект (static = true) — не двигается физикой",
-            "Упругость (bounciness) — отскок при столкновении: 0..1",
-            "Блок «Переключить физику» — включает/выключает физику симуляции"
+            "  gravity — ускорение свободного падения (отрицательное = вниз)",
+            "  static = true — объект не двигается физикой (стены, пол)",
+            "  bounciness — упругость при столкновении: 0 = нет отскока, 1 = полный",
+            "  mass — масса объекта (влияет на импульс при столкновении)",
+            "  vx/vy — начальная скорость по X и Y",
+            "Блок «Переключить физику» — включает/выключает физику всей симуляции",
+            "Блок «Импульс (прыжок)» — мгновенно добавляет скорость физическому телу",
+            "  vx/vy — добавляемая скорость (не устанавливает, а прибавляет к текущей)",
+            "Блок «Физическое движение» — движение объекта по направлению его поворота",
+            "  speed — скорость вперёд (по направлению объекта)",
+            "  turn — угловая скорость в градусах за тик (поворот)",
+            "  friction — трение: 0.9 = умеренное торможение, 1.0 = нет трения",
+            "  Используется для машин, кораблей и других транспортных средств"
+        )),
+        HelpEntry(Icons.Default.DirectionsRun, "Примеры: платформер (прыжок)", listOf(
+            "Цель: объект прыгает при нажатии кнопки и падает под гравитацией",
+            "",
+            "ON_START:",
+            "  «Физика объекта» → player: gravity=-9.8, static=false",
+            "  «Физика объекта» → floor: gravity=0, static=true",
+            "  «Джойстик» → target=player, speed=5 (движение влево/вправо)",
+            "",
+            "ON_TAP кнопки прыжка:",
+            "  «Условие» → \$objGrounded(player) == true",
+            "    Если истина: «Импульс (прыжок)» → player: vx=0, vy=500",
+            "",
+            "\$objGrounded(player) — true если игрок стоит на статическом объекте.",
+            "Без проверки игрок может прыгать в воздухе.",
+            "Джойстик позволяет двигаться влево/вправо в воздухе."
+        )),
+        HelpEntry(Icons.Default.GpsFixed, "Примеры: стрельба", listOf(
+            "Цель: нажимаешь кнопку — пуля летит в направлении игрока",
+            "",
+            "ON_START:",
+            "  «Создать спрайт-объект» или «Создать объект» → shoot (кнопка огня)",
+            "  «Физика объекта» → player: gravity=0 (вид сверху)",
+            "  «Джойстик» → target=player, directional=true (поворот по направлению)",
+            "",
+            "ON_TAP кнопки shoot:",
+            "  «Создать объект» → ammo: x=\$objFrontX(player,80), y=\$objFrontY(player,80)",
+            "  «Физика объекта» → ammo: gravity=0, vx=\$mul(\$objDirX(player),500), vy=\$mul(\$objDirY(player),500)",
+            "  «Игнорировать коллизию» → ammo: ignore=player",
+            "",
+            "\$objFrontX(player,80) — точка перед игроком на 80px (пуля не внутри игрока)",
+            "\$objDirX/Y(player) — вектор направления по углу поворота игрока",
+            "«Игнорировать коллизию» — пуля не толкает игрока при создании"
+        )),
+        HelpEntry(Icons.Default.DirectionsCar, "Примеры: управление машиной", listOf(
+            "Цель: кнопки газа/тормоза/поворота управляют машиной через физику",
+            "",
+            "ON_START:",
+            "  «Физика объекта» → car: gravity=0, static=false",
+            "",
+            "ON_HOLD кнопки газа:",
+            "  «Физическое движение» → car: speed=5, turn=0, friction=0.95",
+            "",
+            "ON_HOLD кнопки поворота влево:",
+            "  «Физическое движение» → car: speed=0, turn=-3, friction=0.98",
+            "",
+            "ON_HOLD кнопки поворота вправо:",
+            "  «Физическое движение» → car: speed=0, turn=3, friction=0.98",
+            "",
+            "Машина плавно разгоняется и поворачивается.",
+            "friction < 1 создаёт эффект торможения при отпускании кнопки."
         )),
         HelpEntry(Icons.Default.CropFree, "Хитбоксы", listOf(
             "Хитбокс — область объекта участвующая в коллизиях",

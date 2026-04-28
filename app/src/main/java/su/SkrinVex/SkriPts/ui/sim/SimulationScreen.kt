@@ -49,6 +49,7 @@ private val bitmapCache = mutableMapOf<String, android.graphics.Bitmap?>()
 @Composable
 fun SimulationScreen(
     state: SimState,
+    simRunCount: Int = 0,
     onTap: (objectName: String) -> Unit,
     onHoldStart: (objectName: String, pointerId: Long) -> Unit = { _, _ -> },
     onHoldEnd: (pointerId: Long) -> Unit = {},
@@ -62,21 +63,17 @@ fun SimulationScreen(
     BackHandler(onBack = onBack)
 
     val ctx = LocalContext.current
-    // Версия кэша — инкрементируется после загрузки bitmap, триггерит перерисовку Canvas
     var bitmapCacheVersion by remember { mutableIntStateOf(0) }
 
-    // Предзагружаем bitmap для всех спрайтов при старте
-    LaunchedEffect(state.sprites, state.projectId) {
+    // Перезагружаем bitmap при каждом запуске симуляции
+    LaunchedEffect(state.projectId, simRunCount) {
         bitmapCache.clear()
         state.sprites.forEach { sprite ->
             val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, state.projectId, sprite.fileName)
             bitmapCache[sprite.name] = file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
         }
-        bitmapCacheVersion++ // триггерим перерисовку
+        bitmapCacheVersion++
     }
-
-    // Очищаем кэш при уходе
-    DisposableEffect(Unit) { onDispose { bitmapCache.clear() } }
 
     var panelTab by remember { mutableIntStateOf(-1) }  // -1=скрыто, 0=лог, 1=объекты
     var highlightedObj by remember { mutableStateOf<String?>(null) }
@@ -168,35 +165,36 @@ fun SimulationScreen(
             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
             val uiTags = cam?.uiTags ?: emptySet()
 
-            // Мировые объекты — со смещением камеры
-            state.objects.values.forEach { obj ->
+            val sortedObjects = state.objects.values.sortedBy { it.zOrder }
+
+            // Мировые объекты — со смещением камеры, отсортированные по zOrder
+            sortedObjects.forEach { obj ->
                 if (!obj.visible) return@forEach
                 val isUi = obj.tags.any { it in uiTags }
                 if (!isUi) {
-                    // Culling: не рендерим если за пределами экрана
                     val ox = cx + camOx + obj.x
-                    val oy = cy - camOy - obj.y
+                    val oy = cy + camOy - obj.y
                     val hw = obj.width / 2f; val hh = obj.height / 2f
                     if (ox + hw < 0 || ox - hw > size.width || oy + hh < 0 || oy - hh > size.height) return@forEach
                     drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj)
                 }
             }
             if (showHitboxes) {
-                state.objects.values.forEach { obj ->
+                sortedObjects.forEach { obj ->
                     if (obj.visible) {
                         val isUi = obj.tags.any { it in uiTags }
                         if (!isUi) drawHitbox(obj, cx + camOx, cy + camOy)
                     }
                 }
             }
-            // UI объекты — без смещения (поверх)
-            state.objects.values.forEach { obj ->
+            // UI объекты — без смещения (поверх), тоже по zOrder
+            sortedObjects.forEach { obj ->
                 if (!obj.visible) return@forEach
                 val isUi = obj.tags.any { it in uiTags }
                 if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj)
             }
             if (showHitboxes) {
-                state.objects.values.forEach { obj ->
+                sortedObjects.forEach { obj ->
                     if (obj.visible) {
                         val isUi = obj.tags.any { it in uiTags }
                         if (isUi) drawHitbox(obj, cx, cy)

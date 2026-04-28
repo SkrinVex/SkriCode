@@ -90,8 +90,10 @@ object BlockFactory {
             children = mapOf("body" to emptyList()))
 
         // Таймер
-        "wait" -> build("wait", "Ждать", "Приостанавливает выполнение на время", BlockCategory.CONTROL, listOf(
-            "seconds" to p("1", "Секунды", "Время ожидания", ParamType.NUMBER)))
+        "wait" -> build("wait", "Таймер", "Повторяет вложенные блоки с заданным интервалом", BlockCategory.CONTROL, listOf(
+            "seconds" to p("1", "Интервал (сек)", "Пауза между повторениями", ParamType.NUMBER),
+            "count"   to p("1", "Повторений", "0 = бесконечно (пока зажата кнопка)", ParamType.NUMBER))).copy(
+            children = mapOf("body" to emptyList()))
 
         // Видимость объектов
         "sim_hide" -> build("sim_hide", "Скрыть объект", "Делает объект невидимым и неклкабельным", BlockCategory.SIMULATION, listOf(
@@ -152,6 +154,14 @@ object BlockFactory {
             "name"   to p("rect1", "Имя объекта", "Какому объекту"),
             "type"   to p("auto", "Тип", "auto / manual"),
             "points" to p("", "Точки", "JSON точек (авто = пусто")))
+
+        "sim_layer" -> build("sim_layer", "Слой объекта", "Устанавливает порядок отрисовки (меньше = дальше)", BlockCategory.SIMULATION, listOf(
+            "name"  to p("rect1", "Имя объекта", "Какому объекту"),
+            "layer" to p("0", "Слой", "0 = фон, 10 = передний план", ParamType.NUMBER)))
+
+        "sim_no_collision" -> build("sim_no_collision", "Игнорировать коллизию", "Объект не будет сталкиваться с указанными объектами/тегами", BlockCategory.PHYSICS, listOf(
+            "name"   to p("ammo", "Имя объекта", "Кому игнорировать"),
+            "ignore" to p("player", "Игнорировать", "Имя или #тег через запятую")))
 
         "physics_toggle" -> build("physics_toggle", "Переключить физику", "Включает или выключает физику симуляции", BlockCategory.PHYSICS, listOf(
             "enabled" to p("true", "Физика", "true = вкл, false = выкл")))
