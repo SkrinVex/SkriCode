@@ -3,6 +3,11 @@ package su.SkrinVex.SkriPts.ui.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -55,6 +60,7 @@ fun LocationEditorScreen(
     currentSceneId: String = "",
     spriteNames: List<String> = emptyList(),
     sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
+    isLandscape: Boolean = false,
     onCopyToScene: (BlockDef, String) -> Unit = { _, _ -> },
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
@@ -63,9 +69,36 @@ fun LocationEditorScreen(
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
 
+    // Скрываем статусбар и навигацию
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val window = (view.context as android.app.Activity).window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val ctrl = WindowInsetsControllerCompat(window, view)
+        ctrl.hide(WindowInsetsCompat.Type.systemBars())
+        ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        onDispose {
+            ctrl.show(WindowInsetsCompat.Type.systemBars())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+    }
+
     var locBlocks by remember { mutableStateOf(initialBlocks.mapNotNull { it.deserialize() }) }
     var selectedId by remember { mutableStateOf<String?>(null) }
-    var lockedIds by remember { mutableStateOf(setOf<String>()) }
+    // Загружаем lockedIds из блоков (поле _locked в params)
+    var lockedIds by remember { mutableStateOf(
+        initialBlocks.mapNotNull { sb -> sb.id.takeIf { sb.params["_locked"] == "true" } }.toSet()
+    ) }
+    // Undo/redo стеки
+    var undoStack by remember { mutableStateOf(listOf<List<BlockDef>>()) }
+    var redoStack by remember { mutableStateOf(listOf<List<BlockDef>>()) }
+
+    fun pushUndo() {
+        undoStack = (undoStack + listOf(locBlocks)).takeLast(30)
+        redoStack = emptyList()
+    }
+    fun undo() { if (undoStack.isNotEmpty()) { redoStack = redoStack + listOf(locBlocks); locBlocks = undoStack.last(); undoStack = undoStack.dropLast(1) } }
+    fun redo() { if (redoStack.isNotEmpty()) { undoStack = undoStack + listOf(locBlocks); locBlocks = redoStack.last(); redoStack = redoStack.dropLast(1) } }
     // Мультивыделение
     var multiSelectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
@@ -149,8 +182,8 @@ fun LocationEditorScreen(
         return
     }
 
-    val sw = ExprEval.screenWidth
-    val sh = ExprEval.screenHeight
+    val sw = if (isLandscape) ExprEval.screenHeight else ExprEval.screenWidth
+    val sh = if (isLandscape) ExprEval.screenWidth else ExprEval.screenHeight
 
     Box(Modifier.fillMaxSize().background(Color(0xFF080C18))) {
 
@@ -170,10 +203,15 @@ fun LocationEditorScreen(
                         }
 
                         if (hit != null && hit.id in lockedIds) {
-                            // Заблокированный — только выбираем, не двигаем
+                            // Заблокированный — выбираем, зум разрешён, двигать нельзя
                             selectedId = hit.id
                             do {
                                 val event = awaitPointerEvent()
+                                if (event.changes.size >= 2) {
+                                    zoom = (zoom * event.calculateZoom()).coerceIn(0.1f, 6f)
+                                    val pan = event.calculatePan(); panX += pan.x; panY += pan.y
+                                    event.changes.forEach { it.consume() }; continue
+                                }
                                 val ch = event.changes.firstOrNull { it.id == down.id } ?: break
                                 if (!ch.pressed) break
                                 ch.consume()
@@ -182,11 +220,10 @@ fun LocationEditorScreen(
                             if (multiSelectMode) {
                                 selectedIds = if (hit.id in selectedIds) selectedIds - hit.id else selectedIds + hit.id
                                 selectedId = null
-                                var moved = false; var lastPos = down.position
+                                var moved = false; var pushedUndo = false; var lastPos = down.position
                                 do {
                                     val event = awaitPointerEvent()
                                     if (event.changes.size >= 2) {
-                                        // Щипок — переключаемся в зум, снимаем выделение
                                         zoom = (zoom * event.calculateZoom()).coerceIn(0.1f, 6f)
                                         val pan = event.calculatePan(); panX += pan.x; panY += pan.y
                                         event.changes.forEach { it.consume() }; continue
@@ -196,6 +233,7 @@ fun LocationEditorScreen(
                                     val delta = ch.position - lastPos
                                     if (delta.getDistance() > 8f) moved = true
                                     if (moved) {
+                                        if (!pushedUndo) { pushUndo(); pushedUndo = true }
                                         lastPos = ch.position
                                         val dx = delta.x / zoom; val dy = -delta.y / zoom
                                         locBlocks = locBlocks.map { b ->
@@ -209,11 +247,10 @@ fun LocationEditorScreen(
                                 } while (true)
                             } else {
                                 selectedId = hit.id
-                                var moved = false; var lastPos = down.position
+                                var moved = false; var pushedUndo = false; var lastPos = down.position
                                 do {
                                     val event = awaitPointerEvent()
                                     if (event.changes.size >= 2) {
-                                        // Щипок — переключаемся в зум, не двигаем объект
                                         zoom = (zoom * event.calculateZoom()).coerceIn(0.1f, 6f)
                                         val pan = event.calculatePan(); panX += pan.x; panY += pan.y
                                         event.changes.forEach { it.consume() }; continue
@@ -223,6 +260,7 @@ fun LocationEditorScreen(
                                     val delta = ch.position - lastPos
                                     if (delta.getDistance() > 8f) moved = true
                                     if (moved) {
+                                        if (!pushedUndo) { pushUndo(); pushedUndo = true }
                                         lastPos = ch.position
                                         val dx = delta.x / zoom; val dy = -delta.y / zoom
                                         locBlocks = locBlocks.map { b ->
@@ -380,15 +418,42 @@ fun LocationEditorScreen(
             }
         }
 
-        // Зум
-        Surface(Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.statusBars).padding(12.dp), color = Color(0xAA0A0E1A), shape = RoundedCornerShape(8.dp)) {
-            Text("${(zoom * 100).roundToInt()}%", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+        // Зум + кнопки Отмена/Сохранить в одной строке сверху слева
+        Row(
+            Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.statusBars).padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Surface(color = Color(0xAA0A0E1A), shape = RoundedCornerShape(8.dp)) {
+                Text("${(zoom * 100).roundToInt()}%", color = TextSec, fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+            }
+            SmallLocFab(Icons.Default.Close, "Отмена") { onDismiss() }
+            SmallLocFab(Icons.Default.Check, "Сохранить") {
+                onSave(locBlocks.map { b ->
+                    val s = b.serialize()
+                    if (b.id in lockedIds) s.copy(params = s.params + ("_locked" to "true"))
+                    else s.copy(params = s.params - "_locked")
+                })
+            }
         }
 
         // Кнопки справа
         Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallLocFab(Icons.Default.CenterFocusStrong, "Сброс") { zoom = 1f; panX = 0f; panY = 0f }
             SmallLocFab(Icons.Default.Add, "Добавить") { showAddSheet = true }
+            SmallFloatingActionButton(
+                onClick = { undo() },
+                containerColor = if (undoStack.isNotEmpty()) Color(0xFF1E2535) else Color(0xFF111520),
+                contentColor = if (undoStack.isNotEmpty()) Color.White else Color(0xFF444444),
+                shape = CircleShape
+            ) { Icon(Icons.Default.Undo, "Отменить", modifier = Modifier.size(20.dp)) }
+            SmallFloatingActionButton(
+                onClick = { redo() },
+                containerColor = if (redoStack.isNotEmpty()) Color(0xFF1E2535) else Color(0xFF111520),
+                contentColor = if (redoStack.isNotEmpty()) Color.White else Color(0xFF444444),
+                shape = CircleShape
+            ) { Icon(Icons.Default.Redo, "Повторить", modifier = Modifier.size(20.dp)) }
             // Мультивыделение
             SmallFloatingActionButton(
                 onClick = { multiSelectMode = !multiSelectMode; if (!multiSelectMode) selectedIds = emptySet() },
@@ -465,15 +530,7 @@ fun LocationEditorScreen(
             }
         }
 
-        // Кнопки снизу
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FloatingActionButton(onClick = onDismiss, containerColor = Color(0xFF2A2F3E)) {
-                Icon(Icons.Default.Close, "Отмена", tint = Color.White)
-            }
-            FloatingActionButton(onClick = { onSave(locBlocks.map { it.serialize() }) }, containerColor = Color(0xFF00E5FF)) {
-                Icon(Icons.Default.Check, "Сохранить", tint = Color.Black)
-            }
-        }
+        // (кнопки Отмена/Сохранить перенесены в топбар слева)
     }
 
     // Выбор типа блока для добавления

@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriPts
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +12,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import su.SkrinVex.SkriPts.data.ProjectOrientation
 import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.engine.SimEngine
 import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
@@ -53,6 +55,18 @@ class MainActivity : ComponentActivity() {
             SkriPtsTheme {
                 val editorState by editorVm.state.collectAsState()
                 var screen by remember { mutableStateOf("home") }
+                var landscapeActive by remember { mutableStateOf(false) }
+
+                // Применяем ориентацию — только портрет везде кроме sim/локации/позиционировщика
+                val isLandscape = landscapeActive ||
+                    (screen == "sim" && editorState.orientation == ProjectOrientation.LANDSCAPE)
+                SideEffect {
+                    val target = if (isLandscape)
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    else
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    if (requestedOrientation != target) requestedOrientation = target
+                }
 
                 LaunchedEffect(editorState.simRunCount) {
                     if (editorState.simRunCount > 0 && editorState.validationErrors.isEmpty()
@@ -70,7 +84,7 @@ class MainActivity : ComponentActivity() {
                         onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },
                         onJoystickMove = { name, dx, dy, pid -> editorVm.handleJoystickMove(name, dx, dy, pid) },
                         onJoystickRelease = { pid -> editorVm.handleJoystickRelease(pid) },
-                        onBack = { editorVm.stopPhysics(); screen = "editor" },
+                        onBack = { editorVm.stopPhysics(); landscapeActive = false; screen = "editor" },
                         onClearLogs = { editorVm.clearSimLogs() },
                         debugMode = ThemeManager.debugMode,
                         showHitboxes = ThemeManager.showHitboxes
@@ -79,7 +93,8 @@ class MainActivity : ComponentActivity() {
                         BackHandler { screen = "resources" }
                         EditorScreen(
                             vm = editorVm,
-                            onBack = { screen = "resources" }
+                            onBack = { screen = "resources" },
+                            onLandscapeNeeded = { landscapeActive = it }
                         )
                     }
                     "resources" -> {

@@ -49,8 +49,9 @@ data class ExprEditTarget(val blockIndex: Int, val paramKey: String, val paramLa
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
+fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Boolean) -> Unit = {}) {
     val state by vm.state.collectAsState()
+    val needsLandscape = state.orientation == su.SkrinVex.SkriPts.data.ProjectOrientation.LANDSCAPE
     var showPicker by remember { mutableStateOf(false) }
     var exprTarget by remember { mutableStateOf<ExprEditTarget?>(null) }
     var showScriptMenu by remember { mutableStateOf<String?>(null) }
@@ -62,6 +63,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
 
     // Редактор локации — полноэкранный
     if (showLocationEditor) {
+        DisposableEffect(Unit) {
+            onLandscapeNeeded(needsLandscape)
+            onDispose { onLandscapeNeeded(false) }
+        }
         val uiBlocks = state.allScriptBlocks.filter { it.params.containsKey("x") && it.params.containsKey("y") }
         LocationEditorScreen(
             projectId = state.projectId,
@@ -71,6 +76,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
             currentSceneId = state.activeSceneId,
             spriteNames = state.spriteNames,
             sprites = state.sprites,
+            isLandscape = needsLandscape,
             onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
@@ -156,6 +162,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
 
     // Визуальный позиционировщик — полноэкранный
     positionPickerBlock?.let { (blockIndex, block) ->
+        DisposableEffect(Unit) {
+            onLandscapeNeeded(needsLandscape)
+            onDispose { onLandscapeNeeded(false) }
+        }
         val vars = emptyMap<String, String>()
         fun evalF(key: String, default: Float): Float {
             val raw = block.params[key]?.value ?: return default
@@ -252,6 +262,17 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         }
                         if (showSimSettings) {
                             SimSettingsDialog(onDismiss = { showSimSettings = false })
+                        }
+                        var showProjectSettings by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showProjectSettings = true }) {
+                            Icon(Icons.Default.Tune, "Настройки проекта", tint = TextSec)
+                        }
+                        if (showProjectSettings) {
+                            ProjectSettingsDialog(
+                                orientation = state.orientation,
+                                onOrientationChange = { vm.setOrientation(it) },
+                                onDismiss = { showProjectSettings = false }
+                            )
                         }
                         IconButton(onClick = { showLocationEditor = true }) {
                             Icon(Icons.Default.Map, "Редактор локации", tint = TextSec)
@@ -2437,4 +2458,46 @@ internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: 
             }
         }
     }
+}
+
+@Composable
+fun ProjectSettingsDialog(
+    orientation: su.SkrinVex.SkriPts.data.ProjectOrientation,
+    onOrientationChange: (su.SkrinVex.SkriPts.data.ProjectOrientation) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        icon = { Icon(Icons.Default.Tune, null, tint = Accent) },
+        title = { Text("Настройки проекта", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Ориентация экрана", color = TextSec, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    su.SkrinVex.SkriPts.data.ProjectOrientation.entries.forEach { o ->
+                        val selected = orientation == o
+                        val label = if (o == su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT) "Портретная" else "Ландшафтная"
+                        val icon = if (o == su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT) Icons.Default.StayCurrentPortrait else Icons.Default.StayCurrentLandscape
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onOrientationChange(o) },
+                            label = { Text(label, fontSize = 13.sp) },
+                            leadingIcon = { Icon(icon, null, modifier = Modifier.size(16.dp)) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Accent.copy(alpha = 0.2f),
+                                selectedLabelColor = Accent,
+                                selectedLeadingIconColor = Accent
+                            )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
+                Text("Готово", color = Navy900)
+            }
+        }
+    )
 }

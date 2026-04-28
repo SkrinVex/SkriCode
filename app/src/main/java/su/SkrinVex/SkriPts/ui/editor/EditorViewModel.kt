@@ -32,6 +32,7 @@ data class EditorState(
     val globalTags: List<ProjectTag> = emptyList(),
     val globalTables: List<ProjectTable> = emptyList(),
     val sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
+    val orientation: su.SkrinVex.SkriPts.data.ProjectOrientation = su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
     val simState: SimState? = null,
     val simRunCount: Int = 0,
     /** Скрипты сцены которая сейчас симулируется (может отличаться от scripts при переходе между сценами) */
@@ -110,6 +111,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(
             projectId = project.id,
             projectName = project.name,
+            orientation = project.orientation ?: su.SkrinVex.SkriPts.data.ProjectOrientation.PORTRAIT,
             scenes = scenes,
             activeSceneId = activeScene.id,
             scripts = activeScene.scripts,
@@ -741,11 +743,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         ProjectRepository.save(getApplication(), ScriptProject(
             id = projectId, name = s.projectName,
+            orientation = s.orientation,
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
             sprites = s.sprites
         ))
     }
+
+    fun setOrientation(o: su.SkrinVex.SkriPts.data.ProjectOrientation) = _state.update { it.copy(orientation = o) }
 
     // --- Спрайты ---
     fun addSprite(uri: android.net.Uri, name: String): String? {

@@ -32,7 +32,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun createProject(name: String) {
         val id = UUID.randomUUID().toString()
         lastCreatedId = id
-        ProjectRepository.save(getApplication(), ScriptProject(id, name, emptyList()))
+        ProjectRepository.save(getApplication(), ScriptProject(id = id, name = name))
         refresh()
     }
 

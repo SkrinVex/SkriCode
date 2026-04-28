@@ -8,6 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +66,20 @@ fun SimulationScreen(
     showHitboxes: Boolean = false
 ) {
     BackHandler(onBack = onBack)
+
+    // Скрываем статусбар и навигацию
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val window = (view.context as android.app.Activity).window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val ctrl = WindowInsetsControllerCompat(window, view)
+        ctrl.hide(WindowInsetsCompat.Type.systemBars())
+        ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        onDispose {
+            ctrl.show(WindowInsetsCompat.Type.systemBars())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+    }
 
     val ctx = LocalContext.current
     var bitmapCacheVersion by remember { mutableIntStateOf(0) }

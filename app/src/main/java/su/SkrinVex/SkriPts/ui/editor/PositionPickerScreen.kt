@@ -3,6 +3,11 @@ package su.SkrinVex.SkriPts.ui.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +61,20 @@ fun PositionPickerScreen(
     var objY by remember { mutableFloatStateOf(initialY) }
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
+
+    // Скрываем статусбар и навигацию
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val window = (view.context as android.app.Activity).window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val ctrl = WindowInsetsControllerCompat(window, view)
+        ctrl.hide(WindowInsetsCompat.Type.systemBars())
+        ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        onDispose {
+            ctrl.show(WindowInsetsCompat.Type.systemBars())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+    }
 
     val sw = ExprEval.screenWidth
     val sh = ExprEval.screenHeight
@@ -271,47 +290,31 @@ fun PositionPickerScreen(
             drawLine(Color(0xFF00E5FF), Offset(ocx, ocy - 10f), Offset(ocx, ocy + 10f), 1.5f)
         }
 
-        // Координаты — показываем как выражения
+        // Координаты — компактная строка сверху
         val xExpr = toExpr(objX, sw, isX = true)
         val yExpr = toExpr(objY, sh, isX = false)
 
         Surface(
-            modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 12.dp),
+            modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 6.dp),
             color = Color(0xCC0A0E1A),
             shape = RoundedCornerShape(10.dp)
         ) {
-            Column(
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(objectName, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(
-                    "X: $xExpr   Y: $yExpr",
-                    color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp
-                )
-                Text(
-                    "(${objX.roundToInt()}, ${objY.roundToInt()}) px",
-                    color = Color(0x88FFFFFF), fontSize = 11.sp
-                )
-            }
-        }
-
-        // Кнопки
-        Row(
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            FloatingActionButton(
-                onClick = onDismiss,
-                containerColor = Color(0xFF2A2F3E)
-            ) {
-                Icon(Icons.Default.Close, "Отмена", tint = Color.White)
-            }
-            FloatingActionButton(
-                onClick = { onConfirm(xExpr, yExpr) },
-                containerColor = Color(0xFF00E5FF)
-            ) {
-                Icon(Icons.Default.Check, "Применить", tint = Color.Black)
+                Text(objectName, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("X: $xExpr  Y: $yExpr", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                Text("(${objX.roundToInt()}, ${objY.roundToInt()})", color = Color(0x88FFFFFF), fontSize = 10.sp)
+                Spacer(Modifier.width(4.dp))
+                // Кнопки прямо в топбаре — компактно для ландшафта
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, "Отмена", tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = { onConfirm(xExpr, yExpr) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Check, "Применить", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                }
             }
         }
     }
