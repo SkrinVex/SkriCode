@@ -17,6 +17,7 @@ object BlockRegistry {
         "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete",
         "set_texture", "sim_sprite",
         "sim_physics", "sim_hitbox", "physics_toggle",
+        "physics_impulse", "physics_move",
         "sim_camera", "camera_toggle",
         "scene_switch"
     )

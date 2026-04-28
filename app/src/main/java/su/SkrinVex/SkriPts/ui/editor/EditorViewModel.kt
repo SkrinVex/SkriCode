@@ -375,12 +375,67 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // Запускаем физический тик ~60fps
         _physicsJob?.cancel()
         _physicsJob = viewModelScope.launch {
-            // Множество активных скриптов коллизий — не запускаем повторно пока выполняется
             val runningCollisionScripts = mutableSetOf<String>()
+            // Hold-скрипты: выполняем каждые 3 тика (~50мс) чтобы не перегружать
+            var holdTickCounter = 0
+            val runningHoldScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
+                // Применяем джойстики и физику в одном атомарном обновлении
+                _state.update { s ->
+                    var sim = s.simState ?: return@update s
+                    for ((_, joy) in sim.joysticks) {
+                        if (joy.pointerId == null) continue
+                        val len = hypot(joy.knobDx, joy.knobDy)
+                        if (len <= 0.05f) continue
+                        val target = sim.objects[joy.targetObject] ?: continue
+                        val body = target.physicsBody
+                        if (body != null && body.isStatic) continue
+                        if (body != null && !sim.physicsEnabled) continue
+                        val newTarget = if (joy.directional) {
+                            val newRot = (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
+                            val rad = Math.toRadians(newRot.toDouble() - 90.0)
+                            target.copy(
+                                x = target.x + (cos(rad) * len * joy.speed).toFloat(),
+                                y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
+                                rotation = newRot
+                            )
+                        } else if (body != null && body.enabled) {
+                            target.copy(physicsBody = body.copy(
+                                velocityX = joy.knobDx * joy.speed,
+                                velocityY = joy.knobDy * joy.speed
+                            ))
+                        } else {
+                            target.copy(
+                                x = target.x + joy.knobDx * joy.speed,
+                                y = target.y + joy.knobDy * joy.speed
+                            )
+                        }
+                        sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
+                    }
+                    s.copy(simState = sim)
+                }
+
                 val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
-                _state.update { it.copy(simState = newSim) }
+                _state.update { it.copy(simState = SimEngine.tickCamera(newSim)) }
+
+                // Hold-скрипты — каждые 3 тика (~50мс)
+                holdTickCounter++
+                if (holdTickCounter >= 3) {
+                    holdTickCounter = 0
+                    for ((_, pair) in _activeHolds.toMap()) {
+                        val (scriptId, _) = pair
+                        if (scriptId in runningHoldScripts) continue
+                        runningHoldScripts += scriptId
+                        launch {
+                            val currentSim = _state.value.simState ?: run { runningHoldScripts -= scriptId; return@launch }
+                            val newHoldSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
+                            runningHoldScripts -= scriptId
+                            if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
+                            _state.update { it.copy(simState = newHoldSim) }
+                        }
+                    }
+                }
 
                 // Запускаем ON_COLLISION для новых коллизий — в отдельных корутинах
                 for ((nameA, nameB) in newCols) {
@@ -443,7 +498,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null }
+    fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear() }
 
     fun handleTap(objectName: String) {
         val state = _state.value
@@ -460,81 +515,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Хранит активные hold-корутины по pointerId
-    private val _holdJobs = mutableMapOf<Long, kotlinx.coroutines.Job>()
-    private val _joystickJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    // Хранит активные hold-скрипты по pointerId: pointerId -> (scriptId, objectName)
+    private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
     fun handleHoldStart(objectName: String, pointerId: Long) {
-        val state = _state.value
-        val scriptId = state.simState?.objects?.get(objectName)?.holdScriptId ?: return
-        _holdJobs[pointerId]?.cancel()
-        _holdJobs[pointerId] = viewModelScope.launch {
-            while (true) {
-                val currentSim = _state.value.simState ?: break
-                val newSim = SimEngine.runHold(scriptId, _state.value.scripts, currentSim)
-                _state.update { it.copy(simState = newSim) }
-                delay(50) // ~20 раз в секунду, не блокируем поток
-            }
-        }
+        val scriptId = _state.value.simState?.objects?.get(objectName)?.holdScriptId ?: return
+        _activeHolds[pointerId] = scriptId to objectName
     }
 
     fun handleHoldEnd(pointerId: Long) {
-        _holdJobs.remove(pointerId)?.cancel()
+        _activeHolds.remove(pointerId)
     }
 
     fun handleJoystickMove(name: String, dx: Float, dy: Float, pointerId: Long) {
-        // Обновляем визуальное положение ручки и запускаем тик движения
+        // Обновляем визуальное положение ручки — движение применяется в physics tick
         _state.update { s ->
             val sim = s.simState ?: return@update s
             val joy = sim.joysticks[name] ?: return@update s
             val newJoy = joy.copy(knobDx = dx, knobDy = dy, pointerId = pointerId)
             s.copy(simState = sim.copy(joysticks = sim.joysticks + (name to newJoy)))
-        }
-        // Запускаем/обновляем тик для этого джойстика
-        if (_joystickJobs[name] == null) {
-            _joystickJobs[name] = viewModelScope.launch {
-                while (true) {
-                    val sim = _state.value.simState ?: break
-                    val joy = sim.joysticks[name] ?: break
-                    if (joy.pointerId == null) break
-                    val target = sim.objects[joy.targetObject] ?: run { delay(16); continue }
-                    val len = hypot(joy.knobDx, joy.knobDy)
-                    if (len > 0.05f) {
-                        val body = target.physicsBody
-                        // Статический — джойстик не двигает никогда
-                        if (body != null && body.isStatic) { delay(16); continue }
-                        // Физика выключена И у объекта есть тело — не двигать
-                        if (body != null && !sim.physicsEnabled) { delay(16); continue }
-
-                        val moveX = joy.knobDx * joy.speed
-                        val moveY = joy.knobDy * joy.speed
-                        val newRotation = if (joy.directional)
-                            (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
-                        else target.rotation
-                        val newTarget = if (joy.directional) {
-                            val rad = Math.toRadians(newRotation.toDouble() - 90.0)
-                            target.copy(
-                                x = target.x + (cos(rad) * len * joy.speed).toFloat(),
-                                y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
-                                rotation = newRotation
-                            )
-                        } else {
-                            // Если у объекта физика — двигаем через velocity (физический тик применит)
-                            if (body != null && body.enabled) {
-                                target.copy(physicsBody = body.copy(velocityX = moveX, velocityY = moveY))
-                            } else {
-                                target.copy(x = target.x + moveX, y = target.y + moveY)
-                            }
-                        }
-                        _state.update { s ->
-                            val st = s.simState ?: return@update s
-                            val updated = st.copy(objects = st.objects + (joy.targetObject to newTarget))
-                            s.copy(simState = SimEngine.tickCamera(updated))
-                        }
-                    }
-                    delay(16) // ~60fps
-                }
-            }
         }
     }
 
@@ -547,11 +546,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 else joy
             }
             s.copy(simState = sim.copy(joysticks = updated))
-        }
-        // Останавливаем тики джойстиков без пальца
-        _joystickJobs.entries.removeIf { (name, job) ->
-            val joy = _state.value.simState?.joysticks?.get(name)
-            if (joy?.pointerId == null) { job.cancel(); true } else false
         }
     }
 

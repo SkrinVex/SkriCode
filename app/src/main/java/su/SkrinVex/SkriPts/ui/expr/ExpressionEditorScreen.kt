@@ -444,9 +444,15 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$lower(\"TEXT\")",      "В нижний регистр",  "Преобразует в строчные буквы",  Icons.Default.KeyboardArrowDown, stringColor),
 
         // Объекты
-        BuiltinFn("\$objX(Button)",   "X объекта",        "Позиция объекта по горизонтали",     Icons.Default.SwapHoriz,    screenColor),
-        BuiltinFn("\$objY(Button)",   "Y объекта",        "Позиция объекта по вертикали",       Icons.Default.SwapVert,     screenColor),
-        BuiltinFn("\$objRot(Button)", "Вращение объекта", "Угол поворота объекта в градусах",   Icons.Default.RotateRight,  screenColor),
+        BuiltinFn("\$objX(Button)",    "X объекта",          "Позиция объекта по горизонтали",                Icons.Default.SwapHoriz,    screenColor),
+        BuiltinFn("\$objY(Button)",    "Y объекта",          "Позиция объекта по вертикали",                  Icons.Default.SwapVert,     screenColor),
+        BuiltinFn("\$objRot(Button)",  "Вращение объекта",   "Угол поворота объекта в градусах",              Icons.Default.RotateRight,  screenColor),
+        BuiltinFn("\$objVx(Button)",   "Скорость X объекта", "Скорость физического тела по X",                Icons.Default.Speed,        screenColor),
+        BuiltinFn("\$objVy(Button)",   "Скорость Y объекта", "Скорость физического тела по Y",                Icons.Default.Speed,        screenColor),
+        BuiltinFn("\$objDirX(Button)", "Направление X",      "X-компонент вектора направления (по повороту)", Icons.Default.Navigation,   screenColor),
+        BuiltinFn("\$objDirY(Button)", "Направление Y",      "Y-компонент вектора направления (по повороту)", Icons.Default.Navigation,   screenColor),
+        BuiltinFn("\$objFrontX(Button, 80)", "Точка перед X", "X позиции перед объектом на расстоянии",       Icons.Default.Navigation,   screenColor),
+        BuiltinFn("\$objFrontY(Button, 80)", "Точка перед Y", "Y позиции перед объектом на расстоянии",       Icons.Default.Navigation,   screenColor),
 
         // Таблицы
         BuiltinFn("\$tableSize(scores)", "Размер таблицы",  "Количество записей в таблице",                    Icons.Default.TableChart, TableAccent),

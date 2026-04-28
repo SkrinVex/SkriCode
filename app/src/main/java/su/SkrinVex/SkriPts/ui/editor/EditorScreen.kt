@@ -189,6 +189,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 }.getOrNull()
             } ?: androidx.compose.ui.graphics.Color(0xFF4F8EF7),
             objectSprite = block.params["sprite"]?.value?.ifBlank { null },
+            sprites = state.sprites,
             initialX = evalF("x", 0f),
             initialY = evalF("y", 0f),
             showOtherObjects = ThemeManager.showObjectsInPicker,

@@ -145,6 +145,12 @@ object ExprEval {
             "objX(" to ::handleObjX,
             "objY(" to ::handleObjY,
             "objRot(" to ::handleObjRot,
+            "objVx(" to ::handleObjVx,
+            "objVy(" to ::handleObjVy,
+            "objDirX(" to ::handleObjDirX,
+            "objDirY(" to ::handleObjDirY,
+            "objFrontX(" to ::handleObjFrontX,
+            "objFrontY(" to ::handleObjFrontY,
             "sqrt(" to ::handleSqrt,
             "tableSize(" to ::handleTableSize,
             "tableKey(" to ::handleTableKey,
@@ -154,13 +160,20 @@ object ExprEval {
         
         for ((pattern, handler) in funcPatterns) {
             if (sub.startsWith(pattern)) {
-                val close = sub.indexOf(')')
-                if (close == -1) return Triple("", 1, "Незакрытая скобка в \$${pattern.dropLast(1)}()")
-                // Раскрываем {переменные} внутри аргументов
+                // Ищем парную закрывающую скобку с учётом вложенности
+                var depth = 1; var ci = pattern.length
+                while (ci < sub.length && depth > 0) {
+                    when (sub[ci]) { '(' -> depth++; ')' -> depth-- }
+                    ci++
+                }
+                if (depth != 0) return Triple("", 1, "Незакрытая скобка в \$${pattern.dropLast(1)}()")
+                val close = ci - 1
                 val rawArgs = sub.substring(pattern.length, close)
+                // Вычисляем вложенные $-функции в аргументах
                 val (resolvedArgs, argErr) = substitute(rawArgs, vars)
                 if (argErr != null) return Triple("", 1, argErr)
-                val args = resolvedArgs.split(",").map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
+                // Разбиваем по запятой с учётом вложенности скобок
+                val args = splitArgs(resolvedArgs)
                 val consumed = 1 + close + 1
                 return handler(args, consumed)
             }
@@ -305,6 +318,56 @@ object ExprEval {
         return Triple("", consumed, "\$objRot(): объект «$name» не найден")
     }
 
+    private fun handleObjVx(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objVx() требует один аргумент: имя объекта")
+        val name = args[0]
+        val vx = objects[name]?.physicsBody?.velocityX ?: return Triple("0", consumed, null)
+        return Triple(fmt(vx.toDouble()), consumed, null)
+    }
+
+    private fun handleObjVy(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objVy() требует один аргумент: имя объекта")
+        val name = args[0]
+        val vy = objects[name]?.physicsBody?.velocityY ?: return Triple("0", consumed, null)
+        return Triple(fmt(vy.toDouble()), consumed, null)
+    }
+
+    /** Возвращает X-компонент единичного вектора направления объекта (по углу поворота) */
+    private fun handleObjDirX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objDirX() требует один аргумент: имя объекта")
+        val name = args[0]
+        val rot = objects[name]?.rotation ?: return Triple("0", consumed, null)
+        val rad = Math.toRadians(rot.toDouble())
+        return Triple(fmt(kotlin.math.sin(rad)), consumed, null)
+    }
+
+    /** Возвращает Y-компонент единичного вектора направления объекта (по углу поворота) */
+    private fun handleObjDirY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 1) return Triple("", consumed, "\$objDirY() требует один аргумент: имя объекта")
+        val name = args[0]
+        val rot = objects[name]?.rotation ?: return Triple("0", consumed, null)
+        val rad = Math.toRadians(rot.toDouble())
+        return Triple(fmt(kotlin.math.cos(rad)), consumed, null)
+    }
+
+    /** X-позиция точки перед объектом на расстоянии dist */
+    private fun handleObjFrontX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$objFrontX() требует два аргумента: имя объекта и расстояние")
+        val obj = objects[args[0]] ?: return Triple("0", consumed, null)
+        val dist = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontX(): «${args[1]}» не число")
+        val rad = Math.toRadians(obj.rotation.toDouble())
+        return Triple(fmt(obj.x + kotlin.math.sin(rad) * dist), consumed, null)
+    }
+
+    /** Y-позиция точки перед объектом на расстоянии dist */
+    private fun handleObjFrontY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+        if (args.size != 2) return Triple("", consumed, "\$objFrontY() требует два аргумента: имя объекта и расстояние")
+        val obj = objects[args[0]] ?: return Triple("0", consumed, null)
+        val dist = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontY(): «${args[1]}» не число")
+        val rad = Math.toRadians(obj.rotation.toDouble())
+        return Triple(fmt(obj.y + kotlin.math.cos(rad) * dist), consumed, null)
+    }
+
     private fun handleSqrt(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$sqrt() требует один аргумент")
         val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$sqrt(): «${args[0]}» не число")
@@ -410,6 +473,24 @@ object ExprEval {
 
     private fun fmt(v: Double): String =
         if (v == floor(v) && abs(v) < 1e12) v.toLong().toString() else v.toString()
+
+    /** Разбивает строку аргументов по запятой с учётом вложенности скобок */
+    private fun splitArgs(s: String): List<String> {
+        val result = mutableListOf<String>()
+        var depth = 0; var start = 0
+        for (i in s.indices) {
+            when (s[i]) {
+                '(' -> depth++
+                ')' -> depth--
+                ',' -> if (depth == 0) {
+                    result += s.substring(start, i).trim().removeSurrounding("\"").removeSurrounding("'")
+                    start = i + 1
+                }
+            }
+        }
+        result += s.substring(start).trim().removeSurrounding("\"").removeSurrounding("'")
+        return result
+    }
 
     /** Валидация без вычисления — возвращает текст ошибки или null */
     fun validate(expr: String, vars: Map<String, String>): String? {

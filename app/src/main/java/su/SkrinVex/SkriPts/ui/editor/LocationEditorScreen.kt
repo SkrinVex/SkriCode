@@ -88,17 +88,21 @@ fun LocationEditorScreen(
     val locBitmapCache = remember { mutableStateMapOf<String, android.graphics.Bitmap?>() }
     
     // Загружаем bitmap при первом появлении спрайта в блоке
-    LaunchedEffect(projectId) {
+    LaunchedEffect(projectId, sprites) {
         if (projectId.isBlank()) return@LaunchedEffect
         val allBlocks = locBlocks + uiBlocks
         val spritesInBlocks = allBlocks.mapNotNull { extractSpriteName(it) }.toSet()
         spritesInBlocks.forEach { spriteName ->
             if (!locBitmapCache.containsKey(spriteName)) {
-                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
-                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
-                val bitmap = file?.let { 
-                    runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() 
+                // Ищем правильный fileName через SpriteAsset
+                val asset = sprites.find { it.name == spriteName }
+                val file = if (asset != null) {
+                    su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, asset.fileName)
+                } else {
+                    su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                        ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
                 }
+                val bitmap = file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
                 if (bitmap != null) locBitmapCache[spriteName] = bitmap
             }
         }
@@ -111,11 +115,14 @@ fun LocationEditorScreen(
         val spritesInBlocks = allBlocks.mapNotNull { extractSpriteName(it) }.toSet()
         spritesInBlocks.forEach { spriteName ->
             if (!locBitmapCache.containsKey(spriteName)) {
-                val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
-                    ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
-                val bitmap = file?.let { 
-                    runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() 
+                val asset = sprites.find { it.name == spriteName }
+                val file = if (asset != null) {
+                    su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, asset.fileName)
+                } else {
+                    su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.png")
+                        ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$spriteName.jpg")
                 }
+                val bitmap = file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
                 if (bitmap != null) locBitmapCache[spriteName] = bitmap
             }
         }

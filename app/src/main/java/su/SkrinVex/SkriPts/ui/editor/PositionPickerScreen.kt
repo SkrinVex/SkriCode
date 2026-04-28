@@ -44,6 +44,7 @@ fun PositionPickerScreen(
     objectRadius: Float,
     objectColor: Color,
     objectSprite: String? = null,
+    sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList(),
     initialX: Float,
     initialY: Float,
     showOtherObjects: Boolean = false,
@@ -66,8 +67,13 @@ fun PositionPickerScreen(
     }
     val objBitmap = remember(objSpriteName, projectId) {
         if (projectId.isBlank() || objSpriteName == null) return@remember null
-        val file = su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.png")
-            ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.jpg")
+        val asset = sprites.find { it.name == objSpriteName }
+        val file = if (asset != null) {
+            su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, asset.fileName)
+        } else {
+            su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.png")
+                ?: su.SkrinVex.SkriPts.data.SpriteRepository.getFile(ctx, projectId, "$objSpriteName.jpg")
+        }
         file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
     }
 

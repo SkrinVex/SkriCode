@@ -568,7 +568,9 @@ object SimEngine {
                         holdScriptId = existing?.holdScriptId,
                         collisionScriptId = existing?.collisionScriptId,
                         collisionEndScriptId = existing?.collisionEndScriptId,
-                        physicsBody = existing?.physicsBody,
+                        // Физику НЕ переносим при пересоздании — иначе новый объект
+                        // унаследует скорость старого (баг «пуля тянет игрока»)
+                        physicsBody = null,
                         hitbox = existing?.hitbox ?: Hitbox()
                     )
                     if (existing != null) log += "  Обновлён «$name» (${getStr("x")}, ${getStr("y")})"
@@ -830,6 +832,48 @@ object SimEngine {
                         ))
                     }
                     log += "  «$nameOrTag» физика: g=$gravity static=$isStatic (хитбокс AUTO по умолчанию)"
+                }
+                "physics_impulse" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Импульс»: «$nameOrTag» не найден"; continue }
+                    val dvx = getF("vx", 0f)
+                    val dvy = getF("vy", 0f)
+                    targets.forEach { (name, obj) ->
+                        val body = obj.physicsBody
+                        if (body == null) { errors += "Блок $num «Импульс»: у «$name» нет физики"; return@forEach }
+                        objects[name] = obj.copy(physicsBody = body.copy(
+                            velocityX = body.velocityX + dvx,
+                            velocityY = body.velocityY + dvy
+                        ))
+                    }
+                    log += "  «$nameOrTag» импульс (+$dvx, +$dvy)"
+                }
+                "physics_move" -> {
+                    val nameOrTag = getStr("name")
+                    val targets = getObjectsByNameOrTag(nameOrTag)
+                    if (targets.isEmpty()) { errors += "Блок $num «Физическое движение»: «$nameOrTag» не найден"; continue }
+                    val speed = getF("speed", 0f)
+                    val turn = getF("turn", 0f)
+                    val friction = getF("friction", 0.9f).coerceIn(0f, 1f)
+                    targets.forEach { (name, obj) ->
+                        val body = obj.physicsBody
+                        if (body == null) { errors += "Блок $num «Физическое движение»: у «$name» нет физики"; return@forEach }
+                        // Поворачиваем объект
+                        val newRot = (obj.rotation + turn) % 360f
+                        // Вычисляем вектор направления по новому углу
+                        val rad = Math.toRadians(newRot.toDouble())
+                        val dirX = kotlin.math.sin(rad).toFloat()
+                        val dirY = kotlin.math.cos(rad).toFloat()
+                        // Применяем скорость вперёд + трение
+                        val newVx = (body.velocityX + dirX * speed) * friction
+                        val newVy = (body.velocityY + dirY * speed) * friction
+                        objects[name] = obj.copy(
+                            rotation = newRot,
+                            physicsBody = body.copy(velocityX = newVx, velocityY = newVy)
+                        )
+                    }
+                    log += "  «$nameOrTag» физ.движение speed=$speed turn=$turn"
                 }
                 "sim_hitbox" -> {
                     val nameOrTag = getStr("name")

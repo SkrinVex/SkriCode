@@ -137,6 +137,17 @@ object BlockFactory {
             "vx"         to p("0", "Скорость X", "Начальная скорость по X", ParamType.NUMBER),
             "vy"         to p("0", "Скорость Y", "Начальная скорость по Y", ParamType.NUMBER)))
 
+        "physics_impulse" -> build("physics_impulse", "Импульс (прыжок)", "Мгновенно добавляет скорость физическому телу", BlockCategory.PHYSICS, listOf(
+            "name" to p("rect1", "Имя объекта", "Какому объекту"),
+            "vx"   to p("0", "Импульс X", "Добавить к скорости по X", ParamType.NUMBER),
+            "vy"   to p("500", "Импульс Y", "Добавить к скорости по Y (+ = вверх)", ParamType.NUMBER)))
+
+        "physics_move" -> build("physics_move", "Физическое движение", "Двигает объект через физику (скорость/поворот)", BlockCategory.PHYSICS, listOf(
+            "name"     to p("rect1", "Имя объекта", "Какому объекту"),
+            "speed"    to p("0", "Скорость вперёд", "По направлению объекта (+ = вперёд)", ParamType.NUMBER),
+            "turn"     to p("0", "Поворот °/тик", "Угловая скорость (+ = по часовой)", ParamType.NUMBER),
+            "friction" to p("0.9", "Трение", "0..1 (1 = нет трения, 0.9 = умеренное)", ParamType.NUMBER)))
+
         "sim_hitbox" -> build("sim_hitbox", "Хитбокс", "Настраивает хитбокс объекта", BlockCategory.PHYSICS, listOf(
             "name"   to p("rect1", "Имя объекта", "Какому объекту"),
             "type"   to p("auto", "Тип", "auto / manual"),
