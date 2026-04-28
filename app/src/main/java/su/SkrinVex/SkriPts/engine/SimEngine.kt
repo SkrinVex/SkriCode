@@ -774,9 +774,15 @@ object SimEngine {
                     if (allowDelay) {
                         repeat(count) {
                             delay((seconds * 1000).toLong())
-                            // Синхронизируем позиции из живого состояния после паузы
-                            getLatestState?.invoke()?.objects?.forEach { (name, liveObj) ->
-                                objects[name]?.let { objects[name] = it.copy(x = liveObj.x, y = liveObj.y, rotation = liveObj.rotation, physicsBody = liveObj.physicsBody) }
+                            // После паузы полностью синхронизируем объекты из живого состояния.
+                            // Это гарантирует что таймер не восстанавливает объекты удалённые другими скриптами.
+                            getLatestState?.invoke()?.let { live ->
+                                objects.clear(); objects.putAll(live.objects)
+                                joysticks.clear(); joysticks.putAll(live.joysticks)
+                                // Сбрасываем deletedObjects — они уже применены в живом состоянии
+                                deletedObjects.clear(); deletedJoysticks.clear()
+                                ExprEval.objects = objects
+                                ExprEval.joysticks = joysticks
                             }
                             if (bodyBlocks.isNotEmpty()) {
                                 if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
