@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -22,6 +23,7 @@ class RuntimeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         SimEngine.appContext = applicationContext
         ExprEval.appContext = applicationContext
@@ -82,15 +84,19 @@ class RuntimeActivity : ComponentActivity() {
     }
 
     private fun extractSprites(project: ScriptProject, key: ByteArray) {
-        val spritesDir = File(filesDir, "sprites/${project.id}").also { it.mkdirs() }
-        val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+        // Путь должен совпадать с SpriteRepository: filesDir/projects/{id}/sprites/
+        val spritesDir = File(filesDir, "projects/${project.id}/sprites").also { it.mkdirs() }
+        val cipher = if (key.isNotEmpty()) {
+            Cipher.getInstance("AES/ECB/PKCS5Padding").also {
+                it.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+            }
+        } else null
         project.sprites.orEmpty().forEach { sprite ->
             val dest = File(spritesDir, sprite.fileName)
             if (!dest.exists()) {
                 try {
-                    val encrypted = assets.open("sprites/${sprite.fileName}").readBytes()
-                    dest.writeBytes(cipher.doFinal(encrypted))
+                    val raw = assets.open("sprites/${sprite.fileName}").readBytes()
+                    dest.writeBytes(if (cipher != null) cipher.doFinal(raw) else raw)
                 } catch (_: Exception) {}
             }
         }

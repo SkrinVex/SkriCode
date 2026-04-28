@@ -56,7 +56,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                     Icon(Icons.Default.Code, null, tint = Accent, modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("SkriPts", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrim)
+                        Text("SkriCode", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrim)
                         Text("Визуальный конструктор программ", fontSize = 12.sp, color = TextSec)
                     }
                     val ctx = LocalContext.current
@@ -347,7 +347,7 @@ private fun HelpDialog(onDismiss: () -> Unit) {
     data class HelpEntry(val icon: ImageVector, val title: String, val items: List<String>)
     val allSections = listOf(
         HelpEntry(Icons.Default.Info, "Основы", listOf(
-            "SkriPts — визуальный конструктор для создания интерактивных сцен",
+            "SkriCode — визуальный конструктор для создания интерактивных сцен",
             "Создавайте скрипты из блоков, запускайте симуляцию и взаимодействуйте с объектами",
             "Используйте переменные для хранения данных и выражения для вычислений",
             "Зажмите карточку проекта чтобы переименовать или удалить его"
@@ -607,7 +607,7 @@ private fun HelpDialog(onDismiss: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.MenuBook, null, tint = Accent, modifier = Modifier.size(32.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("Справка по SkriPts", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                    Text("Справка по SkriCode", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 24.sp)
                 }
                 OutlinedTextField(
                     value = query,

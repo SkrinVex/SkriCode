@@ -501,11 +501,11 @@ object ApkBuilder {
 
 
     /**
-     * Патчит resources.arsc — заменяет строку "SkriPts App" на имя проекта.
+     * Патчит resources.arsc — заменяет строку "SkriCode App" на имя проекта.
      * resources.arsc тоже содержит string pool с той же структурой что AXML.
      */
     private fun patchArscAppName(arsc: ByteArray, newName: String): ByteArray {
-        return patchArscString(arsc, "SkriPts App", newName)
+        return patchArscString(arsc, "SkriCode App", newName)
     }
 
     private fun patchArscString(data: ByteArray, oldStr: String, newStr: String): ByteArray {

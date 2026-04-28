@@ -2640,7 +2640,7 @@ private fun ApkBuildSettingsDialog(
                     ) {
                         Icon(Icons.Default.Image, null, tint = if (iconFileName.isBlank()) TextSec else Accent, modifier = Modifier.size(20.dp))
                         Text(
-                            if (iconFileName.isBlank()) "По умолчанию (иконка SkriPts)" else iconFileName,
+                            if (iconFileName.isBlank()) "По умолчанию (иконка SkriCode)" else iconFileName,
                             color = if (iconFileName.isBlank()) TextSec else TextPrim,
                             fontSize = 13.sp,
                             modifier = Modifier.weight(1f)
@@ -2650,7 +2650,7 @@ private fun ApkBuildSettingsDialog(
                 }
                 // Подсказка про подпись
                 Text(
-                    "⚠ Тестовая подпись — APK нельзя опубликовать в Google Play или RuStore. Для публикации нужна собственная подпись.",
+                    "⚠ Тестовая подпись — для публикации нужна собственная подпись.",
                     color = Warning, fontSize = 11.sp
                 )
             }

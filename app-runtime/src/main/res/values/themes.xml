@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SkriPts App</string>
+    <string name="app_name">SkriCode App</string>
     <style name="Theme.SkriPtsRuntime" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowFullscreen">true</item>
     </style>

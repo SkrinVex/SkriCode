@@ -104,7 +104,7 @@ object ProjectIO {
             root.has("project") && root.has("formatVersion") -> {
                 val ver = root.get("formatVersion").asInt
                 if (ver > FORMAT_VERSION)
-                    throw ImportException("Файл создан в более новой версии приложения (формат v$ver). Обновите SkriPts.")
+                    throw ImportException("Файл создан в более новой версии приложения (формат v$ver). Обновите SkriCode.")
                 root.getAsJsonObject("project")
             }
             root.has("id") && root.has("name") -> root

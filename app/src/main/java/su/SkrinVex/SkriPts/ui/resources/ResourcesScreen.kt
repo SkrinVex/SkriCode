@@ -488,7 +488,7 @@ private fun ApkExportDialog(
                         Text("Проект: $projectName", color = su.SkrinVex.SkriPts.ui.theme.TextPrim)
                         Text("Пакет: $packageName", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 13.sp)
                         Text("Подпись: тестовая (debug)", color = su.SkrinVex.SkriPts.ui.theme.TextSec, fontSize = 12.sp)
-                        Text("⚠ Тестовая подпись — для публикации в Google Play или RuStore нужна собственная подпись.", color = su.SkrinVex.SkriPts.ui.theme.Warning, fontSize = 11.sp)
+                        Text("⚠ Тестовая подпись — для публикации нужна собственная подпись.", color = su.SkrinVex.SkriPts.ui.theme.Warning, fontSize = 11.sp)
                     }
                 }
             }

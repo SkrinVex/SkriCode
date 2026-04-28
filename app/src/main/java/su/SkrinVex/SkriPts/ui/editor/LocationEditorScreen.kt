@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -73,13 +72,11 @@ fun LocationEditorScreen(
     val view = LocalView.current
     DisposableEffect(Unit) {
         val window = (view.context as android.app.Activity).window
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         val ctrl = WindowInsetsControllerCompat(window, view)
         ctrl.hide(WindowInsetsCompat.Type.systemBars())
         ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
             ctrl.show(WindowInsetsCompat.Type.systemBars())
-            WindowCompat.setDecorFitsSystemWindows(window, true)
         }
     }
 
