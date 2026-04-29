@@ -19,7 +19,6 @@ import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -154,7 +153,7 @@ object ApkBuilder {
 
             // 1. Шифруем проект
             onStep(StepEncrypt)
-            val aesKey = generateAesKey()
+            val aesKey = deriveProjectKey(project.id)
             val projectJson = Gson().toJson(project)
             val encryptedProject = aesEncrypt(projectJson.toByteArray(Charsets.UTF_8), aesKey)
 
@@ -176,6 +175,8 @@ object ApkBuilder {
                     if (entry.name == "resources.arsc") return@forEach
                     if (entry.name == "assets/project.dat") return@forEach
                     if (entry.name == "assets/key.dat") return@forEach
+                    if (entry.name == "assets/savekey.dat") return@forEach
+                    if (entry.name == "assets/project_id.txt") return@forEach
                     if (entry.name.startsWith("assets/sprites/")) return@forEach
 
                     val bytes = zip.getInputStream(entry).readBytes()
@@ -206,11 +207,12 @@ object ApkBuilder {
                 zipOut.writeEntry("resources.arsc", patchArscAppName(arscBytes, appName), stored = true, alignTo = 4)
             }
 
-            // 4. Добавляем зашифрованный проект
+            // 4. Добавляем зашифрованный проект (key.dat больше не нужен — ключ деривируется из project.id)
             zipOut.writeEntry("assets/project.dat", encryptedProject, stored = false)
-            zipOut.writeEntry("assets/key.dat", aesKey, stored = false)
+            // project_id.txt нужен runtime чтобы деривировать ключ (не секрет — project.id не является ключом)
+            zipOut.writeEntry("assets/project_id.txt", project.id.toByteArray(Charsets.UTF_8), stored = false)
             if (saveKey != null) {
-                zipOut.writeEntry("assets/savekey.dat", saveKey.toByteArray(Charsets.UTF_8), stored = false)
+                zipOut.writeEntry("assets/savekey.dat", aesEncrypt(saveKey.toByteArray(Charsets.UTF_8), aesKey), stored = false)
             }
 
             // 5. Добавляем зашифрованные спрайты
@@ -246,10 +248,12 @@ object ApkBuilder {
 
     // ── Шифрование ──────────────────────────────────────────────────────────
 
-    private fun generateAesKey(): ByteArray {
-        val kg = KeyGenerator.getInstance("AES")
-        kg.init(128)
-        return kg.generateKey().encoded
+    // Соль захардкожена в коде — ключ не хранится в APK
+    private const val KEY_SALT = "SkriPts_Project_Key_v1_\$2f8xQz"
+
+    private fun deriveProjectKey(projectId: String): ByteArray {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest("$KEY_SALT:$projectId".toByteArray(Charsets.UTF_8))
     }
 
     private fun aesEncrypt(data: ByteArray, key: ByteArray): ByteArray {
@@ -261,7 +265,7 @@ object ApkBuilder {
     private fun loadSaveKey(ctx: Context, project: ScriptProject): String? {
         return try {
             val prefs = ctx.getSharedPreferences("skripts_keyvault", Context.MODE_PRIVATE)
-            prefs.getString("key_${project.id}", null)
+            prefs.getString(project.name, null)
         } catch (_: Exception) { null }
     }
 

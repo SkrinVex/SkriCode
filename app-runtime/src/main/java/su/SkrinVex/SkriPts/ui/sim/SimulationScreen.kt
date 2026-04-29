@@ -1,5 +1,8 @@
 package su.SkrinVex.SkriPts.ui.sim
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Rect as AndroidRect
 import androidx.activity.compose.BackHandler
@@ -231,8 +234,8 @@ fun SimulationScreen(
             state.joysticks.values.forEach { if (it.visible) drawJoystick(it, cx, cy) }
         }
 
-        // Кнопка закрыть — только в debug или при ошибках
-        if (debugMode || state.errors.isNotEmpty()) {
+        // Кнопка закрыть — только в debug
+        if (debugMode) {
             IconButton(
                 onClick = onBack,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
@@ -326,6 +329,7 @@ private fun PanelBtn(label: String, active: Boolean, color: Color, onClick: () -
 
 @Composable
 private fun LogPanel(state: SimState, onClearLogs: () -> Unit) {
+    val ctx = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -337,12 +341,25 @@ private fun LogPanel(state: SimState, onClearLogs: () -> Unit) {
             fontWeight = FontWeight.SemiBold, fontSize = 13.sp
         )
         if (state.log.isNotEmpty() || state.errors.isNotEmpty()) {
-            TextButton(
-                onClick = onClearLogs,
-                modifier = Modifier.height(28.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text("Очистить", color = TextSec, fontSize = 11.sp)
+            Row {
+                TextButton(
+                    onClick = {
+                        val text = (state.errors.map { "! $it" } + state.log).joinToString("\n")
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("log", text))
+                    },
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("Копировать", color = TextSec, fontSize = 11.sp)
+                }
+                TextButton(
+                    onClick = onClearLogs,
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("Очистить", color = TextSec, fontSize = 11.sp)
+                }
             }
         }
     }

@@ -191,5 +191,9 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun clearLogs() {
+        _simState.update { it?.copy(log = emptyList(), errors = emptyList()) }
+    }
+
     override fun onCleared() { _physicsJob?.cancel() }
 }

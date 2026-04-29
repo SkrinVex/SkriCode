@@ -43,6 +43,16 @@ class RuntimeActivity : ComponentActivity() {
 
         extractSprites(project, key)
         SimEngine.projectName = project.name
+
+        // Загружаем ключ шифрования сохранений если он был упакован в APK
+        try {
+            val encryptedSaveKey = assets.open("savekey.dat").readBytes()
+            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+            val saveKey = String(cipher.doFinal(encryptedSaveKey), Charsets.UTF_8)
+            if (saveKey.isNotBlank()) SaveCrypto.saveKey(applicationContext, project.name, saveKey)
+        } catch (_: Exception) {}
+
         vm.start(project)
 
         setContent {
@@ -57,6 +67,7 @@ class RuntimeActivity : ComponentActivity() {
                         onJoystickMove = { name, dx, dy, pid -> vm.handleJoystickMove(name, dx, dy, pid) },
                         onJoystickRelease = { vm.handleJoystickRelease(it) },
                         onBack = { finishAffinity() },
+                        onClearLogs = { vm.clearLogs() },
                         debugMode = false,
                         showHitboxes = false
                     )
@@ -67,8 +78,22 @@ class RuntimeActivity : ComponentActivity() {
 
     private fun loadProject(): Pair<ScriptProject, ByteArray>? {
         return try {
-            val key = assets.open("key.dat").readBytes()
+            // Сначала читаем зашифрованный проект чтобы получить project.id
             val encrypted = assets.open("project.dat").readBytes()
+            // Пробуем расшифровать — для этого нужен project.id, но он внутри зашифрованного JSON
+            // Решение: храним project.id в отдельном файле или деривируем из packageName
+            // Но packageName может быть любым — нужен project.id
+            // Временное решение: храним project.id в незашифрованном виде в assets/project_id.txt
+            val projectId = try {
+                assets.open("project_id.txt").bufferedReader().readText().trim()
+            } catch (_: Exception) {
+                // Fallback: пробуем расшифровать без ключа (незашифрованный проект)
+                val json = String(encrypted, Charsets.UTF_8)
+                val project = Gson().fromJson(json, ScriptProject::class.java)
+                return project to ByteArray(0)
+            }
+            
+            val key = deriveProjectKey(projectId)
             val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
             val json = String(cipher.doFinal(encrypted), Charsets.UTF_8)
@@ -80,6 +105,15 @@ class RuntimeActivity : ComponentActivity() {
                 val project = Gson().fromJson(json, ScriptProject::class.java)
                 project to ByteArray(0)
             } catch (_: Exception) { null }
+        }
+    }
+
+    private companion object {
+        private const val KEY_SALT = "SkriPts_Project_Key_v1_\$2f8xQz"
+        
+        private fun deriveProjectKey(projectId: String): ByteArray {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            return digest.digest("$KEY_SALT:$projectId".toByteArray(Charsets.UTF_8))
         }
     }
 
