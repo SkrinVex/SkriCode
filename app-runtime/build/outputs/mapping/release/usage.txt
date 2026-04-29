@@ -25602,6 +25602,7 @@ androidx.compose.ui.input.pointer.SuspendingPointerInputFilterKt:
     private static final java.lang.String PointerInputModifierNoParamError
     private static synthetic void getPointerInputModifierNoParamError$annotations()
     public static final androidx.compose.ui.Modifier pointerInput(androidx.compose.ui.Modifier,kotlin.jvm.functions.Function2)
+    public static final androidx.compose.ui.Modifier pointerInput(androidx.compose.ui.Modifier,java.lang.Object[],kotlin.jvm.functions.Function2)
 androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode:
     public abstract kotlin.jvm.functions.Function2 getPointerInputHandler()
     public abstract void setPointerInputHandler(kotlin.jvm.functions.Function2)
@@ -40963,8 +40964,8 @@ su.SkrinVex.SkriPts.runtime.R$mipmap
 su.SkrinVex.SkriPts.runtime.R$string
 su.SkrinVex.SkriPts.runtime.R$style
 su.SkrinVex.SkriPts.runtime.R
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$2
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$6
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$2
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$6
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt:
     static synthetic void drawSimObject$default(androidx.compose.ui.graphics.drawscope.DrawScope,su.SkrinVex.SkriPts.engine.SimObject,float,float,boolean,boolean,int,java.lang.Object)
 su.SkrinVex.SkriPts.ui.theme.AppTheme:
@@ -46753,7 +46754,7 @@ androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNodeImpl:
     public final androidx.compose.runtime.collection.MutableVector pointerHandlers
     public kotlinx.coroutines.StandaloneCoroutine pointerInputJob
     static void <clinit>()
-    public void <init>(java.lang.Object,java.lang.Object,java.lang.Object[],kotlin.jvm.functions.Function2)
+    public void <init>(java.lang.Object,java.lang.Object,kotlin.jvm.functions.Function2)
     public final java.lang.Object awaitPointerEventScope(kotlin.jvm.functions.Function2,kotlin.coroutines.jvm.internal.SuspendLambda)
     public final void dispatchPointerEvent(androidx.compose.ui.input.pointer.PointerEvent,androidx.compose.ui.input.pointer.PointerEventPass)
     public final float getDensity()
@@ -47080,8 +47081,11 @@ androidx.compose.ui.node.ComposeUiNode$Companion:
     public static final kotlin.jvm.functions.Function2 SetLayoutDirection
     public static final kotlin.jvm.functions.Function2 SetViewConfiguration
     public static final kotlin.jvm.functions.Function0 VirtualConstructor
+    public static androidx.compose.ui.node.LayoutNode$Companion$Constructor$1 getConstructor()
     public static androidx.compose.ui.node.ComposeUiNode$Companion$SetCompositeKeyHash$1 getSetCompositeKeyHash()
+    public static androidx.compose.ui.node.ComposeUiNode$Companion$SetMeasurePolicy$1 getSetMeasurePolicy()
     public static androidx.compose.ui.node.ComposeUiNode$Companion$SetModifier$1 getSetModifier()
+    public static androidx.compose.ui.node.ComposeUiNode$Companion$SetResolvedCompositionLocals$1 getSetResolvedCompositionLocals()
 androidx.compose.ui.node.ComposeUiNode:
     public abstract void setCompositeKeyHash()
     public abstract void setCompositionLocalMap()
@@ -52892,27 +52896,27 @@ su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$4$25f7ed3
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$4$25f7ed383be5db9bc998e0e1567926433851f9776052665caa8a21df2147f6d0$7
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$4$25f7ed383be5db9bc998e0e1567926433851f9776052665caa8a21df2147f6d0$8
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$4$25f7ed383be5db9bc998e0e1567926433851f9776052665caa8a21df2147f6d0$9
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$1e8f2ff64830a85336a89b9676483efbda8bbe9590e8f37c1483a0299ed7a70f$0
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$1e8f2ff64830a85336a89b9676483efbda8bbe9590e8f37c1483a0299ed7a70f$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$1e8f2ff64830a85336a89b9676483efbda8bbe9590e8f37c1483a0299ed7a70f$2
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$1e8f2ff64830a85336a89b9676483efbda8bbe9590e8f37c1483a0299ed7a70f$3
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$5f925a009b5ca7469a6889cb9458cedcbe6d00ed424359a66c0437f8d10e5f88$0
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$8c1e78751b56748378d2f152ec655c81819e0f3e58d1450501059620836b9c8b$0
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$8c1e78751b56748378d2f152ec655c81819e0f3e58d1450501059620836b9c8b$1
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$8c1e78751b56748378d2f152ec655c81819e0f3e58d1450501059620836b9c8b$2
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$5$8c1e78751b56748378d2f152ec655c81819e0f3e58d1450501059620836b9c8b$3
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$6$200546bd1a7ad493e10896dc25177143664e65ced64c1a2d8882d0e15d92fb0f$0
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$6$200546bd1a7ad493e10896dc25177143664e65ced64c1a2d8882d0e15d92fb0f$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$6$82edde5a24d91a364a76f507c13d2be8c19d17d0c00caa24e4973e62abdf0032$0
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$6$82edde5a24d91a364a76f507c13d2be8c19d17d0c00caa24e4973e62abdf0032$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$7$ff621e19ccfeaa24e287be53dbc629ce3e09d6b7b1095ea50f7daa2932220437$0
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$3
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$4
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$5
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$7
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$67$lambda$66$$inlined$items$default$8
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$$InternalSyntheticLambda$7$de551debbff5a828ddd6f32836279a4aeafa207d6b9724b472cb2cf254767099$0
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$1
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$3
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$4
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$5
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$7
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$LogPanel$lambda$69$lambda$68$$inlined$items$default$8
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$1$1$2$1$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$75$lambda$74$$inlined$items$default$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$75$lambda$74$$inlined$items$default$2
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$75$lambda$74$$inlined$items$default$3
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$75$lambda$74$$inlined$items$default$4
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$77$lambda$76$$inlined$items$default$1
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$77$lambda$76$$inlined$items$default$2
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$77$lambda$76$$inlined$items$default$3
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$ObjectsPanel$lambda$77$lambda$76$$inlined$items$default$4
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$10$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$11$1$1$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$11$1$1
@@ -52921,7 +52925,7 @@ su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$7$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$9$1$$InternalSyntheticThrowCCEIfNotNull$60$6cfc9e04e0cad3f1d2645d546b7cf6bbfc7fddf5c16dc1a4faa457c2d8bb69f0$0
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$9$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$lambda$17$lambda$16$$inlined$onDispose$1
-su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$lambda$59$lambda$41$lambda$40$$inlined$sortedBy$1
+su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt$SimulationScreen$lambda$61$lambda$43$lambda$42$$inlined$sortedBy$1
 su.SkrinVex.SkriPts.ui.sim.SimulationScreenKt
 su.SkrinVex.SkriPts.ui.theme.AppTheme
 su.SkrinVex.SkriPts.ui.theme.ThemeKt$$InternalSyntheticLambda$3$97303e79888fceb1985e510c637a51f5105023e28f5093299a61406166b8fa9b$0

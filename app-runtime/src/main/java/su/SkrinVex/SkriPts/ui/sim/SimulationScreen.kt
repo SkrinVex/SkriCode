@@ -115,27 +115,27 @@ fun SimulationScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val currentState by rememberUpdatedState(state)
+        val currentCanvasSize by rememberUpdatedState(canvasSize)
         Canvas(
             Modifier
                 .fillMaxSize()
-                .pointerInput(state.objects, state.joysticks, state.isStopped) {
+                .pointerInput(state.isStopped) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent()
-                            if (state.isStopped) continue  // симуляция остановлена — игнорируем все касания
-                            val cx = canvasSize.first / 2f
-                            val cy = canvasSize.second / 2f
+                            if (currentState.isStopped) continue
+                            val cx = currentCanvasSize.first / 2f
+                            val cy = currentCanvasSize.second / 2f
                             when (event.type) {
                                 PointerEventType.Press, PointerEventType.Move -> {
                                     event.changes.forEach { change ->
                                         if (!change.pressed) return@forEach
                                         val offset = change.position
                                         val pid = change.id.value.toLong()
-                                        // Джойстик уже захвачен этим пальцем — продолжаем независимо от позиции
-                                        val capturedJoy = state.joysticks.values.firstOrNull { j -> j.pointerId == pid && j.visible }
-                                        // Или новое нажатие в пределах базы
+                                        val capturedJoy = currentState.joysticks.values.firstOrNull { j -> j.pointerId == pid && j.visible }
                                         val joy = capturedJoy ?: if (event.type == PointerEventType.Press)
-                                            state.joysticks.values.firstOrNull { j ->
+                                            currentState.joysticks.values.firstOrNull { j ->
                                                 j.visible && hypot(offset.x - (cx + j.x), offset.y - (cy - j.y)) <= j.baseRadius
                                             } else null
                                         if (joy != null) {
@@ -146,11 +146,11 @@ fun SimulationScreen(
                                             val angle = atan2(rawDy, rawDx)
                                             onJoystickMove(joy.name, cos(angle) * len, -sin(angle) * len, pid)
                                         } else if (event.type == PointerEventType.Press) {
-                                            val cam = state.camera
+                                            val cam = currentState.camera
                                             val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
                                             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
                                             val uiTags = cam?.uiTags ?: emptySet()
-                                            val hit = state.objects.values.filter { it.visible }.lastOrNull { obj ->
+                                            val hit = currentState.objects.values.filter { it.visible }.lastOrNull { obj ->
                                                 val isUi = obj.tags.any { it in uiTags }
                                                 val ox = if (isUi) cx else cx + camOx
                                                 val oy = if (isUi) cy else cy + camOy

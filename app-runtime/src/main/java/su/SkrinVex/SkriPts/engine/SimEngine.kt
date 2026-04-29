@@ -453,7 +453,10 @@ object SimEngine {
                     width = scriptObj.width,
                     height = scriptObj.height,
                     radius = scriptObj.radius,
-                    rotation = scriptObj.rotation
+                    rotation = scriptObj.rotation,
+                    x = scriptObj.x,
+                    y = scriptObj.y,
+                    physicsBody = scriptObj.physicsBody
                 )
             } else if (name !in currentState.objects) {
                 // Объект создан скриптом (не существовал в начале) — добавляем
@@ -473,6 +476,8 @@ object SimEngine {
                 mergedJoysticks[name] = scriptJoy
             }
         }
+
+        bindEventScripts(scripts, mergedObjects, errors, warnMissing = false)
 
         return baseState.copy(
             objects = mergedObjects,
