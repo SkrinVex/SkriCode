@@ -449,7 +449,11 @@ object SimEngine {
                     spriteName = scriptObj.spriteName,
                     spriteAlpha = scriptObj.spriteAlpha,
                     zOrder = scriptObj.zOrder,
-                    collisionIgnore = scriptObj.collisionIgnore
+                    collisionIgnore = scriptObj.collisionIgnore,
+                    width = scriptObj.width,
+                    height = scriptObj.height,
+                    radius = scriptObj.radius,
+                    rotation = scriptObj.rotation
                 )
             } else if (name !in currentState.objects) {
                 // Объект создан скриптом (не существовал в начале) — добавляем

@@ -16,3 +16,6 @@ local.properties
 .idea/
 .kiro/
 .kotlin/
+app-runtime/build/
+app-runtime/build/outputs/
+app-runtime/build/kotlin/
