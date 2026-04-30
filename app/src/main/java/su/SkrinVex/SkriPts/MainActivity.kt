@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity() {
             
             SkriPtsTheme {
                 val editorState by editorVm.state.collectAsState()
+                val simState by editorVm.simState.collectAsState()
+                val simRunCount by editorVm.simRunCount.collectAsState()
                 var screen by remember { mutableStateOf("home") }
                 var landscapeActive by remember { mutableStateOf(false) }
 
@@ -70,17 +72,16 @@ class MainActivity : ComponentActivity() {
                     if (requestedOrientation != target) requestedOrientation = target
                 }
 
-                LaunchedEffect(editorState.simRunCount) {
-                    if (editorState.simRunCount > 0 && editorState.validationErrors.isEmpty()
-                        && editorState.simState != null) {
+                LaunchedEffect(simRunCount) {
+                    if (simRunCount > 0 && editorState.validationErrors.isEmpty() && simState != null) {
                         screen = "sim"
                     }
                 }
 
                 when (screen) {
                     "sim" -> SimulationScreen(
-                        state = editorState.simState!!,
-                        simRunCount = editorState.simRunCount,
+                        state = simState!!,
+                        simRunCount = simRunCount,
                         onTap = { objName -> editorVm.handleTap(objName) },
                         onHoldStart = { objName, pid -> editorVm.handleHoldStart(objName, pid) },
                         onHoldEnd = { pid -> editorVm.handleHoldEnd(pid) },

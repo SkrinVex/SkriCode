@@ -38,12 +38,7 @@ data class EditorState(
     val versionName: String = "1.0",
     val versionCode: Int = 1,
     val iconFileName: String = "",
-    val simState: SimState? = null,
-    val simRunCount: Int = 0,
-    /** Скрипты сцены которая сейчас симулируется (может отличаться от scripts при переходе между сценами) */
-    val simScripts: List<Script> = emptyList(),
     val validationErrors: List<String> = emptyList(),
-    // Буфер обмена — null = пусто, true = скрипт, false = блок
     val clipboardIsScript: Boolean? = null
 ) {
     val activeScene: su.SkrinVex.SkriPts.data.Scene get() = scenes.find { it.id == activeSceneId } ?: scenes.first()
@@ -61,6 +56,13 @@ data class EditorState(
 class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(EditorState())
     val state = _state.asStateFlow()
+
+    // Симуляция — отдельные flows, не триггерят рекомпозицию редактора
+    private val _simState = MutableStateFlow<SimState?>(null)
+    val simState = _simState.asStateFlow()
+    private val _simRunCount = MutableStateFlow(0)
+    val simRunCount = _simRunCount.asStateFlow()
+    private var _simScripts = listOf<Script>()
 
     private var projectId = UUID.randomUUID().toString()
     private var isSimulationRunning = false
@@ -397,21 +399,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         SimEngine.projectName = state.projectName
         val initial = SimState()
         isSimulationRunning = true
-        _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList(), simScripts = state.scripts) }
+        _simState.value = initial
+        _simRunCount.value++
+        _simScripts = state.scripts
+        _state.update { it.copy(validationErrors = emptyList()) }
         viewModelScope.launch {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks,
                 sprites = state.sprites, projectId = projectId) { liveState ->
-                _state.update { it.copy(simState = liveState) }
+                _simState.value = liveState
             }
-            // Обрабатываем переход на сцену
             val switchTarget = result.pendingSceneSwitch
             if (switchTarget != null) {
                 switchScene(switchTarget, result.globalVars)
             } else {
-                _state.update { it.copy(simState = result) }
+                _simState.value = result
             }
         }
-        // Запускаем физический тик ~60fps
         startPhysicsLoop()
     }
 
@@ -423,108 +426,98 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val runningHoldScripts = mutableSetOf<String>()
             while (true) {
                 delay(16)
-                if (_state.value.simState?.isStopped == true) continue
-                _state.update { s ->
-                    var sim = s.simState ?: return@update s
-                    for ((_, joy) in sim.joysticks) {
-                        if (joy.pointerId == null) continue
-                        val len = hypot(joy.knobDx, joy.knobDy)
-                        if (len <= 0.05f) continue
-                        val target = sim.objects[joy.targetObject] ?: continue
-                        val body = target.physicsBody
-                        if (body != null && body.isStatic) continue
-                        if (body != null && !sim.physicsEnabled) continue
-                        val newTarget = if (joy.directional) {
-                            val newRot = (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
-                            val rad = Math.toRadians(newRot.toDouble() - 90.0)
-                            target.copy(
-                                x = target.x + (cos(rad) * len * joy.speed).toFloat(),
-                                y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
-                                rotation = newRot
-                            )
-                        } else if (body != null && body.enabled) {
-                            target.copy(physicsBody = body.copy(
-                                velocityX = joy.knobDx * joy.speed,
-                                velocityY = joy.knobDy * joy.speed
-                            ))
-                        } else {
-                            target.copy(
-                                x = target.x + joy.knobDx * joy.speed,
-                                y = target.y + joy.knobDy * joy.speed
-                            )
-                        }
-                        sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
-                    }
-                    s.copy(simState = sim)
-                }
+                if (_simState.value?.isStopped == true) continue
 
-                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_state.value.simState ?: continue)
-                _state.update { it.copy(simState = SimEngine.tickCamera(newSim)) }
+                val curSim = _simState.value ?: continue
+                var sim = curSim
+                for ((_, joy) in sim.joysticks) {
+                    if (joy.pointerId == null) continue
+                    val len = hypot(joy.knobDx, joy.knobDy)
+                    if (len <= 0.05f) continue
+                    val target = sim.objects[joy.targetObject] ?: continue
+                    val body = target.physicsBody
+                    if (body != null && body.isStatic) continue
+                    if (body != null && !sim.physicsEnabled) continue
+                    val newTarget = if (joy.directional) {
+                        val newRot = (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
+                        val rad = Math.toRadians(newRot.toDouble() - 90.0)
+                        target.copy(
+                            x = target.x + (cos(rad) * len * joy.speed).toFloat(),
+                            y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
+                            rotation = newRot
+                        )
+                    } else if (body != null && body.enabled) {
+                        target.copy(physicsBody = body.copy(velocityX = joy.knobDx * joy.speed, velocityY = joy.knobDy * joy.speed))
+                    } else {
+                        target.copy(x = target.x + joy.knobDx * joy.speed, y = target.y + joy.knobDy * joy.speed)
+                    }
+                    sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
+                }
+                if (sim !== curSim) _simState.value = sim
+
+                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_simState.value ?: continue)
+                _simState.value = SimEngine.tickCamera(newSim)
 
                 for ((_, pair) in _activeHolds.toMap()) {
                     val (scriptId, _) = pair
                     if (scriptId in runningHoldScripts) continue
                     runningHoldScripts += scriptId
                     launch {
-                        val currentSim = _state.value.simState ?: run { runningHoldScripts -= scriptId; return@launch }
-                        val newHoldSim = SimEngine.runHold(scriptId, _state.value.simScripts, currentSim)
+                        val currentSim = _simState.value ?: run { runningHoldScripts -= scriptId; return@launch }
+                        val newHoldSim = SimEngine.runHold(scriptId, _simScripts, currentSim)
                         runningHoldScripts -= scriptId
                         if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
-                        _state.update { it.copy(simState = newHoldSim) }
+                        _simState.value = newHoldSim
                     }
                 }
 
                 for ((nameA, nameB) in newCols) {
-                    val sim = _state.value.simState ?: break
-                    val scripts = _state.value.simScripts
-                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Коллизия: «$nameA» ↔ «$nameB»") }) }
-                    sim.objects[nameA]?.collisionScriptId?.let { sid ->
+                    val sim2 = _simState.value ?: break
+                    sim2.objects[nameA]?.collisionScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _state.value.simState ?: sim })
+                                val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
-                                _state.update { it.copy(simState = result) }
+                                _simState.value = result
                             }
                         }
                     }
-                    sim.objects[nameB]?.collisionScriptId?.let { sid ->
+                    sim2.objects[nameB]?.collisionScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _state.value.simState ?: sim })
+                                val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
-                                _state.update { it.copy(simState = result) }
+                                _simState.value = result
                             }
                         }
                     }
                 }
 
                 for ((nameA, nameB) in endedCols) {
-                    val sim = _state.value.simState ?: break
-                    val scripts = _state.value.simScripts
-                    _state.update { s -> s.copy(simState = s.simState?.let { it.copy(log = it.log + "Конец коллизии: «$nameA» ↔ «$nameB»") }) }
-                    sim.objects[nameA]?.collisionEndScriptId?.let { sid ->
+                    val sim2 = _simState.value ?: break
+                    sim2.objects[nameA]?.collisionEndScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _state.value.simState ?: sim })
+                                val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
-                                _state.update { it.copy(simState = result) }
+                                _simState.value = result
                             }
                         }
                     }
-                    sim.objects[nameB]?.collisionEndScriptId?.let { sid ->
+                    sim2.objects[nameB]?.collisionEndScriptId?.let { sid ->
                         if (sid !in runningCollisionScripts) {
                             runningCollisionScripts += sid
                             launch {
-                                val result = SimEngine.runCollision(sid, scripts, _state.value.simState ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _state.value.simState ?: sim })
+                                val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
                                 if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
-                                _state.update { it.copy(simState = result) }
+                                _simState.value = result
                             }
                         }
                     }
@@ -536,14 +529,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear(); isSimulationRunning = false }
 
     fun handleTap(objectName: String) {
-        val scriptId = _state.value.simState?.objects?.get(objectName)?.tapScriptId ?: return
+        val scriptId = _simState.value?.objects?.get(objectName)?.tapScriptId ?: return
         viewModelScope.launch {
-            val currentSim = _state.value.simState ?: return@launch
-            val newSim = SimEngine.runTap(scriptId, _state.value.simScripts, currentSim) { liveState ->
-                _state.update { it.copy(simState = liveState) }
+            val currentSim = _simState.value ?: return@launch
+            val newSim = SimEngine.runTap(scriptId, _simScripts, currentSim) { liveState ->
+                _simState.value = liveState
             }
             if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@launch }
-            _state.update { it.copy(simState = newSim) }
+            _simState.value = newSim
         }
     }
 
@@ -551,7 +544,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
     fun handleHoldStart(objectName: String, pointerId: Long) {
-        val scriptId = _state.value.simState?.objects?.get(objectName)?.holdScriptId ?: return
+        val scriptId = _simState.value?.objects?.get(objectName)?.holdScriptId ?: return
         _activeHolds[pointerId] = scriptId to objectName
     }
 
@@ -560,31 +553,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun handleJoystickMove(name: String, dx: Float, dy: Float, pointerId: Long) {
-        // Обновляем визуальное положение ручки — движение применяется в physics tick
-        _state.update { s ->
-            val sim = s.simState ?: return@update s
-            val joy = sim.joysticks[name] ?: return@update s
-            val newJoy = joy.copy(knobDx = dx, knobDy = dy, pointerId = pointerId)
-            s.copy(simState = sim.copy(joysticks = sim.joysticks + (name to newJoy)))
-        }
+        val sim = _simState.value ?: return
+        val joy = sim.joysticks[name] ?: return
+        _simState.value = sim.copy(joysticks = sim.joysticks + (name to joy.copy(knobDx = dx, knobDy = dy, pointerId = pointerId)))
     }
 
     fun handleJoystickRelease(pointerId: Long) {
-        // Сбрасываем ручку джойстика который держал этот палец
-        _state.update { s ->
-            val sim = s.simState ?: return@update s
-            val updated = sim.joysticks.mapValues { (_, joy) ->
-                if (joy.pointerId == pointerId) joy.copy(knobDx = 0f, knobDy = 0f, pointerId = null)
-                else joy
-            }
-            s.copy(simState = sim.copy(joysticks = updated))
+        val sim = _simState.value ?: return
+        val updated = sim.joysticks.mapValues { (_, joy) ->
+            if (joy.pointerId == pointerId) joy.copy(knobDx = 0f, knobDy = 0f, pointerId = null) else joy
         }
+        _simState.value = sim.copy(joysticks = updated)
     }
 
     fun clearSimLogs() {
-        _state.update { 
-            it.copy(simState = it.simState?.copy(log = emptyList(), errors = emptyList()))
-        }
+        _simState.update { it?.copy(log = emptyList(), errors = emptyList()) }
     }
 
     // --- Буфер обмена ---
@@ -692,30 +675,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val targetScene = s.scenes.find { it.name == sceneName }
         if (targetScene == null) {
-            _state.update { it.copy(simState = it.simState?.copy(
-                errors = (it.simState.errors) + "Сцена «$sceneName» не найдена",
-                pendingSceneSwitch = null
-            ))}
+            _simState.update { it?.copy(errors = (it.errors) + "Сцена «$sceneName» не найдена", pendingSceneSwitch = null) }
             return
         }
         stopPhysics()
         val updatedGlobalVarDefs = s.globalVars.map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
-        _state.update { it.copy(
-            simState = SimState(globalVars = globalVars),
-            simRunCount = it.simRunCount + 1,
-            globalVars = updatedGlobalVarDefs,
-            simScripts = targetScene.scripts
-        )}
+        _simState.value = SimState(globalVars = globalVars)
+        _simRunCount.value++
+        _simScripts = targetScene.scripts
+        _state.update { it.copy(globalVars = updatedGlobalVarDefs) }
         viewModelScope.launch {
             val result = SimEngine.run(
                 targetScene.scripts, updatedGlobalVarDefs, s.globalTables,
                 targetScene.locationBlocks, sprites = s.sprites, projectId = s.projectId
-            ) { liveState -> _state.update { it.copy(simState = liveState) } }
+            ) { liveState -> _simState.value = liveState }
             val nextSwitch = result.pendingSceneSwitch
             if (nextSwitch != null) switchScene(nextSwitch, result.globalVars)
-            else _state.update { it.copy(simState = result) }
+            else _simState.value = result
         }
         startPhysicsLoop()
     }
