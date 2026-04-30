@@ -61,10 +61,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     var showLocationEditor by remember { mutableStateOf(false) }
 
-    // Редактор локации — полноэкранный
+    // Редактор локации — полноэкранный (всегда портретная ориентация)
     if (showLocationEditor) {
         DisposableEffect(Unit) {
-            onLandscapeNeeded(needsLandscape)
+            onLandscapeNeeded(false)
             onDispose { onLandscapeNeeded(false) }
         }
         val uiBlocks = state.allScriptBlocks.filter { it.params.containsKey("x") && it.params.containsKey("y") }

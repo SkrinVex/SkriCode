@@ -199,8 +199,8 @@ fun LocationEditorScreen(
                             } while (true)
                         } else if (hit != null) {
                             if (multiSelectMode) {
-                                selectedIds = if (hit.id in selectedIds) selectedIds - hit.id else selectedIds + hit.id
-                                selectedId = null
+                                // Если объект уже выбран — перемещаем группу, иначе переключаем выделение
+                                val wasSelected = hit.id in selectedIds
                                 var moved = false; var pushedUndo = false; var lastPos = down.position
                                 do {
                                     val event = awaitPointerEvent()
@@ -213,7 +213,7 @@ fun LocationEditorScreen(
                                     if (!ch.pressed) break
                                     val delta = ch.position - lastPos
                                     if (delta.getDistance() > 8f) moved = true
-                                    if (moved) {
+                                    if (moved && wasSelected) {
                                         if (!pushedUndo) { pushUndo(); pushedUndo = true }
                                         lastPos = ch.position
                                         val dx = delta.x / zoom; val dy = -delta.y / zoom
@@ -226,6 +226,11 @@ fun LocationEditorScreen(
                                     }
                                     ch.consume()
                                 } while (true)
+                                // Переключаем выделение только если не было перемещения
+                                if (!moved) {
+                                    selectedIds = if (wasSelected) selectedIds - hit.id else selectedIds + hit.id
+                                }
+                                selectedId = null
                             } else {
                                 selectedId = hit.id
                                 var moved = false; var pushedUndo = false; var lastPos = down.position
@@ -296,7 +301,7 @@ fun LocationEditorScreen(
                     val screenX = cx + bx * zoom; val screenY = cy - by * zoom
                     val labelY = screenY - blockHalfH(b) * zoom - 6f
                     val labelSize = (13f * density).coerceIn(28f, 52f)
-                    val label = (if (b.id in lockedIds) "🔒 " else "") + (b.params["name"]?.value ?: "")
+                    val label = b.params["name"]?.value ?: ""
                     drawContext.canvas.nativeCanvas.drawText(
                         label,
                         screenX, labelY,
