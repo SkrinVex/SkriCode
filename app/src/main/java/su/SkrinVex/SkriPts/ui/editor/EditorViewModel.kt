@@ -63,10 +63,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val state = _state.asStateFlow()
 
     private var projectId = UUID.randomUUID().toString()
+    private var isSimulationRunning = false
 
     init {
         viewModelScope.launch {
-            _state.drop(1).debounce(500).collect { saveInternal(it) }
+            _state.drop(1).debounce(500).filter { !isSimulationRunning }.collect { saveInternal(it) }
         }
         // Периодически сохраняем collapsed-состояние (не через _state чтобы не вызывать рекомпозицию)
         viewModelScope.launch {
@@ -395,6 +396,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
         SimEngine.projectName = state.projectName
         val initial = SimState()
+        isSimulationRunning = true
         _state.update { it.copy(simState = initial, simRunCount = it.simRunCount + 1, validationErrors = emptyList(), simScripts = state.scripts) }
         viewModelScope.launch {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks,
@@ -531,20 +533,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear() }
+    fun stopPhysics() { _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear(); isSimulationRunning = false }
 
     fun handleTap(objectName: String) {
-        val state = _state.value
-        val scriptId = state.simState?.objects?.get(objectName)?.tapScriptId ?: return
+        val scriptId = _state.value.simState?.objects?.get(objectName)?.tapScriptId ?: return
         viewModelScope.launch {
-            _tapMutex.withLock {
-                val currentSim = _state.value.simState ?: return@withLock
-                val newSim = SimEngine.runTap(scriptId, _state.value.simScripts, currentSim) { liveState ->
-                    _state.update { it.copy(simState = liveState) }
-                }
-                if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@withLock }
-                _state.update { it.copy(simState = newSim) }
+            val currentSim = _state.value.simState ?: return@launch
+            val newSim = SimEngine.runTap(scriptId, _state.value.simScripts, currentSim) { liveState ->
+                _state.update { it.copy(simState = liveState) }
             }
+            if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@launch }
+            _state.update { it.copy(simState = newSim) }
         }
     }
 

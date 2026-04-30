@@ -1,4 +1,0 @@
-su.SkrinVex.SkriPts.runtime
-mipmap ic_launcher
-string app_name
-style Theme_SkriPtsRuntime

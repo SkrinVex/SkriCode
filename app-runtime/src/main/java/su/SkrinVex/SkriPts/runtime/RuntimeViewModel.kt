@@ -7,8 +7,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import su.SkrinVex.SkriPts.data.*
 import su.SkrinVex.SkriPts.engine.*
 import kotlin.math.hypot
@@ -22,7 +20,6 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     private var _scenes = listOf<Scene>()
     private var _project: ScriptProject? = null
     private var _physicsJob: Job? = null
-    private val _tapMutex = Mutex()
     private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
     fun start(project: ScriptProject) {
@@ -161,11 +158,9 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     fun handleTap(name: String) {
         val scriptId = _simState.value?.objects?.get(name)?.tapScriptId ?: return
         viewModelScope.launch {
-            _tapMutex.withLock {
-                val cur = _simState.value ?: return@withLock
-                val res = SimEngine.runTap(scriptId, _scripts, cur) { live -> _simState.value = live }
-                handleSceneSwitch(res) ?: run { _simState.value = res }
-            }
+            val cur = _simState.value ?: return@launch
+            val res = SimEngine.runTap(scriptId, _scripts, cur) { live -> _simState.value = live }
+            handleSceneSwitch(res) ?: run { _simState.value = res }
         }
     }
 
