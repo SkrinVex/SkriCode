@@ -2737,55 +2737,70 @@ private fun LogSettingsDialog(vm: EditorViewModel, onDismiss: () -> Unit) {
         title = { Text("Настройки логов", color = TextPrim) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Выбранная папка
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                        .background(Surface3)
-                        .clickable { dirPicker.launch(
-                            if (state.logDir.isNotBlank())
-                                runCatching { android.net.Uri.parse(state.logDir) }.getOrNull()
-                            else null
-                        ) }
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(Icons.Default.FolderOpen, null,
-                        tint = if (state.logDir.isBlank()) TextSec else Accent,
-                        modifier = Modifier.size(20.dp))
-                    Text(
-                        if (state.logDir.isBlank()) "Выбрать папку для логов..."
-                        else androidx.documentfile.provider.DocumentFile
-                            .fromTreeUri(ctx, android.net.Uri.parse(state.logDir))
-                            ?.name ?: state.logDir,
-                        color = if (state.logDir.isBlank()) TextSec else TextPrim,
-                        fontSize = 13.sp, modifier = Modifier.weight(1f)
-                    )
-                    Icon(Icons.Default.ChevronRight, null, tint = TextSec, modifier = Modifier.size(16.dp))
-                }
-                if (state.logDir.isNotBlank()) {
-                    TextButton(
-                        onClick = { vm.setLogDir("") },
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text("Сбросить папку", color = Danger, fontSize = 12.sp) }
-                }
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
-                        .clickable { vm.setClearLogsOnStart(!state.clearLogsOnStart) }
+                        .clickable { vm.setEnableLogFile(!state.enableLogFile) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Очищать при каждом запуске", color = TextPrim, fontSize = 14.sp)
-                        Text("Новый файл при каждом запуске симуляции", color = TextSec, fontSize = 12.sp)
+                        Text("Записывать логи в файл", color = TextPrim, fontSize = 14.sp)
+                        Text("Сохранять логи симуляции на устройство", color = TextSec, fontSize = 12.sp)
                     }
                     Switch(
-                        checked = state.clearLogsOnStart,
-                        onCheckedChange = { vm.setClearLogsOnStart(it) },
+                        checked = state.enableLogFile,
+                        onCheckedChange = { vm.setEnableLogFile(it) },
                         colors = SwitchDefaults.colors(checkedThumbColor = Navy900, checkedTrackColor = Accent)
                     )
                 }
-                if (state.logDir.isNotBlank()) {
+                if (state.enableLogFile) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(Surface3)
+                            .clickable { dirPicker.launch(
+                                if (state.logDir.isNotBlank())
+                                    runCatching { android.net.Uri.parse(state.logDir) }.getOrNull()
+                                else null
+                            ) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, null,
+                            tint = if (state.logDir.isBlank()) TextSec else Accent,
+                            modifier = Modifier.size(20.dp))
+                        Text(
+                            if (state.logDir.isBlank()) "Выбрать папку для логов..."
+                            else androidx.documentfile.provider.DocumentFile
+                                .fromTreeUri(ctx, android.net.Uri.parse(state.logDir))
+                                ?.name ?: state.logDir,
+                            color = if (state.logDir.isBlank()) TextSec else TextPrim,
+                            fontSize = 13.sp, modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Default.ChevronRight, null, tint = TextSec, modifier = Modifier.size(16.dp))
+                    }
+                    if (state.logDir.isNotBlank()) {
+                        TextButton(
+                            onClick = { vm.setLogDir("") },
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Сбросить папку", color = Danger, fontSize = 12.sp) }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+                            .clickable { vm.setClearLogsOnStart(!state.clearLogsOnStart) }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Очищать при каждом запуске", color = TextPrim, fontSize = 14.sp)
+                            Text("Новый файл при каждом запуске симуляции", color = TextSec, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = state.clearLogsOnStart,
+                            onCheckedChange = { vm.setClearLogsOnStart(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Navy900, checkedTrackColor = Accent)
+                        )
+                    }
                     Text("Файл: <имя_проекта>_<дата-время>.skrilogs", color = TextSec, fontSize = 11.sp)
                 }
             }

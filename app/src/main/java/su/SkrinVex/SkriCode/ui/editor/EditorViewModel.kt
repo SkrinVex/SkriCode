@@ -38,6 +38,7 @@ data class EditorState(
     val versionName: String = "1.0",
     val versionCode: Int = 1,
     val iconFileName: String = "",
+    val enableLogFile: Boolean = false,
     val logDir: String = "",
     val clearLogsOnStart: Boolean = false,
     val validationErrors: List<String> = emptyList(),
@@ -127,6 +128,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             versionName = project.versionName ?: "1.0",
             versionCode = project.versionCode ?: 1,
             iconFileName = project.iconFileName ?: "",
+            enableLogFile = project.enableLogFile ?: false,
             logDir = project.logDir ?: "",
             clearLogsOnStart = project.clearLogsOnStart ?: false,
             scenes = scenes,
@@ -461,6 +463,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun resolveLogFile(state: EditorState): android.net.Uri? {
+        if (!state.enableLogFile) return null
         val dirUriStr = state.logDir.trim()
         if (dirUriStr.isBlank()) return null
         return try {
@@ -814,6 +817,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             versionName = s.versionName.ifBlank { null },
             versionCode = s.versionCode,
             iconFileName = s.iconFileName.ifBlank { null },
+            enableLogFile = s.enableLogFile.takeIf { it },
             logDir = s.logDir.ifBlank { null },
             clearLogsOnStart = s.clearLogsOnStart.takeIf { it },
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
@@ -828,6 +832,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun setVersionName(v: String) = _state.update { it.copy(versionName = v) }
     fun setVersionCode(v: Int) = _state.update { it.copy(versionCode = v) }
     fun setIconFileName(v: String) = _state.update { it.copy(iconFileName = v) }
+    fun setEnableLogFile(v: Boolean) = _state.update { it.copy(enableLogFile = v) }
     fun setLogDir(v: String) = _state.update { it.copy(logDir = v) }
     fun setClearLogsOnStart(v: Boolean) = _state.update { it.copy(clearLogsOnStart = v) }
 
@@ -851,6 +856,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             versionName = s.versionName.ifBlank { null },
             versionCode = s.versionCode,
             iconFileName = s.iconFileName.ifBlank { null },
+            enableLogFile = s.enableLogFile.takeIf { it },
             logDir = s.logDir.ifBlank { null },
             clearLogsOnStart = s.clearLogsOnStart.takeIf { it },
             scenes = updatedScenes, activeSceneId = updatedScenes.first().id,

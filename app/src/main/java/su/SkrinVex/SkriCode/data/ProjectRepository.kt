@@ -87,6 +87,7 @@ data class ScriptProject(
     val versionName: String? = null,    // e.g. "1.0"
     val versionCode: Int? = null,       // e.g. 1
     val iconFileName: String? = null,   // имя файла иконки в SpriteRepository (null = дефолтная)
+    val enableLogFile: Boolean? = null, // включить запись логов в файл
     val logDir: String? = null,         // директория для сохранения .skrilogs файлов
     val clearLogsOnStart: Boolean? = null, // очищать лог-файл при каждом запуске симуляции
     val scenes: List<Scene>? = null,           // null = legacy (нет сцен)
