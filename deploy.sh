@@ -18,7 +18,15 @@ APK="$PROJECT_DIR/app/build/outputs/apk/$BUILD_TYPE/app-$BUILD_TYPE.apk"
 
 echo ""
 echo "→ Сборка ($BUILD_TYPE)..."
-"$PROJECT_DIR/gradlew" "assemble$Variant" --quiet
+"$PROJECT_DIR/gradlew" "assemble$VARIANT" --quiet
+
+if [ "$BUILD_TYPE" = "release" ]; then
+  DEST="$PROJECT_DIR/app-release.apk"
+  cp "$APK" "$DEST"
+  echo ""
+  echo "✓ Готово! APK: $DEST"
+  exit 0
+fi
 
 echo "→ Проверка ADB..."
 if ! adb devices | grep -q "device$"; then
