@@ -62,12 +62,13 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     var showLocationEditor by remember { mutableStateOf(false) }
 
-    // Редактор локации — полноэкранный (всегда портретная ориентация)
+    // Редактор локации — всегда портретная ориентация устройства, но рамка экрана по ориентации проекта
     if (showLocationEditor) {
         DisposableEffect(Unit) {
             onLandscapeNeeded(false)
             onDispose { onLandscapeNeeded(false) }
         }
+        val projectIsLandscape = state.orientation == su.SkrinVex.SkriCode.data.ProjectOrientation.LANDSCAPE
         val uiBlocks = state.allScriptBlocks.filter { it.params.containsKey("x") && it.params.containsKey("y") }
         LocationEditorScreen(
             projectId = state.projectId,
@@ -77,7 +78,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
             currentSceneId = state.activeSceneId,
             spriteNames = state.spriteNames,
             sprites = state.sprites,
-            isLandscape = needsLandscape,
+            isLandscape = projectIsLandscape,
             onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
