@@ -61,12 +61,9 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                     }
                     val ctx = LocalContext.current
                     IconButton(onClick = {
-                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/SkriPts_Community")))
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/SkriCode")))
                     }) {
-                        Icon(Icons.Default.Forum, "Сообщество", tint = TextSec)
-                    }
-                    IconButton(onClick = { importLauncher.launch(arrayOf("*/*", "application/json")) }) {
-                        Icon(Icons.Default.FileDownload, "Импорт проекта", tint = TextSec)
+                        Icon(Icons.Default.Send, "Сообщество", tint = TextSec)
                     }
                     IconButton(onClick = { showHelp = true }) {
                         Icon(Icons.Default.Help, "Справка", tint = TextSec)
@@ -102,7 +99,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                     items(projects, key = { it.id }) { project ->
                         ProjectCard(
                             project = project,
-                            onOpen = { onOpenProject(project.id) },
+                            onOpen = { vm.recordOpen(project.id); onOpenProject(project.id) },
                             onDelete = { vm.delete(project.id) },
                             onRename = { name -> vm.rename(project.id, name) },
                             onExport = { uri -> vm.exportProject(project, uri) }
@@ -112,12 +109,24 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
             }
         }
 
-        FloatingActionButton(
-            onClick = { showNewDialog = true },
+        Column(
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = Accent
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(Icons.Default.Add, "Новый проект", tint = Navy900)
+            SmallFloatingActionButton(
+                onClick = { importLauncher.launch(arrayOf("*/*", "application/json")) },
+                containerColor = Surface2,
+                contentColor = Accent
+            ) {
+                Icon(Icons.Default.FileDownload, "Импорт проекта")
+            }
+            FloatingActionButton(
+                onClick = { showNewDialog = true },
+                containerColor = Accent
+            ) {
+                Icon(Icons.Default.Add, "Новый проект", tint = Navy900)
+            }
         }
     }
 

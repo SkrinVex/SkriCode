@@ -23,9 +23,18 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     var lastCreatedId: String = ""
         private set
 
+    private fun prefs() = getApplication<Application>()
+        .getSharedPreferences("project_open_times", android.content.Context.MODE_PRIVATE)
+
+    fun recordOpen(id: String) {
+        prefs().edit().putLong(id, System.currentTimeMillis()).apply()
+    }
+
     fun refresh() {
         viewModelScope.launch {
+            val p = prefs()
             _projects.value = ProjectRepository.list(getApplication())
+                .sortedByDescending { p.getLong(it.id, 0L) }
         }
     }
 
