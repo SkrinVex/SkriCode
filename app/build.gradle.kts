@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "su.SkrinVex.SkriPts"
+    namespace = "su.SkrinVex.SkriCode"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "su.SkrinVex.SkriPts"
+        applicationId = "su.SkrinVex.SkriCode"
         minSdk = 24
         targetSdk = 36
         versionCode = 16
@@ -48,6 +48,7 @@ android {
 
 dependencies {
     implementation(files("libs/apksig.jar"))
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

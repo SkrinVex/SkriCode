@@ -1,4 +1,4 @@
-package su.SkrinVex.SkriPts
+package su.SkrinVex.SkriCode
 
 import org.junit.Test
 

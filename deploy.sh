@@ -2,7 +2,7 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_ID="su.SkrinVex.SkriPts"
+APP_ID="su.SkrinVex.SkriCode"
 
 echo "Выбери тип сборки:"
 echo "  1) debug"
