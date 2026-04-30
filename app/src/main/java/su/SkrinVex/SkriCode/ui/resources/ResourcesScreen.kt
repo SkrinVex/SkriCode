@@ -133,7 +133,7 @@ private fun ResourcesHub(
                 ResourceCard(
                     icon = Icons.Default.Android,
                     title = "Экспорт в APK",
-                    subtitle = if (state.packageName.isBlank()) "Укажите имя пакета в настройках (⚙)" else state.packageName,
+                    subtitle = if (state.packageName.isBlank()) "Укажите имя пакета в настройках проекта (☰)" else state.packageName,
                     color = su.SkrinVex.SkriCode.ui.theme.Success,
                     onClick = { showApkDialog = true }
                 )
@@ -418,7 +418,7 @@ private fun ApkExportDialog(
             containerColor = su.SkrinVex.SkriCode.ui.theme.Surface2,
             icon = { Icon(Icons.Default.Android, null, tint = su.SkrinVex.SkriCode.ui.theme.Warning) },
             title = { Text("Имя пакета не указано", color = su.SkrinVex.SkriCode.ui.theme.TextPrim) },
-            text = { Text("Укажите имя пакета в настройках проекта (кнопка ⚙ → «Настройки сборки APK»).\n\nПример: com.example.mygame или su.myname.game", color = su.SkrinVex.SkriCode.ui.theme.TextSec) },
+            text = { Text("Укажите имя пакета в настройках проекта (кнопка ☰ → «Настройки сборки APK»).\n\nПример: com.example.mygame или su.myname.game", color = su.SkrinVex.SkriCode.ui.theme.TextSec) },
             confirmButton = {
                 Button(onClick = onGoToSettings, colors = ButtonDefaults.buttonColors(containerColor = su.SkrinVex.SkriCode.ui.theme.Accent)) {
                     Text("Понял", color = su.SkrinVex.SkriCode.ui.theme.Navy900)
