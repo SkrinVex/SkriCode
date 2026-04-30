@@ -3,10 +3,6 @@ package su.SkrinVex.SkriPts.ui.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -67,18 +63,6 @@ fun LocationEditorScreen(
     var zoom by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
-
-    // Скрываем статусбар и навигацию
-    val view = LocalView.current
-    DisposableEffect(Unit) {
-        val window = (view.context as android.app.Activity).window
-        val ctrl = WindowInsetsControllerCompat(window, view)
-        ctrl.hide(WindowInsetsCompat.Type.systemBars())
-        ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose {
-            ctrl.show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
 
     var locBlocks by remember { mutableStateOf(initialBlocks.mapNotNull { it.deserialize() }) }
     var selectedId by remember { mutableStateOf<String?>(null) }

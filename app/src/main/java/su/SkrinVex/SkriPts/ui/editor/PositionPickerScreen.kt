@@ -3,10 +3,6 @@ package su.SkrinVex.SkriPts.ui.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -60,18 +56,6 @@ fun PositionPickerScreen(
     var objY by remember { mutableFloatStateOf(initialY) }
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
-
-    // Скрываем статусбар и навигацию
-    val view = LocalView.current
-    DisposableEffect(Unit) {
-        val window = (view.context as android.app.Activity).window
-        val ctrl = WindowInsetsControllerCompat(window, view)
-        ctrl.hide(WindowInsetsCompat.Type.systemBars())
-        ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose {
-            ctrl.show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
 
     val sw = ExprEval.screenWidth
     val sh = ExprEval.screenHeight

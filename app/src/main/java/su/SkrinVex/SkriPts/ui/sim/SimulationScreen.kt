@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.data.SpriteAsset
+import su.SkrinVex.SkriPts.engine.ExprEval
 import su.SkrinVex.SkriPts.engine.JoystickState
 import su.SkrinVex.SkriPts.engine.SimObject
 import su.SkrinVex.SkriPts.engine.SimState
@@ -178,6 +179,9 @@ fun SimulationScreen(
                 }
         ) {
             canvasSize = Pair(size.width, size.height)
+            // Обновляем константы экрана из реального размера Canvas (после скрытия системных баров)
+            ExprEval.screenWidth = size.width
+            ExprEval.screenHeight = size.height
             val cx = size.width / 2f
             val cy = size.height / 2f
             // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap
