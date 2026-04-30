@@ -464,7 +464,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     runningHoldScripts += scriptId
                     launch {
                         val currentSim = _simState.value ?: run { runningHoldScripts -= scriptId; return@launch }
-                        val newHoldSim = SimEngine.runHold(scriptId, _simScripts, currentSim)
+                        val newHoldSim = SimEngine.runHold(scriptId, _simScripts, currentSim,
+                            getLatestState = { _simState.value ?: currentSim }
+                        )
                         runningHoldScripts -= scriptId
                         if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
                         _simState.value = newHoldSim
@@ -532,9 +534,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val scriptId = _simState.value?.objects?.get(objectName)?.tapScriptId ?: return
         viewModelScope.launch {
             val currentSim = _simState.value ?: return@launch
-            val newSim = SimEngine.runTap(scriptId, _simScripts, currentSim) { liveState ->
-                _simState.value = liveState
-            }
+            val newSim = SimEngine.runTap(scriptId, _simScripts, currentSim,
+                onUpdate = { liveState -> _simState.value = liveState },
+                getLatestState = { _simState.value ?: currentSim }
+            )
             if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@launch }
             _simState.value = newSim
         }

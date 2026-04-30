@@ -91,7 +91,9 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                     runningHold += scriptId
                     launch {
                         val cur = _simState.value ?: run { runningHold -= scriptId; return@launch }
-                        val res = SimEngine.runHold(scriptId, _scripts, cur)
+                        val res = SimEngine.runHold(scriptId, _scripts, cur,
+                            getLatestState = { _simState.value ?: cur }
+                        )
                         runningHold -= scriptId
                         handleSceneSwitch(res) ?: run { _simState.value = res }
                     }
@@ -159,7 +161,10 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         val scriptId = _simState.value?.objects?.get(name)?.tapScriptId ?: return
         viewModelScope.launch {
             val cur = _simState.value ?: return@launch
-            val res = SimEngine.runTap(scriptId, _scripts, cur) { live -> _simState.value = live }
+            val res = SimEngine.runTap(scriptId, _scripts, cur,
+                onUpdate = { live -> _simState.value = live },
+                getLatestState = { _simState.value ?: cur }
+            )
             handleSceneSwitch(res) ?: run { _simState.value = res }
         }
     }

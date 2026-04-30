@@ -267,16 +267,16 @@ object SimEngine {
         bindToObjects(ScriptEvent.ON_COLLISION_END){ id -> if (collisionEndScriptId != id) copy(collisionEndScriptId = id) else this }
     }
 
-    suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
+    suspend fun runTap(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, getLatestState: (() -> SimState)? = null): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, scripts, currentState, onUpdate)
+        return runScriptOnState(script, scripts, currentState, onUpdate, getLatestState = getLatestState)
     }
 
-    suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null): SimState {
+    suspend fun runHold(scriptId: String, scripts: List<Script>, currentState: SimState, onUpdate: ((SimState) -> Unit)? = null, getLatestState: (() -> SimState)? = null): SimState {
         if (currentState.isStopped) return currentState
         val script = scripts.find { it.id == scriptId } ?: return currentState
-        return runScriptOnState(script, scripts, currentState, onUpdate)
+        return runScriptOnState(script, scripts, currentState, onUpdate, getLatestState = getLatestState)
     }
 
     suspend fun runCollision(scriptId: String, scripts: List<Script>, currentState: SimState, otherName: String = "", selfName: String = "", onUpdate: ((SimState) -> Unit)? = null, getLatestState: (() -> SimState)? = null): SimState {
@@ -682,6 +682,7 @@ object SimEngine {
                     }
                     if (mode == "step") log += "  «$nameOrTag» шаг (+$dx, +$dy)"
                     else log += "  «$nameOrTag» -> ($dx, $dy)"
+                    onUpdate?.invoke()
                 }
                 "sim_resize" -> {
                     val nameOrTag = getStr("name")
@@ -691,6 +692,7 @@ object SimEngine {
                     val h = getF("height", 60f).coerceAtLeast(1f)
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(width = w, height = h) }
                     log += "  «$nameOrTag» размер ${getStr("width")}x${getStr("height")}"
+                    onUpdate?.invoke()
                 }
                 "sim_color" -> {
                     val nameOrTag = getStr("name")
@@ -699,6 +701,7 @@ object SimEngine {
                     val color = parseColor(getStr("color", "#4F8EF7"))
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(color = color) }
                     log += "  «$nameOrTag» цвет -> ${getStr("color")}"
+                    onUpdate?.invoke()
                 }
                 "sim_update_text" -> {
                     val nameOrTag = getStr("name")
@@ -707,6 +710,7 @@ object SimEngine {
                     val text = getStr("text")
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(label = text) }
                     log += "  «$nameOrTag» текст обновлён: «$text»"
+                    onUpdate?.invoke()
                 }
                 "sim_text" -> {
                     val name = getStr("name")
@@ -739,6 +743,7 @@ object SimEngine {
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = false) }
                     if (joy != null) joysticks[nameOrTag] = joy.copy(visible = false)
                     log += "  «$nameOrTag» скрыт"
+                    onUpdate?.invoke()
                 }
                 "sim_show" -> {
                     val nameOrTag = getStr("name")
@@ -748,6 +753,7 @@ object SimEngine {
                     targets.forEach { (name, obj) -> objects[name] = obj.copy(visible = true) }
                     if (joy != null) joysticks[nameOrTag] = joy.copy(visible = true)
                     log += "  «$nameOrTag» показан"
+                    onUpdate?.invoke()
                 }
                 "for_loop" -> {
                     val count = getF("count").toInt().coerceAtLeast(0)
@@ -811,6 +817,7 @@ object SimEngine {
                         objects[name] = obj.copy(rotation = nr % 360f)
                     }
                     log += "  «$nameOrTag» поворот -> ${angle}°"
+                    onUpdate?.invoke()
                 }
                 "sim_joystick" -> {
                     val name = getStr("name")
