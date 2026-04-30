@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriCode.block.*
@@ -353,13 +354,68 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                 itemsIndexed(activeBlocks, key = { _, b -> b.id }) { index, block ->
                     val collapsed = collapsedState[block.id] ?: vm.isBlockCollapsed(activeScriptId, block.id)
                     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+                    val openTypes = setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
+                    val closeTypes = setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
+                    val isOpenCloseElse = block.type in openTypes || block.type in closeTypes || block.type == "else_block"
+
+                    // Определяем скрыт ли блок из-за свёрнутого open или else
+                    val isBodyHidden = run {
+                        if (block.type in openTypes) return@run false
+                        val pairId = block.pairId
+                        if (pairId.isBlank()) return@run false
+
+                        val openIdx = activeBlocks.indexOfFirst { it.pairId == pairId && it.type in openTypes }
+                        val elseIdx = activeBlocks.indexOfFirst { it.pairId == pairId && it.type == "else_block" }
+                        val closeIdx = activeBlocks.indexOfFirst { it.pairId == pairId && it.type in closeTypes }
+
+                        val openCollapsed = if (openIdx >= 0) {
+                            val id = activeBlocks[openIdx].id
+                            collapsedState[id] ?: vm.isBlockCollapsed(activeScriptId, id)
+                        } else false
+
+                        val elseCollapsed = if (elseIdx >= 0) {
+                            val id = activeBlocks[elseIdx].id
+                            collapsedState[id] ?: vm.isBlockCollapsed(activeScriptId, id)
+                        } else false
+
+                        when {
+                            block.type == "else_block" -> false
+                            block.type in closeTypes -> if (elseIdx < 0) openCollapsed else elseCollapsed
+                            elseIdx >= 0 && index > elseIdx && (closeIdx < 0 || index < closeIdx) -> elseCollapsed
+                            openIdx >= 0 && index > openIdx && (elseIdx < 0 || index < elseIdx) -> openCollapsed
+                            else -> false
+                        }
+                    }
+                    if (isBodyHidden) return@itemsIndexed
+
+                    // Отступ: open/close/else — всегда 0, тело внутри пары — глубина * 12dp
+                    val indentDp = if (isOpenCloseElse) 0.dp else remember(activeBlocks, index) {
+                        var depth = 0
+                        for (i in 0 until index) {
+                            val t = activeBlocks[i].type
+                            if (t in openTypes) {
+                                val pairId = activeBlocks[i].pairId
+                                val closeIdx = if (pairId.isNotBlank())
+                                    activeBlocks.indexOfFirst { it.pairId == pairId && it.type in closeTypes }
+                                else activeBlocks.indexOfFirst { it.type in closeTypes }
+                                if (closeIdx < 0 || closeIdx >= index) depth++
+                            } else if (t in closeTypes && depth > 0) depth--
+                        }
+                        depth
+                    }.let { (it * 12).dp }
                     if (showDeleteConfirm) {
+                        val isPaired = block.pairId.isNotBlank()
                         AlertDialog(
                             onDismissRequest = { showDeleteConfirm = false },
                             containerColor = Surface2,
                             icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
                             title = { Text("Удалить блок?", color = TextPrim) },
-                            text = { Text("«${block.displayName}»${if (block.children.isNotEmpty()) " и все вложенные блоки" else ""} будут удалены.", color = TextSec) },
+                            text = { Text(
+                                if (isPaired) "«${block.displayName}» и все связанные блоки (включая тело) будут удалены."
+                                else "«${block.displayName}»${if (block.children.isNotEmpty()) " и все вложенные блоки" else ""} будут удалены.",
+                                color = TextSec
+                            ) },
                             confirmButton = {
                                 Button(onClick = { vm.removeBlock(index); showDeleteConfirm = false },
                                     colors = ButtonDefaults.buttonColors(containerColor = Danger)) {
@@ -386,8 +442,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onToggleChildCollapsed = { childId -> vm.toggleBlockCollapsed(activeScriptId, childId) },
                         isChildCollapsed = { childId -> vm.isBlockCollapsed(activeScriptId, childId) },
                         onRemove = { showDeleteConfirm = true },
-                        onMoveUp = { if (index > 0) vm.moveBlock(index, index - 1) },
-                        onMoveDown = { if (index < activeBlocks.size - 1) vm.moveBlock(index, index + 1) },
+                        onMoveUp = { if (vm.canMoveUp(index, activeBlocks)) vm.moveBlock(index, index - 1) },
+                        onMoveDown = { if (vm.canMoveDown(index, activeBlocks)) vm.moveBlock(index, index + 1) },                        canMoveUp = vm.canMoveUp(index, activeBlocks),
+                        canMoveDown = vm.canMoveDown(index, activeBlocks),
                         onDuplicate = { vm.duplicateBlock(index) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
                         onCopyBlock = { vm.copyBlock(state.activeScript.blocks[index]) },
@@ -403,7 +460,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                                 ?.children?.get(branch)?.getOrNull(ci) ?: b
                             positionPickerBlock = index to childBlock
                         },
-                        onUpdateChild = { branch, ci, updated -> vm.replaceChildBlock(index, branch, ci, updated) }
+                        onUpdateChild = { branch, ci, updated -> vm.replaceChildBlock(index, branch, ci, updated) },
+                        indentStart = indentDp
                     )
                 }
             }
@@ -782,6 +840,8 @@ internal fun BlockCard(
     onRemove: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    canMoveUp: Boolean = index > 0,
+    canMoveDown: Boolean = index < total - 1,
     onDuplicate: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
@@ -793,13 +853,39 @@ internal fun BlockCard(
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> },
     onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
-    onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null
+    onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null,
+    indentStart: Dp = 0.dp
 ) {
     val accent = categoryColor(block.category)
     var showContextMenu by remember { mutableStateOf(false) }
 
+    // Специальный рендеринг для open/close блоков
+    val isOpen = block.type in setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
+    val isClose = block.type in setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
+    val isElse = block.type == "else_block"
+    if (isOpen || isClose || isElse) {
+        OpenCloseBlockCard(
+            block = block,
+            isOpen = isOpen,
+            index = index,
+            variables = variables,
+            canMoveUp = canMoveUp,
+            canMoveDown = canMoveDown,
+            collapsed = collapsed,
+            onToggleCollapse = onToggleCollapse,
+            onMoveUp = onMoveUp,
+            onMoveDown = onMoveDown,
+            onRemove = onRemove,
+            onParamChange = onParamChange,
+            onOpenExpr = onOpenExpr,
+            indentStart = indentStart
+        )
+        return
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize()
+            .padding(start = indentStart)
             .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -993,6 +1079,77 @@ internal fun BlockCard(
                 }
             }
         )
+    }
+}
+
+@Composable
+internal fun OpenCloseBlockCard(
+    block: BlockDef,
+    isOpen: Boolean,
+    index: Int,
+    variables: List<ProjectVar>,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    collapsed: Boolean = false,
+    onToggleCollapse: () -> Unit = {},
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onRemove: () -> Unit,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    indentStart: Dp = 0.dp
+) {
+    val accent = categoryColor(block.category)
+    val isElse = block.type == "else_block"
+    val isClose = block.type in setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
+    val bracketSymbol = when {
+        isElse  -> "} {"
+        isClose -> "}"
+        else    -> "{"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth()
+            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface2)
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(3.dp).background(accent))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(bracketSymbol, color = accent, fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(end = 10.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(14.dp))
+                        Text(block.displayName, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+                    if (!isClose && !isElse)
+                        Text(block.description, color = TextSec, fontSize = 11.sp)
+                }
+                SmallBtn(Icons.Default.KeyboardArrowUp, enabled = canMoveUp, onClick = onMoveUp)
+                SmallBtn(Icons.Default.KeyboardArrowDown, enabled = canMoveDown, onClick = onMoveDown)
+                if (isOpen) {
+                    SmallBtn(
+                        if (collapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        tint = accent.copy(alpha = 0.7f),
+                        onClick = onToggleCollapse
+                    )
+                }
+                SmallBtn(Icons.Default.DeleteOutline, tint = Danger.copy(0.7f), onClick = onRemove)
+            }
+            if (isOpen && !collapsed && block.params.isNotEmpty()) {
+                HorizontalDivider(color = Surface3, modifier = Modifier.padding(horizontal = 12.dp))
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    BlockParamContent(block = block, variables = variables,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr)
+                }
+            }
+        }
     }
 }
 

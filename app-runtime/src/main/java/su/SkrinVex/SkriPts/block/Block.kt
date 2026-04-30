@@ -38,7 +38,9 @@ data class BlockDef(
     val params: Map<String, BlockParam> = emptyMap(),
     val paramOrder: List<String> = emptyList(),
     // Дочерние блоки для if_block: "then" и "else" ветки
-    val children: Map<String, List<BlockDef>> = emptyMap()
+    val children: Map<String, List<BlockDef>> = emptyMap(),
+    // ID парного блока (для open/close пар: for_loop_open↔for_loop_close и т.д.)
+    val pairId: String = ""
 ) {
     fun withParam(key: String, value: String): BlockDef =
         copy(params = params + (key to params[key]!!.copy(value = value)))

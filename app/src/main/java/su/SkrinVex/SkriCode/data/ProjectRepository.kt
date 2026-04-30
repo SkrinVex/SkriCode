@@ -108,16 +108,19 @@ data class SerializedBlock(
     val params: Map<String, String>,
     val id: String = java.util.UUID.randomUUID().toString(),  // сохраняем ID
     // Дочерние блоки для if_block
-    val children: Map<String, List<SerializedBlock>>? = null
+    val children: Map<String, List<SerializedBlock>>? = null,
+    // ID парного блока (для open/close пар)
+    val pairId: String = ""
 )
 
 fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
     type, params.mapValues { it.value.value }, id,
-    children = if (children.isEmpty()) null else children.mapValues { (_, blocks) -> blocks.map { it.serialize() } }
+    children = if (children.isEmpty()) null else children.mapValues { (_, blocks) -> blocks.map { it.serialize() } },
+    pairId = pairId
 )
 
 fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { proto ->
-    var b = proto.copy(id = this.id)
+    var b = proto.copy(id = this.id, pairId = this.pairId)
     params.forEach { (k, v) -> if (b.params.containsKey(k)) b = b.withParam(k, v) }
     if (!children.isNullOrEmpty()) {
         b = b.copy(children = children.mapValues { (_, list) -> list.mapNotNull { it.deserialize() } })

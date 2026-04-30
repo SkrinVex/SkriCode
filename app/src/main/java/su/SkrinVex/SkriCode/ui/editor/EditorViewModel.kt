@@ -170,11 +170,65 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // --- Блоки ---
     fun addBlock(type: String) {
         val block = BlockRegistry.create(type) ?: return
-        modifyActiveBlocks { it + block.serialize() }
+        val closeType = openToCloseType(type)
+        if (closeType != null) {
+            val closeBlock = BlockRegistry.create(closeType) ?: return
+            val pairId = UUID.randomUUID().toString()
+            val open = block.copy(pairId = pairId).serialize()
+            val close = closeBlock.copy(pairId = pairId).serialize()
+            // if_open дополнительно создаёт else_block между open и close
+            if (type == "if_open") {
+                val elseBlock = BlockRegistry.create("else_block")?.copy(pairId = pairId)?.serialize()
+                if (elseBlock != null) {
+                    modifyActiveBlocks { it + open + elseBlock + close }
+                    return
+                }
+            }
+            modifyActiveBlocks { it + open + close }
+        } else {
+            modifyActiveBlocks { it + block.serialize() }
+        }
     }
 
+    /** Возвращает тип закрывающего блока для открывающего, или null если не пара */
+    private fun openToCloseType(type: String): String? = when (type) {
+        "if_open"         -> "if_close"
+        "for_loop_open"   -> "for_loop_close"
+        "while_loop_open" -> "while_loop_close"
+        "wait_open"       -> "wait_close"
+        else -> null
+    }
+
+    /** Возвращает тип открывающего блока для закрывающего, или null если не пара */
+    private fun closeToOpenType(type: String): String? = when (type) {
+        "if_close"         -> "if_open"
+        "for_loop_close"   -> "for_loop_open"
+        "while_loop_close" -> "while_loop_open"
+        "wait_close"       -> "wait_open"
+        else -> null
+    }
+
+    private fun isOpenBlock(type: String) = type in setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
+    private fun isCloseBlock(type: String) = type in setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
+
     fun removeBlock(index: Int) = modifyActiveBlocks { list ->
-        list.toMutableList().also { it.removeAt(index) }
+        val block = list.getOrNull(index)?.deserialize() ?: return@modifyActiveBlocks list
+        if (block.pairId.isNotBlank()) {
+            val pairId = block.pairId
+            val deserialized = list.map { it.deserialize() }
+            // Находим диапазон open..close и удаляем всё включая тело
+            val openIdx = deserialized.indexOfFirst { it?.pairId == pairId && isOpenBlock(it.type) }
+            val closeIdx = deserialized.indexOfFirst { it?.pairId == pairId && isCloseBlock(it.type) }
+            if (openIdx >= 0 && closeIdx > openIdx) {
+                // Удаляем весь диапазон open..close включительно
+                list.filterIndexed { i, _ -> i < openIdx || i > closeIdx }
+            } else {
+                // Fallback: удаляем только блоки с этим pairId
+                list.filter { it.deserialize()?.pairId != pairId }
+            }
+        } else {
+            list.toMutableList().also { it.removeAt(index) }
+        }
     }
 
     fun duplicateBlock(index: Int) = modifyActiveBlocks { list ->
@@ -192,10 +246,63 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun moveBlock(from: Int, to: Int) = modifyActiveBlocks { list ->
+        val block = list.getOrNull(from)?.deserialize() ?: return@modifyActiveBlocks list
+        // Ограничения для open/close пар
+        if (block.pairId.isNotBlank()) {
+            val pairIndex = list.indexOfFirst { b ->
+                val d = b.deserialize()
+                d != null && d.pairId == block.pairId && d.id != block.id
+            }
+            if (pairIndex >= 0) {
+                if (isOpenBlock(block.type)) {
+                    // Открывающий не может быть ниже закрывающего
+                    if (to >= pairIndex) return@modifyActiveBlocks list
+                } else if (isCloseBlock(block.type)) {
+                    // Закрывающий не может быть выше открывающего
+                    if (to <= pairIndex) return@modifyActiveBlocks list
+                }
+            }
+        }
         list.toMutableList().also {
             val item = it.removeAt(from)
             it.add(to.coerceIn(0, it.size), item)
         }
+    }
+
+    /** Проверяет, можно ли переместить блок вверх (с учётом ограничений пар) */
+    fun canMoveUp(index: Int, blocks: List<su.SkrinVex.SkriCode.block.BlockDef>): Boolean {
+        if (index <= 0) return false
+        val block = blocks.getOrNull(index) ?: return false
+        if (block.pairId.isBlank()) return true
+        if (isOpenBlock(block.type)) return true
+        if (isCloseBlock(block.type)) {
+            val openIndex = blocks.indexOfFirst { it.pairId == block.pairId && isOpenBlock(it.type) }
+            return openIndex < 0 || index - 1 > openIndex
+        }
+        // else_block — не может быть выше открывающего
+        if (block.type == "else_block") {
+            val openIndex = blocks.indexOfFirst { it.pairId == block.pairId && isOpenBlock(it.type) }
+            return openIndex < 0 || index - 1 > openIndex
+        }
+        return true
+    }
+
+    /** Проверяет, можно ли переместить блок вниз (с учётом ограничений пар) */
+    fun canMoveDown(index: Int, blocks: List<su.SkrinVex.SkriCode.block.BlockDef>): Boolean {
+        if (index >= blocks.size - 1) return false
+        val block = blocks.getOrNull(index) ?: return false
+        if (block.pairId.isBlank()) return true
+        if (isOpenBlock(block.type)) {
+            val closeIndex = blocks.indexOfFirst { it.pairId == block.pairId && isCloseBlock(it.type) }
+            return closeIndex < 0 || index + 1 < closeIndex
+        }
+        if (isCloseBlock(block.type)) return true
+        // else_block — не может быть ниже закрывающего
+        if (block.type == "else_block") {
+            val closeIndex = blocks.indexOfFirst { it.pairId == block.pairId && isCloseBlock(it.type) }
+            return closeIndex < 0 || index + 1 < closeIndex
+        }
+        return true
     }
 
     fun updateParam(blockIndex: Int, key: String, value: String) = modifyActiveBlocks { list ->

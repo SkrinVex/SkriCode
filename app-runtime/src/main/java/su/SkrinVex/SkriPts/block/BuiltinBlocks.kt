@@ -78,7 +78,7 @@ object BlockFactory {
 
         "sim_stop" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
 
-        // Циклы
+        // Циклы (legacy — только для обратной совместимости, не показываются в пикере)
         "for_loop" -> build("for_loop", "Цикл (повторить)", "Повторяет блоки указанное количество раз", BlockCategory.CONTROL, listOf(
             "count" to p("5", "Количество", "Сколько раз повторить", ParamType.NUMBER))).copy(
             children = mapOf("body" to emptyList()))
@@ -89,11 +89,38 @@ object BlockFactory {
             "right" to p("10", "Правое значение", "С чем сравниваем"))).copy(
             children = mapOf("body" to emptyList()))
 
-        // Таймер
         "wait" -> build("wait", "Таймер", "Повторяет вложенные блоки с заданным интервалом", BlockCategory.CONTROL, listOf(
             "seconds" to p("1", "Интервал (сек)", "Пауза между повторениями", ParamType.NUMBER),
             "count"   to p("1", "Повторений", "0 = бесконечно (пока зажата кнопка)", ParamType.NUMBER))).copy(
             children = mapOf("body" to emptyList()))
+
+        // ── Open/Close блоки ──────────────────────────────────────────────────────
+        "if_open" -> build("if_open", "Условие (если)", "Выполняет блоки до конца если условие истинно", BlockCategory.CONTROL, listOf(
+            "left"  to p("", "Левое значение", "Переменная или число, напр. {score}"),
+            "op"    to p("==", "Оператор", "== != > < >= <=", ParamType.SELECT),
+            "right" to p("0", "Правое значение", "С чем сравниваем")))
+
+        "else_block" -> build("else_block", "Иначе", "Иначе — блоки до конца условия", BlockCategory.CONTROL, emptyList())
+
+        "if_close" -> build("if_close", "Конец условия", "Конец блока условия", BlockCategory.CONTROL, emptyList())
+
+        "for_loop_open" -> build("for_loop_open", "Цикл (повторить)", "Повторяет блоки до конца цикла", BlockCategory.CONTROL, listOf(
+            "count" to p("5", "Количество", "Сколько раз повторить", ParamType.NUMBER)))
+
+        "for_loop_close" -> build("for_loop_close", "Конец цикла", "Конец цикла (повторить)", BlockCategory.CONTROL, emptyList())
+
+        "while_loop_open" -> build("while_loop_open", "Цикл (пока)", "Повторяет блоки пока условие истинно", BlockCategory.CONTROL, listOf(
+            "left"  to p("", "Левое значение", "Переменная или число"),
+            "op"    to p("<=", "Оператор", "== != > < >= <=", ParamType.SELECT),
+            "right" to p("10", "Правое значение", "С чем сравниваем")))
+
+        "while_loop_close" -> build("while_loop_close", "Конец цикла (пока)", "Конец цикла (пока)", BlockCategory.CONTROL, emptyList())
+
+        "wait_open" -> build("wait_open", "Таймер", "Выполняет блоки до конца таймера с интервалом", BlockCategory.CONTROL, listOf(
+            "seconds" to p("1", "Интервал (сек)", "Пауза между повторениями", ParamType.NUMBER),
+            "count"   to p("1", "Повторений", "0 = бесконечно", ParamType.NUMBER)))
+
+        "wait_close" -> build("wait_close", "Конец таймера", "Конец таймера", BlockCategory.CONTROL, emptyList())
 
         // Видимость объектов
         "sim_hide" -> build("sim_hide", "Скрыть объект", "Делает объект невидимым и неклкабельным", BlockCategory.SIMULATION, listOf(

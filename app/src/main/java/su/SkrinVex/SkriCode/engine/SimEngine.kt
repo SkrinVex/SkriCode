@@ -490,6 +490,44 @@ object SimEngine {
         )
     }
 
+    /**
+     * Собирает блоки тела между открывающим блоком (на позиции [openIdx]) и его парным закрывающим.
+     * Поддерживает вложенность: если внутри есть ещё открывающие блоки того же типа — ищет соответствующий закрывающий.
+     */
+    private fun collectBodyBlocks(blocks: List<BlockDef>, openIdx: Int): List<BlockDef> =
+        collectBodyBlocksWithRange(blocks, openIdx).first
+
+    /**
+     * Возвращает тело и диапазон индексов (openIdx+1..closeIdx включительно) для пропуска.
+     */
+    private fun collectBodyBlocksWithRange(blocks: List<BlockDef>, openIdx: Int): Pair<List<BlockDef>, Pair<Int, Int>?> {
+        val openBlock = blocks[openIdx]
+        val openType = openBlock.type
+        val closeType = when (openType) {
+            "if_open"         -> "if_close"
+            "for_loop_open"   -> "for_loop_close"
+            "while_loop_open" -> "while_loop_close"
+            "wait_open"       -> "wait_close"
+            else -> return emptyList<BlockDef>() to null
+        }
+        // Если есть pairId — ищем по нему (точное совпадение)
+        if (openBlock.pairId.isNotBlank()) {
+            val closeIdx = blocks.indexOfFirst { it.pairId == openBlock.pairId && it.type == closeType }
+            if (closeIdx > openIdx) return blocks.subList(openIdx + 1, closeIdx) to (openIdx + 1 to closeIdx)
+        }
+        // Fallback: ищем по вложенности
+        var depth = 1
+        for (i in openIdx + 1 until blocks.size) {
+            val t = blocks[i].type
+            if (t == openType) depth++
+            else if (t == closeType) {
+                depth--
+                if (depth == 0) return blocks.subList(openIdx + 1, i) to (openIdx + 1 to i)
+            }
+        }
+        return emptyList<BlockDef>() to null
+    }
+
     private suspend fun runScript(
         blocks: List<BlockDef>,
         vars: MutableMap<String, String>,
@@ -526,8 +564,12 @@ object SimEngine {
                 if (obj != null) listOf(resolved to obj) else emptyList()
             }
         }
-        
+
+        // Индексы блоков которые нужно пропустить (тело open/close блоков)
+        val skipIndices = mutableSetOf<Int>()
+
         for ((idx, block) in blocks.withIndex()) {
+            if (idx in skipIndices) continue
             val num = idx + 1
 
             fun getStr(key: String, default: String = ""): String {
@@ -641,6 +683,38 @@ object SimEngine {
                         if (!runScript(branchBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
                     }
                 }
+                // ── if_open / else_block / if_close ──────────────────────────────
+                "if_open" -> {
+                    val left  = block.params["left"]?.value ?: ""
+                    val op    = block.params["op"]?.value ?: "=="
+                    val right = block.params["right"]?.value ?: "0"
+                    val (result, err) = ExprEval.evalCondition(left, op, right, vars)
+                    if (err != null) { errors += "Блок $num «Условие»: $err"; continue }
+                    val leftVal = ExprEval.eval(left, vars).value
+                    val rightVal = ExprEval.eval(right, vars).value
+                    log += "  Условие: $leftVal $op $rightVal → ${if (result) "истина" else "ложь"}"
+
+                    // Собираем тело: от if_open до if_close, разбиваем по else_block
+                    val (allBody, bodyRange) = collectBodyBlocksWithRange(blocks, idx)
+                    bodyRange?.let { skipIndices.addAll(it.first..it.second) }
+
+                    // Ищем else_block внутри тела (по pairId или по типу)
+                    val elseIdx = if (block.pairId.isNotBlank()) {
+                        allBody.indexOfFirst { it.pairId == block.pairId && it.type == "else_block" }
+                    } else {
+                        allBody.indexOfFirst { it.type == "else_block" }
+                    }
+
+                    val bodyToRun = if (result) {
+                        if (elseIdx >= 0) allBody.subList(0, elseIdx) else allBody
+                    } else {
+                        if (elseIdx >= 0) allBody.subList(elseIdx + 1, allBody.size) else emptyList()
+                    }
+                    if (bodyToRun.isNotEmpty()) {
+                        if (!runScript(bodyToRun, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
+                    }
+                }
+                "else_block", "if_close" -> { /* пропуск — обрабатывается if_open */ }
                 "sim_create" -> {
                     val name = getStr("name")
                     if (name.isBlank()) { errors += "Блок $num «Создать объект»: имя пустое"; continue }
@@ -806,6 +880,60 @@ object SimEngine {
                         }
                     }
                 }
+                // ── Open/Close блоки — тело между открывающим и закрывающим ──────
+                "for_loop_open" -> {
+                    val count = getF("count").toInt().coerceAtLeast(0)
+                    val (bodyBlocks, bodyRange) = collectBodyBlocksWithRange(blocks, idx)
+                    bodyRange?.let { skipIndices.addAll(it.first..it.second) }
+                    log += "  Цикл (open/close): $count раз"
+                    repeat(count) { i ->
+                        vars["i"] = i.toString()
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
+                    }
+                    vars.remove("i")
+                }
+                "while_loop_open" -> {
+                    val left = block.params["left"]?.value ?: ""
+                    val op = block.params["op"]?.value ?: "<="
+                    val right = block.params["right"]?.value ?: "10"
+                    val (bodyBlocks, bodyRange) = collectBodyBlocksWithRange(blocks, idx)
+                    bodyRange?.let { skipIndices.addAll(it.first..it.second) }
+                    log += "  Цикл пока (open/close): $left $op $right"
+                    var iterations = 0
+                    while (iterations < 1000) {
+                        val (result, err) = ExprEval.evalCondition(left, op, right, vars)
+                        if (err != null) { errors += "Блок $num «Цикл пока»: $err"; break }
+                        if (!result) break
+                        iterations++
+                        if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
+                    }
+                    if (iterations >= 1000) errors += "Блок $num «Цикл пока»: превышен лимит итераций (1000)"
+                }
+                "wait_open" -> {
+                    val seconds = getF("seconds", 1f).coerceIn(0.016f, 60f)
+                    val count = getF("count", 1f).toInt().let { if (it <= 0) Int.MAX_VALUE else it }
+                    val (bodyBlocks, bodyRange) = collectBodyBlocksWithRange(blocks, idx)
+                    bodyRange?.let { skipIndices.addAll(it.first..it.second) }
+                    log += "  Таймер (open/close): ${seconds}с × $count"
+                    if (allowDelay) {
+                        repeat(count) {
+                            delay((seconds * 1000).toLong())
+                            getLatestState?.invoke()?.let { live ->
+                                objects.clear(); objects.putAll(live.objects)
+                                joysticks.clear(); joysticks.putAll(live.joysticks)
+                                deletedObjects.clear(); deletedJoysticks.clear()
+                                ExprEval.objects = objects
+                                ExprEval.joysticks = joysticks
+                            }
+                            if (bodyBlocks.isNotEmpty()) {
+                                if (!runScript(bodyBlocks, vars, objects, joysticks, tables, log, errors, allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef, getLatestState, deletedObjects, deletedJoysticks, onUpdate)) return false
+                            }
+                            onUpdate?.invoke()
+                        }
+                    }
+                }
+                // Закрывающие блоки — пропускаем (тело уже обработано открывающим)
+                "for_loop_close", "while_loop_close", "wait_close" -> { /* пропуск */ }
                 "sim_rotate" -> {
                     val nameOrTag = getStr("name")
                     val targets = getObjectsByNameOrTag(nameOrTag)

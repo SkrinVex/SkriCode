@@ -82,10 +82,14 @@ data class ScriptProject(
     val id: String,
     val name: String,
     val orientation: ProjectOrientation? = ProjectOrientation.PORTRAIT,
-    val appLabel: String? = null,
-    val versionName: String? = null,
-    val versionCode: Int? = null,
-    val iconFileName: String? = null,
+    val packageName: String? = null,
+    val appLabel: String? = null,       // кастомное название приложения (null = имя проекта)
+    val versionName: String? = null,    // e.g. "1.0"
+    val versionCode: Int? = null,       // e.g. 1
+    val iconFileName: String? = null,   // имя файла иконки в SpriteRepository (null = дефолтная)
+    val enableLogFile: Boolean? = null, // включить запись логов в файл
+    val logDir: String? = null,         // директория для сохранения .skrilogs файлов
+    val clearLogsOnStart: Boolean? = null, // очищать лог-файл при каждом запуске симуляции
     val scenes: List<Scene>? = null,           // null = legacy (нет сцен)
     val activeSceneId: String? = null,
     val scripts: List<Script>? = emptyList(),  // legacy / сцена по умолчанию
@@ -104,16 +108,19 @@ data class SerializedBlock(
     val params: Map<String, String>,
     val id: String = java.util.UUID.randomUUID().toString(),  // сохраняем ID
     // Дочерние блоки для if_block
-    val children: Map<String, List<SerializedBlock>>? = null
+    val children: Map<String, List<SerializedBlock>>? = null,
+    // ID парного блока (для open/close пар)
+    val pairId: String = ""
 )
 
 fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
     type, params.mapValues { it.value.value }, id,
-    children = if (children.isEmpty()) null else children.mapValues { (_, blocks) -> blocks.map { it.serialize() } }
+    children = if (children.isEmpty()) null else children.mapValues { (_, blocks) -> blocks.map { it.serialize() } },
+    pairId = pairId
 )
 
 fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { proto ->
-    var b = proto.copy(id = this.id)
+    var b = proto.copy(id = this.id, pairId = this.pairId)
     params.forEach { (k, v) -> if (b.params.containsKey(k)) b = b.withParam(k, v) }
     if (!children.isNullOrEmpty()) {
         b = b.copy(children = children.mapValues { (_, list) -> list.mapNotNull { it.deserialize() } })
