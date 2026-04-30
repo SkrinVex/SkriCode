@@ -34,22 +34,22 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         _scripts = scene.scripts
         val project = _project ?: return
 
+        // Сразу показываем пустое состояние и стартуем физику —
+        // onUpdate будет обновлять _simState по мере выполнения скриптов
+        _simState.value = SimState(sprites = project.sprites.orEmpty(), projectId = project.id)
+        startPhysicsLoop()
+
         viewModelScope.launch {
-            val result = SimEngine.run(
+            SimEngine.run(
                 scripts = _scripts,
                 globalVarDefs = project.globalVars.orEmpty(),
                 globalTableDefs = project.globalTables.orEmpty(),
                 locationBlocks = scene.locationBlocks,
                 sprites = project.sprites.orEmpty(),
-                projectId = project.id
+                projectId = project.id,
+                backgroundScope = this
             ) { live -> _simState.value = live }
-
-            if (result.pendingSceneSwitch != null) {
-                val target = _scenes.find { it.name == result.pendingSceneSwitch }
-                if (target != null) { launchScene(target.id); return@launch }
-            }
-            _simState.value = result
-            startPhysicsLoop()
+            // backgroundScope: run возвращает сразу с пустым состоянием — не перезаписываем
         }
     }
 

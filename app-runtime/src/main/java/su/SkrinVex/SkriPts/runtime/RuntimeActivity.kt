@@ -6,8 +6,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriPts.data.*
 import su.SkrinVex.SkriPts.engine.*
 import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
@@ -32,7 +41,24 @@ class RuntimeActivity : ComponentActivity() {
         ExprEval.screenHeight = dm.heightPixels.toFloat()
 
         val (project, key) = loadProject() ?: run {
-            setContent { Text("Ошибка загрузки проекта") }
+            setContent {
+                SkriPtsTheme {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(Color(0xFF0A0E1A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text("⚠", fontSize = 48.sp)
+                            Text("Не удалось загрузить игру", color = Color.White,
+                                fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Файл повреждён или несовместим", color = Color(0xFF8899AA), fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
             return
         }
 
@@ -58,7 +84,29 @@ class RuntimeActivity : ComponentActivity() {
         setContent {
             SkriPtsTheme {
                 val state by vm.simState.collectAsState()
-                state?.let { s ->
+                val s = state
+                if (s == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(Color(0xFF0A0E1A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color(0xFF4F8EF7),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                project.appLabel?.ifBlank { null } ?: project.name,
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else {
                     SimulationScreen(
                         state = s,
                         onTap = { vm.handleTap(it) },

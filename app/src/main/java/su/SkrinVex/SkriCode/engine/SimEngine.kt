@@ -2,7 +2,9 @@ package su.SkrinVex.SkriCode.engine
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import su.SkrinVex.SkriCode.block.BlockDef
 import su.SkrinVex.SkriCode.data.Script
 import su.SkrinVex.SkriCode.data.ScriptEvent
@@ -122,6 +124,7 @@ object SimEngine {
         locationBlocks: List<su.SkrinVex.SkriCode.data.SerializedBlock> = emptyList(),
         sprites: List<su.SkrinVex.SkriCode.data.SpriteAsset> = emptyList(),
         projectId: String = "",
+        backgroundScope: kotlinx.coroutines.CoroutineScope? = null,
         onUpdate: (SimState) -> Unit = {}
     ): SimState {
         val objects = mutableMapOf<String, SimObject>()
@@ -213,19 +216,33 @@ object SimEngine {
         val cameraRef: Array<SimCamera?> = arrayOf(null)
 
         val sceneSwitchRef: Array<String?> = arrayOf(null)
-        scripts.filter { it.event == ScriptEvent.ON_START }.forEach { script ->
-            if (sceneSwitchRef[0] != null) return@forEach  // уже переключаемся
-            log += "Скрипт «${script.name}»"
-            val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
-            val vars = (globalVars + localVars).toMutableMap()
-            val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
-            val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
-            runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
-                allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
-                cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
-                onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId)) })
-            globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
-            globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
+        val onStartScripts = scripts.filter { it.event == ScriptEvent.ON_START }
+
+        fun launchScript(scope: kotlinx.coroutines.CoroutineScope, script: Script) {
+            scope.launch {
+                if (sceneSwitchRef[0] != null) return@launch
+                log += "Скрипт «${script.name}»"
+                val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
+                val vars = (globalVars + localVars).toMutableMap()
+                val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
+                val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
+                runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
+                    allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
+                    cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
+                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId)) })
+                globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
+                globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
+            }
+        }
+
+        if (backgroundScope != null) {
+            // Runtime: запускаем все скрипты в фоне — run возвращает сразу
+            onStartScripts.forEach { launchScript(backgroundScope, it) }
+        } else {
+            // Конструктор: ждём завершения всех скриптов
+            kotlinx.coroutines.coroutineScope {
+                onStartScripts.forEach { launchScript(this, it) }
+            }
         }
 
         bindEventScripts(scripts, objects, errors, warnMissing = false)

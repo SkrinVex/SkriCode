@@ -309,10 +309,7 @@ fun SimulationScreen(
         }
 
         if (state.objects.isEmpty() && state.errors.isEmpty()) {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Сцена пуста", color = Color(0x88FFFFFF), fontSize = 16.sp)
-                Text("Добавь блоки «Симуляция» в редакторе", color = Color(0x55FFFFFF), fontSize = 13.sp)
-            }
+            // Пустая сцена — просто чёрный экран без текста
         }
     }
 }

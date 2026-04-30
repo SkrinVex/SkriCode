@@ -106,11 +106,9 @@ data class ScriptProject(
 data class SerializedBlock(
     val type: String,
     val params: Map<String, String>,
-    val id: String = java.util.UUID.randomUUID().toString(),  // сохраняем ID
-    // Дочерние блоки для if_block
+    val id: String = java.util.UUID.randomUUID().toString(),
     val children: Map<String, List<SerializedBlock>>? = null,
-    // ID парного блока (для open/close пар)
-    val pairId: String = ""
+    val pairId: String? = null  // nullable для обратной совместимости со старыми сохранениями
 )
 
 fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
@@ -120,7 +118,7 @@ fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
 )
 
 fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { proto ->
-    var b = proto.copy(id = this.id, pairId = this.pairId)
+    var b = proto.copy(id = this.id, pairId = this.pairId ?: "")
     params.forEach { (k, v) -> if (b.params.containsKey(k)) b = b.withParam(k, v) }
     if (!children.isNullOrEmpty()) {
         b = b.copy(children = children.mapValues { (_, list) -> list.mapNotNull { it.deserialize() } })
