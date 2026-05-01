@@ -414,6 +414,14 @@ fun LocationEditorScreen(
                 Text("${(zoom * 100).roundToInt()}%", color = TextSec, fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
             }
+        }
+
+        // Кнопки Отмена/Сохранить внизу по центру
+        Row(
+            Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             SmallLocFab(Icons.Default.Close, "Отмена") { onDismiss() }
             SmallLocFab(Icons.Default.Check, "Сохранить") {
                 onSave(locBlocks.map { b ->
