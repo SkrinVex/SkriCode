@@ -105,8 +105,7 @@ object ExprEval {
                         if (keyErr != null) return "" to keyErr
                         val tableData = tables[tableName]
                             ?: return "" to "Таблица «$tableName» не найдена"
-                        val value = tableData[resolvedKey]
-                            ?: return "" to "Ключ «$resolvedKey» не найден в таблице «$tableName»"
+                        val value = tableData[resolvedKey] ?: ""
                         sb.append(value)
                         i = end + 1
                     }

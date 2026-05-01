@@ -423,7 +423,7 @@ object SimEngine {
         }
 
         val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
-        val allTables = (currentState.tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
+        val allTables = ((getLatestState?.invoke() ?: currentState).tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = currentState.physicsEnabled
         val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
@@ -1200,23 +1200,32 @@ object SimEngine {
                     log += "  Камера «$camName»: ${if (enabled) "включена" else "выключена"}"
                 }
                 "table_set" -> {
-                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    val tableName = getStr("table").trim()
                     if (tableName.isBlank()) { errors += "Блок $num «Таблица: записать»: имя таблицы не заполнено"; continue }
-                    val key = getStr("key")
+                    val rawKey = block.params["key"]?.value?.trim() ?: ""
+                    if (Regex("^\\[[^\\]]+\\.[^\\]]+\\]$").matches(rawKey)) {
+                        errors += "Блок $num «Таблица: записать»: в поле «Ключ» написано «$rawKey» — это синтаксис ЧТЕНИЯ таблицы, а не имя ключа. Напиши просто имя ключа, например: ${rawKey.substringAfter('.').trimEnd(']')}"
+                        continue
+                    }
+                    val key = ExprEval.eval(rawKey, vars).value
                     val value = getStr("value")
-                    val tbl = tables.getOrPut(tableName) { mutableMapOf() }
-                    tbl[key] = value
+                    tables.getOrPut(tableName) { mutableMapOf() }[key] = value
                     ExprEval.tables = tables.mapValues { it.value.toMap() }
                     log += "  $tableName[$key] = $value"
+                    onUpdate?.invoke()
                 }
                 "table_get" -> {
-                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    val tableName = getStr("table").trim()
                     if (tableName.isBlank()) { errors += "Блок $num «Таблица: читать»: имя таблицы не заполнено"; continue }
-                    val key = getStr("key")
+                    val rawKey = block.params["key"]?.value?.trim() ?: ""
+                    if (Regex("^\\[[^\\]]+\\.[^\\]]+\\]$").matches(rawKey)) {
+                        errors += "Блок $num «Таблица: читать»: в поле «Ключ» написано «$rawKey» — это синтаксис ЧТЕНИЯ таблицы в выражениях, а не имя ключа. Напиши просто имя ключа, например: ${rawKey.substringAfter('.').trimEnd(']')}"
+                        continue
+                    }
+                    val key = ExprEval.eval(rawKey, vars).value
                     val varName = block.params["var"]?.value?.trim() ?: ""
                     if (varName.isBlank()) { errors += "Блок $num «Таблица: читать»: имя переменной не заполнено"; continue }
-                    val tbl = tables[tableName]
-                    val value = tbl?.get(key) ?: ""
+                    val value = tables[tableName]?.get(key) ?: ""
                     vars[varName] = value
                     log += "  $varName = $tableName[$key] → «$value»"
                 }
@@ -1264,7 +1273,7 @@ object SimEngine {
                     if (ctx == null) { errors += "Блок $num «Сохранить таблицу»: контекст недоступен"; continue }
                     val key = getStr("key")
                     if (key.isBlank()) { errors += "Блок $num «Сохранить таблицу»: ключ не заполнен"; continue }
-                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    val tableName = getStr("table").trim()
                     if (tableName.isBlank()) { errors += "Блок $num «Сохранить таблицу»: имя таблицы не заполнено"; continue }
                     val encrypt = getStr("encrypt") == "true"
                     val tbl = tables[tableName] ?: emptyMap<String, String>()
@@ -1282,7 +1291,7 @@ object SimEngine {
                     if (ctx == null) { errors += "Блок $num «Загрузить таблицу»: контекст недоступен"; continue }
                     val key = getStr("key")
                     if (key.isBlank()) { errors += "Блок $num «Загрузить таблицу»: ключ не заполнен"; continue }
-                    val tableName = block.params["table"]?.value?.trim() ?: ""
+                    val tableName = getStr("table").trim()
                     if (tableName.isBlank()) { errors += "Блок $num «Загрузить таблицу»: имя таблицы не заполнено"; continue }
                     val encrypt = getStr("encrypt") == "true"
                     val prefs = ctx.getSharedPreferences("skripts_saves", Context.MODE_PRIVATE)
@@ -1299,9 +1308,10 @@ object SimEngine {
                         val loaded = json.split("|").mapNotNull {
                             val eq = it.indexOf('='); if (eq == -1) null else it.substring(0, eq) to it.substring(eq + 1)
                         }.toMap().toMutableMap()
-                        tables[tableName] = loaded
+                        tables.getOrPut(tableName) { mutableMapOf() }.putAll(loaded)
                         ExprEval.tables = tables.mapValues { it.value.toMap() }
                         log += "  Таблица «$tableName» загружена из «$key» (${loaded.size} записей)"
+                        onUpdate?.invoke()
                     } else {
                         log += "  Таблица «$key» не найдена в памяти — «$tableName» не изменена"
                     }
