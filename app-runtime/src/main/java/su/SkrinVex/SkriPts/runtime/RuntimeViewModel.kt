@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import su.SkrinVex.SkriPts.data.*
 import su.SkrinVex.SkriPts.engine.*
-import kotlin.math.hypot
+import kotlin.math.*
 
 class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -30,26 +30,29 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun launchScene(sceneId: String) {
         _physicsJob?.cancel()
+        _activeHolds.clear()
         val scene = _scenes.find { it.id == sceneId } ?: return
         _scripts = scene.scripts
         val project = _project ?: return
 
-        // Сразу показываем пустое состояние и стартуем физику —
-        // onUpdate будет обновлять _simState по мере выполнения скриптов
         _simState.value = SimState(sprites = project.sprites.orEmpty(), projectId = project.id)
-        startPhysicsLoop()
 
         viewModelScope.launch {
-            SimEngine.run(
+            val result = SimEngine.run(
                 scripts = _scripts,
                 globalVarDefs = project.globalVars.orEmpty(),
                 globalTableDefs = project.globalTables.orEmpty(),
                 locationBlocks = scene.locationBlocks,
                 sprites = project.sprites.orEmpty(),
-                projectId = project.id,
-                backgroundScope = this
+                projectId = project.id
             ) { live -> _simState.value = live }
-            // backgroundScope: run возвращает сразу с пустым состоянием — не перезаписываем
+
+            if (result.pendingSceneSwitch != null) {
+                switchScene(result.pendingSceneSwitch, result.globalVars)
+            } else {
+                _simState.value = result
+                startPhysicsLoop()
+            }
         }
     }
 
@@ -63,24 +66,32 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 delay(16)
                 if (_simState.value?.isStopped == true) continue
 
-                _simState.update { s ->
-                    var sim = s ?: return@update s
-                    for ((_, joy) in sim.joysticks) {
-                        if (joy.pointerId == null || !joy.visible) continue
-                        val len = hypot(joy.knobDx, joy.knobDy)
-                        if (len <= 0.05f) continue
-                        val target = sim.objects[joy.targetObject] ?: continue
-                        val body = target.physicsBody
-                        if (body != null && body.isStatic) continue
-                        val newTarget = if (body != null && body.enabled)
-                            target.copy(physicsBody = body.copy(velocityX = joy.knobDx * joy.speed, velocityY = joy.knobDy * joy.speed))
-                        else
-                            target.copy(x = target.x + joy.knobDx * joy.speed, y = target.y + joy.knobDy * joy.speed)
-                        sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
+                val curSim = _simState.value ?: continue
+                var sim = curSim
+                for ((_, joy) in sim.joysticks) {
+                    if (joy.pointerId == null) continue
+                    val len = hypot(joy.knobDx, joy.knobDy)
+                    if (len <= 0.05f) continue
+                    val target = sim.objects[joy.targetObject] ?: continue
+                    val body = target.physicsBody
+                    if (body != null && body.isStatic) continue
+                    if (body != null && !sim.physicsEnabled) continue
+                    val newTarget = if (joy.directional) {
+                        val newRot = (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
+                        val rad = Math.toRadians(newRot.toDouble() - 90.0)
+                        target.copy(
+                            x = target.x + (cos(rad) * len * joy.speed).toFloat(),
+                            y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
+                            rotation = newRot
+                        )
+                    } else if (body != null && body.enabled) {
+                        target.copy(physicsBody = body.copy(velocityX = joy.knobDx * joy.speed, velocityY = joy.knobDy * joy.speed))
+                    } else {
+                        target.copy(x = target.x + joy.knobDx * joy.speed, y = target.y + joy.knobDy * joy.speed)
                     }
-                    s.copy()
-                    sim
+                    sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
                 }
+                if (sim !== curSim) _simState.value = sim
 
                 val (newSim, newCols, endedCols) = SimEngine.physicsTick(_simState.value ?: continue)
                 _simState.value = SimEngine.tickCamera(newSim)
@@ -95,53 +106,58 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             getLatestState = { _simState.value ?: cur }
                         )
                         runningHold -= scriptId
-                        handleSceneSwitch(res) ?: run { _simState.value = res }
+                        if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                        _simState.value = res
                     }
                 }
 
                 for ((a, b) in newCols) {
-                    val sim = _simState.value ?: break
-                    sim.objects[a]?.collisionScriptId?.let { sid ->
+                    val sim2 = _simState.value ?: break
+                    sim2.objects[a]?.collisionScriptId?.let { sid ->
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                handleSceneSwitch(res) ?: run { _simState.value = res }
+                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                _simState.value = res
                             }
                         }
                     }
-                    sim.objects[b]?.collisionScriptId?.let { sid ->
+                    sim2.objects[b]?.collisionScriptId?.let { sid ->
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                handleSceneSwitch(res) ?: run { _simState.value = res }
+                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                _simState.value = res
                             }
                         }
                     }
                 }
 
                 for ((a, b) in endedCols) {
-                    val sim = _simState.value ?: break
-                    sim.objects[a]?.collisionEndScriptId?.let { sid ->
+                    val sim2 = _simState.value ?: break
+                    sim2.objects[a]?.collisionEndScriptId?.let { sid ->
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                handleSceneSwitch(res) ?: run { _simState.value = res }
+                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                _simState.value = res
                             }
                         }
                     }
-                    sim.objects[b]?.collisionEndScriptId?.let { sid ->
+                    sim2.objects[b]?.collisionEndScriptId?.let { sid ->
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                handleSceneSwitch(res) ?: run { _simState.value = res }
+                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                _simState.value = res
                             }
                         }
                     }
@@ -150,11 +166,24 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun handleSceneSwitch(state: SimState): Unit? {
-        val target = state.pendingSceneSwitch ?: return null
-        val scene = _scenes.find { it.name == target } ?: return null
-        launchScene(scene.id)
-        return Unit
+    private fun switchScene(sceneName: String, globalVars: Map<String, String>) {
+        val scene = _scenes.find { it.name == sceneName } ?: return
+        _physicsJob?.cancel()
+        _activeHolds.clear()
+        _scripts = scene.scripts
+        val project = _project ?: return
+        val updatedGlobalVarDefs = project.globalVars.orEmpty().map { v ->
+            globalVars[v.name]?.let { v.copy(value = it) } ?: v
+        }
+        _simState.value = SimState(globalVars = globalVars, sprites = project.sprites.orEmpty(), projectId = project.id)
+        viewModelScope.launch {
+            val result = SimEngine.run(
+                scene.scripts, updatedGlobalVarDefs, project.globalTables.orEmpty(),
+                scene.locationBlocks, sprites = project.sprites.orEmpty(), projectId = project.id
+            ) { live -> _simState.value = live }
+            if (result.pendingSceneSwitch != null) switchScene(result.pendingSceneSwitch, result.globalVars)
+            else { _simState.value = result; startPhysicsLoop() }
+        }
     }
 
     fun handleTap(name: String) {
@@ -165,7 +194,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 onUpdate = { live -> _simState.value = live },
                 getLatestState = { _simState.value ?: cur }
             )
-            handleSceneSwitch(res) ?: run { _simState.value = res }
+            if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+            _simState.value = res
         }
     }
 

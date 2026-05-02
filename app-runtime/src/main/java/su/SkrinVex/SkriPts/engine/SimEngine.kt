@@ -229,7 +229,10 @@ object SimEngine {
                 runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                     allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
                     cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
-                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId)) })
+                    onUpdate = {
+                        bindEventScripts(scripts, objects, errors, warnMissing = false)
+                        onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId))
+                    })
                 globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
                 globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
             }
@@ -684,6 +687,7 @@ object SimEngine {
                         hitbox = existing?.hitbox ?: Hitbox()
                     )
                     log += "  ${if (existing != null) "Обновлён" else "Создан"} спрайт «$name» (${getStr("x")}, ${getStr("y")}) ${w.toInt()}x${h.toInt()}"
+                    onUpdate?.invoke()
                 }
                 "if_block" -> {
                     val left  = block.params["left"]?.value ?: ""
@@ -754,6 +758,7 @@ object SimEngine {
                     )
                     if (existing != null) log += "  Обновлён «$name» (${getStr("x")}, ${getStr("y")})"
                     else log += "  Создан «$name» (${getStr("x")}, ${getStr("y")}) ${getStr("width")}x${getStr("height")}"
+                    onUpdate?.invoke()
                 }
                 "sim_move" -> {
                     val nameOrTag = getStr("name")
@@ -825,6 +830,7 @@ object SimEngine {
                         hitbox = existing?.hitbox ?: Hitbox()
                     )
                     log += "  ${if (existing != null) "Обновлён" else "Создан"} текст «$name»: «${getStr("text")}»"
+                    onUpdate?.invoke()
                 }
                 "sim_hide" -> {
                     val nameOrTag = getStr("name")
@@ -979,6 +985,7 @@ object SimEngine {
                         directional = getStr("directional", "false") == "true"
                     )
                     log += "  Джойстик «$name» создан"
+                    onUpdate?.invoke()
                 }
                 "sim_modify" -> {
                     val nameOrTag = getStr("name")
