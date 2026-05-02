@@ -2738,10 +2738,14 @@ private fun ApkBuildSettingsDialog(
                     placeholder = { Text("com.example.mygame", color = TextSec) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    isError = pkgField.isNotBlank() && !pkgValid,
+                    isError = pkgField.isNotBlank() && (!pkgValid || pkgField.startsWith("su.SkrinVex", ignoreCase = true)),
                     supportingText = {
-                        if (pkgField.isNotBlank() && !pkgValid)
-                            Text("Формат: com.example.app или su.myname.game", color = Danger, fontSize = 11.sp)
+                        when {
+                            pkgField.startsWith("su.SkrinVex", ignoreCase = true) -> 
+                                Text("Еба ты гений, так нельзя", color = Danger, fontSize = 11.sp)
+                            pkgField.isNotBlank() && !pkgValid -> 
+                                Text("Формат: com.example.app или su.myname.game", color = Danger, fontSize = 11.sp)
+                        }
                     },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, focusedLabelColor = Accent,
@@ -2822,7 +2826,13 @@ private fun ApkBuildSettingsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
+            val isForbiddenPackage = pkgField.equals("su.SkrinVex.SkriCode", ignoreCase = true) ||
+                                     pkgField.startsWith("su.SkrinVex", ignoreCase = true)
+            Button(
+                onClick = onDismiss,
+                enabled = !isForbiddenPackage && (pkgField.isBlank() || pkgValid) && (verCodeInt != null),
+                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+            ) {
                 Text("Готово", color = Navy900)
             }
         }
