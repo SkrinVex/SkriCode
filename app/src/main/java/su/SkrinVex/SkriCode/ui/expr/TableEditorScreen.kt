@@ -72,7 +72,7 @@ fun TableEditorScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                itemsIndexed(entries, key = { _, e -> e.key }) { idx, (key, value) ->
+                itemsIndexed(entries, key = { idx, e -> "${idx}_${e.key}" }) { idx, (key, value) ->
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
                             .border(1.dp, tableColor.copy(0.15f), RoundedCornerShape(10.dp))

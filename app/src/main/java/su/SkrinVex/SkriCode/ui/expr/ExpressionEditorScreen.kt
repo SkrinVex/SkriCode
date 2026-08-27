@@ -649,7 +649,7 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
                             Text("Глобальные", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(globalVars, key = { it.name }) { v ->
+                    items(globalVars, key = { "global_${it.name}" }) { v ->
                         VarRow(variable = v, onClick = { onInsert(v.name) }, onDelete = { onDelete(v) })
                     }
                 }
@@ -661,7 +661,7 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
                             Text("Локальные", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(localVars, key = { it.name }) { v ->
+                    items(localVars, key = { "local_${it.name}" }) { v ->
                         VarRow(variable = v, onClick = { onInsert(v.name) }, onDelete = { onDelete(v) })
                     }
                 }
@@ -693,7 +693,7 @@ private fun TagsTab(tags: List<ProjectTag>, onInsert: (String) -> Unit, onDelete
                             Text("Глобальные", color = Color(0xFFFF6B6B), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(globalTags, key = { it.name }) { t ->
+                    items(globalTags, key = { "global_${it.name}" }) { t ->
                         TagRow(tag = t, onClick = { onInsert(t.name) }, onDelete = onDelete?.let { { it(t) } })
                     }
                 }
@@ -705,7 +705,7 @@ private fun TagsTab(tags: List<ProjectTag>, onInsert: (String) -> Unit, onDelete
                             Text("Локальные", color = Color(0xFFFF6B6B), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(localTags, key = { it.name }) { t ->
+                    items(localTags, key = { "local_${it.name}" }) { t ->
                         TagRow(tag = t, onClick = { onInsert(t.name) }, onDelete = onDelete?.let { { it(t) } })
                     }
                 }
@@ -838,7 +838,7 @@ private fun TablesTab(
                             Text("Глобальные", color = TableColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(globalTables, key = { it.name }) { t ->
+                    items(globalTables, key = { "global_${it.name}" }) { t ->
                         TableRow(table = t, onInsert = { k -> onInsert(t.name, k) },
                             onDelete = onDelete?.let { { it(t) } }, onEdit = { onEdit(t) })
                     }
@@ -852,7 +852,7 @@ private fun TablesTab(
                             Text("Локальные", color = TableColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    items(localTables, key = { it.name }) { t ->
+                    items(localTables, key = { "local_${it.name}" }) { t ->
                         TableRow(table = t, onInsert = { k -> onInsert(t.name, k) },
                             onDelete = onDelete?.let { { it(t) } }, onEdit = { onEdit(t) })
                     }
