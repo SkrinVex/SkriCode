@@ -7,8 +7,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import su.SkrinVex.SkriPts.data.*
-import su.SkrinVex.SkriPts.engine.*
+import su.SkrinVex.SkriCode.data.*
+import su.SkrinVex.SkriCode.engine.*
 import kotlin.math.*
 
 class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
@@ -62,8 +62,9 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 projectId = project.id
             ) { live -> _simState.value = live }
 
-            if (result.pendingSceneSwitch != null) {
-                switchScene(result.pendingSceneSwitch, result.globalVars)
+            val nextScene = result.pendingSceneSwitch
+            if (nextScene != null) {
+                switchScene(nextScene, result.globalVars)
             } else {
                 _simState.value = result
                 startPhysicsLoop()
@@ -121,7 +122,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             getLatestState = { _simState.value ?: cur }
                         )
                         runningHold -= scriptId
-                        if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                        val next = res.pendingSceneSwitch
+                        if (next != null) { switchScene(next, res.globalVars); return@launch }
                         _simState.value = res
                     }
                 }
@@ -134,7 +136,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                val next = res.pendingSceneSwitch
+                                if (next != null) { switchScene(next, res.globalVars); return@launch }
                                 _simState.value = res
                             }
                         }
@@ -145,7 +148,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                val next = res.pendingSceneSwitch
+                                if (next != null) { switchScene(next, res.globalVars); return@launch }
                                 _simState.value = res
                             }
                         }
@@ -160,7 +164,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                val next = res.pendingSceneSwitch
+                                if (next != null) { switchScene(next, res.globalVars); return@launch }
                                 _simState.value = res
                             }
                         }
@@ -171,7 +176,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
-                                if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+                                val next = res.pendingSceneSwitch
+                                if (next != null) { switchScene(next, res.globalVars); return@launch }
                                 _simState.value = res
                             }
                         }
@@ -196,7 +202,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 scene.scripts, updatedGlobalVarDefs, project.globalTables.orEmpty(),
                 scene.locationBlocks, sprites = project.sprites.orEmpty(), projectId = project.id
             ) { live -> _simState.value = live }
-            if (result.pendingSceneSwitch != null) switchScene(result.pendingSceneSwitch, result.globalVars)
+            val next = result.pendingSceneSwitch
+            if (next != null) switchScene(next, result.globalVars)
             else { _simState.value = result; startPhysicsLoop() }
         }
     }
@@ -209,7 +216,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 onUpdate = { live -> _simState.value = live },
                 getLatestState = { _simState.value ?: cur }
             )
-            if (res.pendingSceneSwitch != null) { switchScene(res.pendingSceneSwitch, res.globalVars); return@launch }
+            val next = res.pendingSceneSwitch
+            if (next != null) { switchScene(next, res.globalVars); return@launch }
             _simState.value = res
         }
     }

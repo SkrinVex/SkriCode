@@ -17,10 +17,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import su.SkrinVex.SkriPts.data.*
-import su.SkrinVex.SkriPts.engine.*
-import su.SkrinVex.SkriPts.ui.sim.SimulationScreen
-import su.SkrinVex.SkriPts.ui.theme.SkriPtsTheme
+import su.SkrinVex.SkriCode.data.*
+import su.SkrinVex.SkriCode.engine.*
+import su.SkrinVex.SkriCode.ui.sim.SimulationScreen
+import su.SkrinVex.SkriCode.ui.theme.SkriPtsTheme
 import com.google.gson.Gson
 import java.io.File
 import javax.crypto.Cipher

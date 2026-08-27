@@ -646,7 +646,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             getLatestState = { _simState.value ?: currentSim }
                         )
                         runningHoldScripts -= scriptId
-                        if (newHoldSim.pendingSceneSwitch != null) { switchScene(newHoldSim.pendingSceneSwitch, newHoldSim.globalVars); return@launch }
+                        val next = newHoldSim.pendingSceneSwitch
+                        if (next != null) { switchScene(next, newHoldSim.globalVars); return@launch }
                         _simState.value = newHoldSim
                     }
                 }
@@ -659,7 +660,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
-                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                val next = result.pendingSceneSwitch
+                                if (next != null) { switchScene(next, result.globalVars); return@launch }
                                 _simState.value = result
                             }
                         }
@@ -670,7 +672,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
-                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                val next = result.pendingSceneSwitch
+                                if (next != null) { switchScene(next, result.globalVars); return@launch }
                                 _simState.value = result
                             }
                         }
@@ -685,7 +688,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameB, selfName = nameA, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
-                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                val next = result.pendingSceneSwitch
+                                if (next != null) { switchScene(next, result.globalVars); return@launch }
                                 _simState.value = result
                             }
                         }
@@ -696,7 +700,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             launch {
                                 val result = SimEngine.runCollision(sid, _simScripts, _simState.value ?: return@launch, otherName = nameA, selfName = nameB, getLatestState = { _simState.value ?: sim2 })
                                 runningCollisionScripts -= sid
-                                if (result.pendingSceneSwitch != null) { switchScene(result.pendingSceneSwitch, result.globalVars); return@launch }
+                                val next = result.pendingSceneSwitch
+                                if (next != null) { switchScene(next, result.globalVars); return@launch }
                                 _simState.value = result
                             }
                         }
@@ -735,7 +740,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 onUpdate = { liveState -> _simState.value = liveState },
                 getLatestState = { _simState.value ?: currentSim }
             )
-            if (newSim.pendingSceneSwitch != null) { switchScene(newSim.pendingSceneSwitch, newSim.globalVars); return@launch }
+            val next = newSim.pendingSceneSwitch
+            if (next != null) { switchScene(next, newSim.globalVars); return@launch }
             _simState.value = newSim
         }
     }
