@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriCode.ui.editor
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -37,6 +38,8 @@ fun LocationObjectEditorScreen(
     onConfirm: (BlockDef) -> Unit,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
+
     // objectBlock — первый "блок" в списке (основные свойства)
     var mainBlock by remember(objectBlock.id) { mutableStateOf(objectBlock) }
     var setupBlocks by remember(objectBlock.id) {

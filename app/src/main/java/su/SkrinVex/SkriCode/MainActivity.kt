@@ -39,8 +39,7 @@ class MainActivity : ComponentActivity() {
         ThemeManager.init(this)
         // Устанавливаем размеры экрана для встроенных констант
         val dm = resources.displayMetrics
-        ExprEval.screenWidth = dm.widthPixels.toFloat()
-        ExprEval.screenHeight = dm.heightPixels.toFloat()
+        ExprEval.updateDeviceResolution(dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
         // Контекст для сохранений
         SimEngine.appContext = applicationContext
         ExprEval.appContext = applicationContext
@@ -63,6 +62,10 @@ class MainActivity : ComponentActivity() {
                 val simRunCount by editorVm.simRunCount.collectAsState()
                 var screen by remember { mutableStateOf("home") }
                 var landscapeActive by remember { mutableStateOf(false) }
+
+                LaunchedEffect(editorState.orientation) {
+                    ExprEval.setOrientation(editorState.orientation)
+                }
 
                 // Применяем ориентацию — только портрет везде кроме sim/локации/позиционировщика
                 val isLandscape = landscapeActive ||

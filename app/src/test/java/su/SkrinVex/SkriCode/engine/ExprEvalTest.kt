@@ -81,4 +81,32 @@ class ExprEvalTest {
         assertNull(err3)
         assertTrue(c3)
     }
+
+    @Test
+    fun testDynamicScreenOrientation() {
+        ExprEval.updateDeviceResolution(1080f, 2400f)
+
+        // Portrait mode
+        ExprEval.setOrientation(su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT)
+        assertEquals("1080", ExprEval.eval("\$screenWidth", emptyMap()).value)
+        assertEquals("2400", ExprEval.eval("\$screenHeight", emptyMap()).value)
+        assertEquals("540", ExprEval.eval("\$screenRight", emptyMap()).value)
+        assertEquals("-540", ExprEval.eval("\$screenLeft", emptyMap()).value)
+        assertEquals("1200", ExprEval.eval("\$screenTop", emptyMap()).value)
+        assertEquals("-1200", ExprEval.eval("\$screenBottom", emptyMap()).value)
+
+        // Switch to Landscape mode
+        ExprEval.setOrientation(su.SkrinVex.SkriCode.data.ProjectOrientation.LANDSCAPE)
+        assertEquals("2400", ExprEval.eval("\$screenWidth", emptyMap()).value)
+        assertEquals("1080", ExprEval.eval("\$screenHeight", emptyMap()).value)
+        assertEquals("1200", ExprEval.eval("\$screenRight", emptyMap()).value)
+        assertEquals("-1200", ExprEval.eval("\$screenLeft", emptyMap()).value)
+        assertEquals("540", ExprEval.eval("\$screenTop", emptyMap()).value)
+        assertEquals("-540", ExprEval.eval("\$screenBottom", emptyMap()).value)
+
+        // Switch back to Portrait
+        ExprEval.setOrientation(su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT)
+        assertEquals("1080", ExprEval.eval("\$screenWidth", emptyMap()).value)
+        assertEquals("2400", ExprEval.eval("\$screenHeight", emptyMap()).value)
+    }
 }

@@ -1,5 +1,6 @@
 package su.SkrinVex.SkriCode.ui.editor
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +61,8 @@ fun LocationEditorScreen(
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
+
     var zoom by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
@@ -163,8 +166,8 @@ fun LocationEditorScreen(
         return
     }
 
-    val sw = if (isLandscape) ExprEval.screenHeight else ExprEval.screenWidth
-    val sh = if (isLandscape) ExprEval.screenWidth else ExprEval.screenHeight
+    val sw = ExprEval.screenWidth
+    val sh = ExprEval.screenHeight
 
     Box(Modifier.fillMaxSize().background(Color(0xFF080C18))) {
 

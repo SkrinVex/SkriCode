@@ -1,5 +1,7 @@
 package su.SkrinVex.SkriCode.ui.editor
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -10,7 +12,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -18,9 +19,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import su.SkrinVex.SkriCode.block.BlockDef
@@ -52,6 +55,9 @@ fun PositionPickerScreen(
     onConfirm: (xExpr: String, yExpr: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Перехват системной кнопки "Назад", чтобы закрывать позиционировщик и возвращаться к блокам
+    BackHandler(onBack = onDismiss)
+
     var objX by remember { mutableFloatStateOf(initialX) }
     var objY by remember { mutableFloatStateOf(initialY) }
     var canvasW by remember { mutableFloatStateOf(0f) }
@@ -111,11 +117,7 @@ fun PositionPickerScreen(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectDragGestures(
-                        onDragStart = { offset ->
-                            // Захватываем объект если нажали на него
-                            val cx = canvasW / 2f; val cy = canvasH / 2f
-                            val left = cx + objX - objectWidth / 2f
-                            val top  = cy - objY - objectHeight / 2f
+                        onDragStart = { _ ->
                             // Разрешаем drag с любой точки экрана для удобства
                         },
                         onDrag = { change, dragAmount ->
@@ -271,30 +273,89 @@ fun PositionPickerScreen(
             drawLine(Color(0xFF00E5FF), Offset(ocx, ocy - 10f), Offset(ocx, ocy + 10f), 1.5f)
         }
 
-        // Координаты — компактная строка сверху
+        // Координаты — адаптивная компактная плашка сверху
         val xExpr = toExpr(objX, sw, isX = true)
         val yExpr = toExpr(objY, sh, isX = false)
 
         Surface(
-            modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 6.dp),
-            color = Color(0xCC0A0E1A),
-            shape = RoundedCornerShape(10.dp)
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            color = Color(0xEE0A0E1A),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0x3300E5FF)),
+            shadowElevation = 6.dp
         ) {
             Row(
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(objectName, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("X: $xExpr  Y: $yExpr", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                Text("(${objX.roundToInt()}, ${objY.roundToInt()})", color = Color(0x88FFFFFF), fontSize = 10.sp)
-                Spacer(Modifier.width(4.dp))
-                // Кнопки прямо в топбаре — компактно для ландшафта
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Close, "Отмена", tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                // Кнопка отмены слева
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Отмена",
+                        tint = Color(0xFFFF6B6B),
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
-                IconButton(onClick = { onConfirm(xExpr, yExpr) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Check, "Применить", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+
+                // Центр: Название объекта + Координаты (в 2 строки, эллипсис при необходимости)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = objectName,
+                        color = Color(0xFF00E5FF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "X: $xExpr  Y: $yExpr",
+                            color = Color.White,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "(${objX.roundToInt()}, ${objY.roundToInt()})",
+                            color = Color(0x88FFFFFF),
+                            fontSize = 10.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Кнопка подтверждения справа
+                IconButton(
+                    onClick = { onConfirm(xExpr, yExpr) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Применить",
+                        tint = Color(0xFF00E5FF),
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }

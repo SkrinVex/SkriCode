@@ -6,6 +6,7 @@ import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
+import su.SkrinVex.SkriPts.data.ProjectOrientation
 
 /**
  * Область видимости данных для вычисления выражений.
@@ -23,7 +24,27 @@ data class ExprScope(
  *   "{x}"              -> значение переменной x
  *   "{x} + 50"         -> арифметика
  *   "$screenWidth"     -> ширина экрана (пикселей)
- *   "$rand(min, max)"  -> случайное целое в диапазоне
+ *   "$screenHeight"    -> высота экрана (пикселей)
+ *   "$screenTop"       -> верхняя точка (+screenHeight / 2)
+ *   "$screenBottom"    -> нижняя точка (-screenHeight / 2)
+ *   "$screenRight"     -> правая точка (+screenWidth / 2)
+ *   "$screenLeft"      -> левая точка (-screenWidth / 2)
+ *   "$rand(1, 10)"     -> случайное целое
+ *   "$round(3.7)"      -> округление
+ *   "$floor(3.7)"      -> вниз
+ *   "$ceil(3.2)"       -> вверх
+ *   "$abs(-5)"         -> модуль
+ *   "$min(3, 7)"       -> минимум
+ *   "$max(3, 7)"       -> максимум
+ *   "$sqrt(16)"        -> корень
+ *   "$sin(90)"         -> синус (градусы)
+ *   "$cos(0)"          -> косинус (градусы)
+ *   "$len(text)"       -> длина строки
+ *   "$sub(text, 0, 3)" -> подстрока
+ *   "$upper(text)"     -> в верхний регистр
+ *   "$lower(text)"     -> в нижний регистр
+ *   "$trim(text)"      -> убрать пробелы
+ *   "$concat(a, b)"    -> соединить
  */
 object ExprEval {
 
@@ -39,9 +60,39 @@ object ExprEval {
         "collision_self_width", "collision_self_height", "collision_self_rotation"
     )
 
-    // Размеры экрана — устанавливаются из Activity при старте
-    var screenWidth: Float = 1080f
-    var screenHeight: Float = 1920f
+    // Физические размеры экрана устройства (меньшая и большая стороны)
+    var devicePhysicalWidth: Float = 1080f
+    var devicePhysicalHeight: Float = 1920f
+
+    // Текущая ориентация проекта
+    var projectOrientation: ProjectOrientation = ProjectOrientation.PORTRAIT
+
+    // Динамическая ширина экрана: для LANDSCAPE — большая сторона, для PORTRAIT — меньшая
+    val screenWidth: Float
+        get() {
+            val minDim = minOf(devicePhysicalWidth, devicePhysicalHeight)
+            val maxDim = maxOf(devicePhysicalWidth, devicePhysicalHeight)
+            return if (projectOrientation == ProjectOrientation.LANDSCAPE) maxDim else minDim
+        }
+
+    // Динамическая высота экрана: для LANDSCAPE — меньшая сторона, для PORTRAIT — большая
+    val screenHeight: Float
+        get() {
+            val minDim = minOf(devicePhysicalWidth, devicePhysicalHeight)
+            val maxDim = maxOf(devicePhysicalWidth, devicePhysicalHeight)
+            return if (projectOrientation == ProjectOrientation.LANDSCAPE) minDim else maxDim
+        }
+
+    fun updateDeviceResolution(w: Float, h: Float) {
+        if (w > 0f && h > 0f) {
+            devicePhysicalWidth = minOf(w, h)
+            devicePhysicalHeight = maxOf(w, h)
+        }
+    }
+
+    fun setOrientation(orientation: ProjectOrientation) {
+        projectOrientation = orientation
+    }
 
     val fallbackScope = ExprScope()
 

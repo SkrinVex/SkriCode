@@ -37,8 +37,7 @@ class RuntimeActivity : ComponentActivity() {
         SimEngine.appContext = applicationContext
         ExprEval.appContext = applicationContext
         val dm = resources.displayMetrics
-        ExprEval.screenWidth = dm.widthPixels.toFloat()
-        ExprEval.screenHeight = dm.heightPixels.toFloat()
+        ExprEval.updateDeviceResolution(dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
 
         val (project, key) = loadProject() ?: run {
             setContent {
@@ -53,8 +52,9 @@ class RuntimeActivity : ComponentActivity() {
                         ) {
                             Text("⚠", fontSize = 48.sp)
                             Text("Не удалось загрузить игру", color = Color.White,
-                                fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Файл повреждён или несовместим", color = Color(0xFF8899AA), fontSize = 14.sp)
+                                fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("Файл проекта повреждён или отсутствует",
+                                color = Color(0xFF8892B0), fontSize = 14.sp)
                         }
                     }
                 }
@@ -62,6 +62,7 @@ class RuntimeActivity : ComponentActivity() {
             return
         }
 
+        ExprEval.setOrientation(project.orientation ?: ProjectOrientation.PORTRAIT)
         requestedOrientation = if (project.orientation == ProjectOrientation.LANDSCAPE)
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         else

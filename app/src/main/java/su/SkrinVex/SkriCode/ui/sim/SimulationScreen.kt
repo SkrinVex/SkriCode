@@ -179,9 +179,8 @@ fun SimulationScreen(
                 }
         ) {
             canvasSize = Pair(size.width, size.height)
-            // Обновляем константы экрана из реального размера Canvas (после скрытия системных баров)
-            ExprEval.screenWidth = size.width
-            ExprEval.screenHeight = size.height
+            // Обновляем базовые физические размеры экрана из реального размера Canvas
+            ExprEval.updateDeviceResolution(size.width, size.height)
             val cx = size.width / 2f
             val cy = size.height / 2f
             // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap

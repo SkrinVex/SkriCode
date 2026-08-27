@@ -185,8 +185,7 @@ fun SimulationScreen(
                 }
         ) {
             canvasSize = Pair(size.width, size.height)
-            ExprEval.screenWidth = size.width
-            ExprEval.screenHeight = size.height
+            ExprEval.updateDeviceResolution(size.width, size.height)
             val cx = size.width / 2f
             val cy = size.height / 2f
             // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap

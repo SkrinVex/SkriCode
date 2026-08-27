@@ -116,7 +116,7 @@ fun ExpressionEditorScreen(
     }
     fun insertFn(insert: String) { insertAt(insert) }
     
-    BackHandler(enabled = !hasChanges) {
+    BackHandler {
         onBack()
     }
 

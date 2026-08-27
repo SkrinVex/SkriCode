@@ -119,10 +119,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (collapsed.isNotEmpty()) _collapsedBlocks[script.id] = collapsed.toMutableSet()
         }
 
+        val orient = project.orientation ?: su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(orient)
+
         _state.update { it.copy(
             projectId = project.id,
             projectName = project.name,
-            orientation = project.orientation ?: su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT,
+            orientation = orient,
             packageName = project.packageName ?: "",
             appLabel = project.appLabel ?: "",
             versionName = project.versionName ?: "1.0",
@@ -933,7 +936,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         ))
     }
 
-    fun setOrientation(o: su.SkrinVex.SkriCode.data.ProjectOrientation) = _state.update { it.copy(orientation = o) }
+    fun setOrientation(o: su.SkrinVex.SkriCode.data.ProjectOrientation) {
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(o)
+        _state.update { it.copy(orientation = o) }
+    }
     fun setPackageName(pkg: String) = _state.update { it.copy(packageName = pkg) }
     fun setAppLabel(v: String) = _state.update { it.copy(appLabel = v) }
     fun setVersionName(v: String) = _state.update { it.copy(versionName = v) }
