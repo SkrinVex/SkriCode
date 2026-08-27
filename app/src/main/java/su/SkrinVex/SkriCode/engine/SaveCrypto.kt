@@ -2,6 +2,7 @@ package su.SkrinVex.SkriCode.engine
 
 import android.content.Context
 import android.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.IvParameterSpec
@@ -12,6 +13,8 @@ object SaveCrypto {
 
     private const val PREFS = "skripts_keyvault"
     private const val SALT = "SkriPts_Salt_v1"
+
+    private val keyCache = ConcurrentHashMap<String, SecretKeySpec>()
 
     fun listKeys(ctx: Context): List<String> =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.keys.toList().sorted()
@@ -57,9 +60,11 @@ object SaveCrypto {
     }.getOrNull()
 
     private fun deriveKey(password: String): SecretKeySpec {
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val spec = PBEKeySpec(password.toCharArray(), SALT.toByteArray(), 10000, 256)
-        val tmp = factory.generateSecret(spec)
-        return SecretKeySpec(tmp.encoded, "AES")
+        return keyCache.computeIfAbsent(password) { pwd ->
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            val spec = PBEKeySpec(pwd.toCharArray(), SALT.toByteArray(), 10000, 256)
+            val tmp = factory.generateSecret(spec)
+            SecretKeySpec(tmp.encoded, "AES")
+        }
     }
 }

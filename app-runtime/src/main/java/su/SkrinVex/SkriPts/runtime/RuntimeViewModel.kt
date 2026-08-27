@@ -60,8 +60,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         _physicsJob?.cancel()
         _activeHolds.clear()
         _physicsJob = viewModelScope.launch {
-            val runningCollision = mutableSetOf<String>()
-            val runningHold = mutableSetOf<String>()
+            val runningCollision = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+            val runningHold = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
             while (true) {
                 delay(16)
                 if (_simState.value?.isStopped == true) continue

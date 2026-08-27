@@ -22,26 +22,26 @@ android {
         versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++17"
-            }
-        }
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file(keystoreProps.getProperty("storeFile") ?: "")
-            storePassword = keystoreProps.getProperty("storePassword") ?: ""
-            keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
-            keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
+        val storePath = keystoreProps.getProperty("storeFile")
+        if (!storePath.isNullOrBlank() && file(storePath).exists()) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = keystoreProps.getProperty("storePassword") ?: ""
+                keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
+                keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfigs.findByName("release")?.let {
+                signingConfig = it
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,12 +51,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
     }
     buildFeatures {
         compose = true

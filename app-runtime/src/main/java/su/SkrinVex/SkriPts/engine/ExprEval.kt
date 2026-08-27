@@ -1,9 +1,20 @@
 package su.SkrinVex.SkriPts.engine
 
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
+
+/**
+ * Область видимости данных для вычисления выражений.
+ */
+data class ExprScope(
+    var objects: Map<String, SimObject> = emptyMap(),
+    var joysticks: Map<String, JoystickState> = emptyMap(),
+    var tables: Map<String, Map<String, String>> = emptyMap(),
+)
 
 /**
  * Вычислитель выражений.
@@ -32,11 +43,18 @@ object ExprEval {
     var screenWidth: Float = 1080f
     var screenHeight: Float = 1920f
 
-    // Объекты симуляции — обновляются из SimEngine перед каждым вычислением
-    var objects: Map<String, SimObject> = emptyMap()
-    var joysticks: Map<String, JoystickState> = emptyMap()
-    // Таблицы — обновляются из SimEngine перед каждым вычислением
-    var tables: Map<String, Map<String, String>> = emptyMap()
+    val fallbackScope = ExprScope()
+
+    var objects: Map<String, SimObject>
+        get() = fallbackScope.objects
+        set(value) { fallbackScope.objects = value }
+    var joysticks: Map<String, JoystickState>
+        get() = fallbackScope.joysticks
+        set(value) { fallbackScope.joysticks = value }
+    var tables: Map<String, Map<String, String>>
+        get() = fallbackScope.tables
+        set(value) { fallbackScope.tables = value }
+
     // Спрайты — обновляются из SimEngine
     var sprites: List<su.SkrinVex.SkriPts.data.SpriteAsset> = emptyList()
     // Контекст для проверки сохранений
@@ -44,7 +62,7 @@ object ExprEval {
 
     data class EvalResult(val value: String, val error: String? = null)
 
-    fun eval(expr: String, vars: Map<String, String>): EvalResult {
+    fun eval(expr: String, vars: Map<String, String>, evalScope: ExprScope = fallbackScope): EvalResult {
         if (expr.isBlank()) return EvalResult("")
 
         if (expr.contains('{') && !expr.contains('}'))
@@ -55,22 +73,22 @@ object ExprEval {
             return EvalResult("", "Незакрытая скобка [ в выражении «$expr»")
 
         // Подставляем встроенные функции и переменные
-        val (resolved, subErr) = substitute(expr, vars)
+        val (resolved, subErr) = substitute(expr, vars, evalScope)
         if (subErr != null) return EvalResult("", subErr)
 
-        val arith = tryArith(resolved.trim())
+        val arith = tryArith(resolved.trim(), vars, evalScope)
         if (arith != null) return EvalResult(arith)
 
         return EvalResult(resolved)
     }
 
-    private fun substitute(expr: String, vars: Map<String, String>): Pair<String, String?> {
+    private fun substitute(expr: String, vars: Map<String, String>, evalScope: ExprScope): Pair<String, String?> {
         val sb = StringBuilder()
         var i = 0
         while (i < expr.length) {
             when {
                 expr[i] == '$' -> {
-                    val (result, consumed, err) = resolveBuiltin(expr, i, vars)
+                    val (result, consumed, err) = resolveBuiltin(expr, i, vars, evalScope)
                     if (err != null) return "" to err
                     sb.append(result)
                     i += consumed
@@ -91,19 +109,20 @@ object ExprEval {
                     if (end == -1) return "" to "Незакрытая скобка [ в «$expr»"
                     val ref = expr.substring(i + 1, end).trim()
                     val dot = ref.indexOf('.')
+                    val tableMap = evalScope.tables
                     if (dot == -1) {
                         // [tableName] — вся таблица как "key1=val1, key2=val2"
                         val tableName = ref.trim()
-                        val tableData = tables[tableName]
+                        val tableData = tableMap[tableName]
                             ?: return "" to "Таблица «$tableName» не найдена"
                         sb.append(tableData.entries.joinToString(", ") { "${it.key}=${it.value}" })
                         i = end + 1
                     } else {
                         val tableName = ref.substring(0, dot).trim()
                         val rawKey = ref.substring(dot + 1).trim()
-                        val (resolvedKey, keyErr) = substitute(rawKey, vars)
+                        val (resolvedKey, keyErr) = substitute(rawKey, vars, evalScope)
                         if (keyErr != null) return "" to keyErr
-                        val tableData = tables[tableName]
+                        val tableData = tableMap[tableName]
                             ?: return "" to "Таблица «$tableName» не найдена"
                         val value = tableData[resolvedKey] ?: ""
                         sb.append(value)
@@ -111,7 +130,7 @@ object ExprEval {
                     }
                 }
                 expr[i] == '#' -> {
-                    // Тег - просто копируем как есть
+                    // Тег - копируем как есть
                     sb.append(expr[i++])
                 }
                 else -> sb.append(expr[i++])
@@ -121,58 +140,66 @@ object ExprEval {
     }
 
     /** Возвращает (подставленное значение, сколько символов потреблено, ошибка) */
-    private fun resolveBuiltin(expr: String, start: Int, vars: Map<String, String> = emptyMap()): Triple<String, Int, String?> {
+    private fun resolveBuiltin(
+        expr: String,
+        start: Int,
+        vars: Map<String, String>,
+        evalScope: ExprScope
+    ): Triple<String, Int, String?> {
         val sub = expr.substring(start + 1) // после $
 
         // Функции с аргументами
         val funcPatterns = listOf(
-            "rand(" to ::handleRand,
-            "add(" to ::handleAdd,
-            "sub(" to ::handleSub,
-            "mul(" to ::handleMul,
-            "div(" to ::handleDiv,
-            "abs(" to ::handleAbs,
-            "min(" to ::handleMin,
-            "max(" to ::handleMax,
-            "and(" to ::handleAnd,
-            "or(" to ::handleOr,
-            "not(" to ::handleNot,
-            "concat(" to ::handleConcat,
-            "length(" to ::handleLength,
-            "upper(" to ::handleUpper,
-            "lower(" to ::handleLower,
-            "objX(" to ::handleObjX,
-            "objY(" to ::handleObjY,
-            "objRot(" to ::handleObjRot,
-            "objVx(" to ::handleObjVx,
-            "objVy(" to ::handleObjVy,
-            "objDirX(" to ::handleObjDirX,
-            "objDirY(" to ::handleObjDirY,
-            "objFrontX(" to ::handleObjFrontX,
-            "objFrontY(" to ::handleObjFrontY,
-            "objGrounded(" to ::handleObjGrounded,
-            "sqrt(" to ::handleSqrt,
-            "tableSize(" to ::handleTableSize,
-            "tableKey(" to ::handleTableKey,
-            "tableVal(" to ::handleTableVal,
-            "saveExists(" to ::handleSaveExists
+            "rand(" to { args: List<String>, c: Int -> handleRand(args, c) },
+            "add(" to { args: List<String>, c: Int -> handleAdd(args, c) },
+            "sub(" to { args: List<String>, c: Int -> handleSub(args, c) },
+            "mul(" to { args: List<String>, c: Int -> handleMul(args, c) },
+            "div(" to { args: List<String>, c: Int -> handleDiv(args, c) },
+            "abs(" to { args: List<String>, c: Int -> handleAbs(args, c) },
+            "min(" to { args: List<String>, c: Int -> handleMin(args, c) },
+            "max(" to { args: List<String>, c: Int -> handleMax(args, c) },
+            "and(" to { args: List<String>, c: Int -> handleAnd(args, c) },
+            "or(" to { args: List<String>, c: Int -> handleOr(args, c) },
+            "not(" to { args: List<String>, c: Int -> handleNot(args, c) },
+            "concat(" to { args: List<String>, c: Int -> handleConcat(args, c) },
+            "length(" to { args: List<String>, c: Int -> handleLength(args, c) },
+            "upper(" to { args: List<String>, c: Int -> handleUpper(args, c) },
+            "lower(" to { args: List<String>, c: Int -> handleLower(args, c) },
+            "objX(" to { args: List<String>, c: Int -> handleObjX(args, c, evalScope) },
+            "objY(" to { args: List<String>, c: Int -> handleObjY(args, c, evalScope) },
+            "objRot(" to { args: List<String>, c: Int -> handleObjRot(args, c, evalScope) },
+            "objVx(" to { args: List<String>, c: Int -> handleObjVx(args, c, evalScope) },
+            "objVy(" to { args: List<String>, c: Int -> handleObjVy(args, c, evalScope) },
+            "objDirX(" to { args: List<String>, c: Int -> handleObjDirX(args, c, evalScope) },
+            "objDirY(" to { args: List<String>, c: Int -> handleObjDirY(args, c, evalScope) },
+            "objFrontX(" to { args: List<String>, c: Int -> handleObjFrontX(args, c, evalScope) },
+            "objFrontY(" to { args: List<String>, c: Int -> handleObjFrontY(args, c, evalScope) },
+            "objGrounded(" to { args: List<String>, c: Int -> handleObjGrounded(args, c, evalScope) },
+            "sqrt(" to { args: List<String>, c: Int -> handleSqrt(args, c) },
+            "tableSize(" to { args: List<String>, c: Int -> handleTableSize(args, c, evalScope) },
+            "tableKey(" to { args: List<String>, c: Int -> handleTableKey(args, c, evalScope) },
+            "tableVal(" to { args: List<String>, c: Int -> handleTableVal(args, c, evalScope) },
+            "saveExists(" to { args: List<String>, c: Int -> handleSaveExists(args, c) }
         )
-        
+
         for ((pattern, handler) in funcPatterns) {
             if (sub.startsWith(pattern)) {
                 // Ищем парную закрывающую скобку с учётом вложенности
-                var depth = 1; var ci = pattern.length
+                var depth = 1
+                var ci = pattern.length
                 while (ci < sub.length && depth > 0) {
-                    when (sub[ci]) { '(' -> depth++; ')' -> depth-- }
+                    when (sub[ci]) {
+                        '(' -> depth++
+                        ')' -> depth--
+                    }
                     ci++
                 }
                 if (depth != 0) return Triple("", 1, "Незакрытая скобка в \$${pattern.dropLast(1)}()")
                 val close = ci - 1
                 val rawArgs = sub.substring(pattern.length, close)
                 // Вычисляем вложенные $-функции в аргументах
-                val (resolvedArgs, argErr) = substitute(rawArgs, vars)
+                val (resolvedArgs, argErr) = substitute(rawArgs, vars, evalScope)
                 if (argErr != null) return Triple("", 1, argErr)
-                // Разбиваем по запятой с учётом вложенности скобок
                 val args = splitArgs(resolvedArgs)
                 val consumed = 1 + close + 1
                 return handler(args, consumed)
@@ -194,84 +221,85 @@ object ExprEval {
             }
         }
 
-        // Неизвестный идентификатор — оставляем как есть (не ломаем строку)
+        // Неизвестный идентификатор — оставляем как есть
         return Triple("$", 1, null)
     }
 
     private fun handleRand(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$rand() требует два аргумента: \$rand(min, max)")
-        val min = args[0].toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[0]}» не число")
-        val max = args[1].toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[1]}» не число")
-        if (min > max) return Triple("", consumed, "\$rand(): min > max")
-        return Triple(Random.nextInt(min, max + 1).toString(), consumed, null)
+        val min = args[0].trim().toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[0]}» не число")
+        val max = args[1].trim().toIntOrNull() ?: return Triple("", consumed, "\$rand(): «${args[1]}» не число")
+        if (min > max) return Triple("", consumed, "\$rand(): min > max ($min > $max)")
+        val result = if (min == max) min else Random.nextInt(min, max + 1)
+        return Triple(result.toString(), consumed, null)
     }
 
     private fun handleAdd(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$add() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$add(): «${args[1]}» не число")
         return Triple(fmt(a + b), consumed, null)
     }
 
     private fun handleSub(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$sub() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$sub(): «${args[1]}» не число")
         return Triple(fmt(a - b), consumed, null)
     }
 
     private fun handleMul(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$mul() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$mul(): «${args[1]}» не число")
         return Triple(fmt(a * b), consumed, null)
     }
 
     private fun handleDiv(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$div() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$div(): «${args[1]}» не число")
         if (b == 0.0) return Triple("", consumed, "\$div(): деление на ноль")
         return Triple(fmt(a / b), consumed, null)
     }
 
     private fun handleAbs(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$abs() требует один аргумент")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$abs(): «${args[0]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$abs(): «${args[0]}» не число")
         return Triple(fmt(abs(a)), consumed, null)
     }
 
     private fun handleMin(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$min() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$min(): «${args[1]}» не число")
         return Triple(fmt(minOf(a, b)), consumed, null)
     }
 
     private fun handleMax(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$max() требует два аргумента")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[0]}» не число")
-        val b = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[1]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[0]}» не число")
+        val b = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$max(): «${args[1]}» не число")
         return Triple(fmt(maxOf(a, b)), consumed, null)
     }
 
     private fun handleAnd(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$and() требует два аргумента")
-        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[0]}» не логическое значение")
-        val b = args[1].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[1]}» не логическое значение")
+        val a = args[0].trim().toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[0]}» не логическое значение")
+        val b = args[1].trim().toBooleanStrictOrNull() ?: return Triple("", consumed, "\$and(): «${args[1]}» не логическое значение")
         return Triple((a && b).toString(), consumed, null)
     }
 
     private fun handleOr(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$or() требует два аргумента")
-        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[0]}» не логическое значение")
-        val b = args[1].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[1]}» не логическое значение")
+        val a = args[0].trim().toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[0]}» не логическое значение")
+        val b = args[1].trim().toBooleanStrictOrNull() ?: return Triple("", consumed, "\$or(): «${args[1]}» не логическое значение")
         return Triple((a || b).toString(), consumed, null)
     }
 
     private fun handleNot(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$not() требует один аргумент")
-        val a = args[0].toBooleanStrictOrNull() ?: return Triple("", consumed, "\$not(): «${args[0]}» не логическое значение")
+        val a = args[0].trim().toBooleanStrictOrNull() ?: return Triple("", consumed, "\$not(): «${args[0]}» не логическое значение")
         return Triple((!a).toString(), consumed, null)
     }
 
@@ -295,123 +323,117 @@ object ExprEval {
         return Triple(args[0].lowercase(), consumed, null)
     }
 
-    private fun handleObjX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjX(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objX() требует один аргумент: имя объекта")
         val name = args[0]
-        objects[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
-        joysticks[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
+        evalScope.objects[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
+        evalScope.joysticks[name]?.let { return Triple(fmt(it.x.toDouble()), consumed, null) }
         return Triple("", consumed, "\$objX(): объект «$name» не найден")
     }
 
-    private fun handleObjY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjY(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objY() требует один аргумент: имя объекта")
         val name = args[0]
-        objects[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
-        joysticks[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
+        evalScope.objects[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
+        evalScope.joysticks[name]?.let { return Triple(fmt(it.y.toDouble()), consumed, null) }
         return Triple("", consumed, "\$objY(): объект «$name» не найден")
     }
 
-    private fun handleObjRot(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjRot(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objRot() требует один аргумент: имя объекта")
         val name = args[0]
-        objects[name]?.let { return Triple(fmt(it.rotation.toDouble()), consumed, null) }
+        evalScope.objects[name]?.let { return Triple(fmt(it.rotation.toDouble()), consumed, null) }
         return Triple("", consumed, "\$objRot(): объект «$name» не найден")
     }
 
-    private fun handleObjVx(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjVx(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objVx() требует один аргумент: имя объекта")
         val name = args[0]
-        val vx = objects[name]?.physicsBody?.velocityX ?: return Triple("0", consumed, null)
+        val vx = evalScope.objects[name]?.physicsBody?.velocityX ?: return Triple("0", consumed, null)
         return Triple(fmt(vx.toDouble()), consumed, null)
     }
 
-    private fun handleObjVy(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjVy(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objVy() требует один аргумент: имя объекта")
         val name = args[0]
-        val vy = objects[name]?.physicsBody?.velocityY ?: return Triple("0", consumed, null)
+        val vy = evalScope.objects[name]?.physicsBody?.velocityY ?: return Triple("0", consumed, null)
         return Triple(fmt(vy.toDouble()), consumed, null)
     }
 
-    /** Возвращает X-компонент единичного вектора направления объекта (по углу поворота) */
-    private fun handleObjDirX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjDirX(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objDirX() требует один аргумент: имя объекта")
         val name = args[0]
-        val rot = objects[name]?.rotation ?: return Triple("0", consumed, null)
+        val rot = evalScope.objects[name]?.rotation ?: return Triple("0", consumed, null)
         val rad = Math.toRadians(rot.toDouble())
-        return Triple(fmt(kotlin.math.sin(rad)), consumed, null)
+        return Triple(fmt(sin(rad)), consumed, null)
     }
 
-    /** Возвращает Y-компонент единичного вектора направления объекта (по углу поворота) */
-    private fun handleObjDirY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjDirY(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$objDirY() требует один аргумент: имя объекта")
         val name = args[0]
-        val rot = objects[name]?.rotation ?: return Triple("0", consumed, null)
+        val rot = evalScope.objects[name]?.rotation ?: return Triple("0", consumed, null)
         val rad = Math.toRadians(rot.toDouble())
-        return Triple(fmt(kotlin.math.cos(rad)), consumed, null)
+        return Triple(fmt(cos(rad)), consumed, null)
     }
 
-    /** X-позиция точки перед объектом на расстоянии dist */
-    private fun handleObjFrontX(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjFrontX(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$objFrontX() требует два аргумента: имя объекта и расстояние")
-        val obj = objects[args[0]] ?: return Triple("0", consumed, null)
-        val dist = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontX(): «${args[1]}» не число")
+        val obj = evalScope.objects[args[0]] ?: return Triple("0", consumed, null)
+        val dist = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontX(): «${args[1]}» не число")
         val rad = Math.toRadians(obj.rotation.toDouble())
-        return Triple(fmt(obj.x + kotlin.math.sin(rad) * dist), consumed, null)
+        return Triple(fmt(obj.x + sin(rad) * dist), consumed, null)
     }
 
-    /** Y-позиция точки перед объектом на расстоянии dist */
-    private fun handleObjFrontY(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjFrontY(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$objFrontY() требует два аргумента: имя объекта и расстояние")
-        val obj = objects[args[0]] ?: return Triple("0", consumed, null)
-        val dist = args[1].toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontY(): «${args[1]}» не число")
+        val obj = evalScope.objects[args[0]] ?: return Triple("0", consumed, null)
+        val dist = args[1].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$objFrontY(): «${args[1]}» не число")
         val rad = Math.toRadians(obj.rotation.toDouble())
-        return Triple(fmt(obj.y + kotlin.math.cos(rad) * dist), consumed, null)
+        return Triple(fmt(obj.y + cos(rad) * dist), consumed, null)
     }
 
-    /** Возвращает true если объект стоит на статическом объекте (на земле) */
-    private fun handleObjGrounded(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleObjGrounded(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("false", consumed, "\$objGrounded() требует один аргумент: имя объекта")
-        val obj = objects[args[0]] ?: return Triple("false", consumed, null)
+        val obj = evalScope.objects[args[0]] ?: return Triple("false", consumed, null)
         val body = obj.physicsBody ?: return Triple("false", consumed, null)
-        // Считаем "на земле" если скорость Y близка к нулю и снизу есть статический объект
-        if (kotlin.math.abs(body.velocityY) > 2f) return Triple("false", consumed, null)
+        if (abs(body.velocityY) > 2f) return Triple("false", consumed, null)
         val bottom = obj.y - obj.height / 2f
-        val grounded = objects.values.any { other ->
+        val grounded = evalScope.objects.values.any { other ->
             if (other.name == obj.name) return@any false
             val otherBody = other.physicsBody ?: return@any false
             if (!otherBody.isStatic) return@any false
             val otherTop = other.y + other.height / 2f
-            val overlapX = (obj.width / 2f + other.width / 2f) - kotlin.math.abs(obj.x - other.x)
-            overlapX > 0f && kotlin.math.abs(bottom - otherTop) < 4f
+            val overlapX = (obj.width / 2f + other.width / 2f) - abs(obj.x - other.x)
+            overlapX > 0f && abs(bottom - otherTop) < 4f
         }
         return Triple(grounded.toString(), consumed, null)
     }
 
     private fun handleSqrt(args: List<String>, consumed: Int): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$sqrt() требует один аргумент")
-        val a = args[0].toDoubleOrNull() ?: return Triple("", consumed, "\$sqrt(): «${args[0]}» не число")
+        val a = args[0].trim().toDoubleOrNull() ?: return Triple("", consumed, "\$sqrt(): «${args[0]}» не число")
         if (a < 0) return Triple("", consumed, "\$sqrt(): нельзя извлечь корень из отрицательного числа")
         return Triple(fmt(sqrt(a)), consumed, null)
     }
 
-    private fun handleTableSize(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleTableSize(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 1) return Triple("", consumed, "\$tableSize() требует один аргумент: имя таблицы")
-        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableSize(): таблица «${args[0]}» не найдена")
+        val tbl = evalScope.tables[args[0]] ?: return Triple("", consumed, "\$tableSize(): таблица «${args[0]}» не найдена")
         return Triple(tbl.size.toString(), consumed, null)
     }
 
-    private fun handleTableKey(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleTableKey(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$tableKey() требует два аргумента: имя таблицы и индекс")
-        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableKey(): таблица «${args[0]}» не найдена")
-        val idx = args[1].toIntOrNull() ?: return Triple("", consumed, "\$tableKey(): индекс «${args[1]}» не число")
+        val tbl = evalScope.tables[args[0]] ?: return Triple("", consumed, "\$tableKey(): таблица «${args[0]}» не найдена")
+        val idx = args[1].trim().toIntOrNull() ?: return Triple("", consumed, "\$tableKey(): индекс «${args[1]}» не число")
         val key = tbl.keys.toList().getOrNull(idx) ?: return Triple("", consumed, "\$tableKey(): индекс $idx вне диапазона (размер: ${tbl.size})")
         return Triple(key, consumed, null)
     }
 
-    private fun handleTableVal(args: List<String>, consumed: Int): Triple<String, Int, String?> {
+    private fun handleTableVal(args: List<String>, consumed: Int, evalScope: ExprScope): Triple<String, Int, String?> {
         if (args.size != 2) return Triple("", consumed, "\$tableVal() требует два аргумента: имя таблицы и индекс")
-        val tbl = tables[args[0]] ?: return Triple("", consumed, "\$tableVal(): таблица «${args[0]}» не найдена")
-        val idx = args[1].toIntOrNull() ?: return Triple("", consumed, "\$tableVal(): индекс «${args[1]}» не число")
+        val tbl = evalScope.tables[args[0]] ?: return Triple("", consumed, "\$tableVal(): таблица «${args[0]}» не найдена")
+        val idx = args[1].trim().toIntOrNull() ?: return Triple("", consumed, "\$tableVal(): индекс «${args[1]}» не число")
         val value = tbl.values.toList().getOrNull(idx) ?: return Triple("", consumed, "\$tableVal(): индекс $idx вне диапазона (размер: ${tbl.size})")
         return Triple(value, consumed, null)
     }
@@ -424,14 +446,14 @@ object ExprEval {
         return Triple(exists.toString(), consumed, null)
     }
 
-    private fun tryArith(expr: String): String? {
+    private fun tryArith(expr: String, vars: Map<String, String>, evalScope: ExprScope): String? {
         if (expr.toDoubleOrNull() != null) return fmt(expr.toDouble())
         if ((expr.startsWith("\"") && expr.endsWith("\"")) || (expr.startsWith("'") && expr.endsWith("'")))
             return expr.substring(1, expr.length - 1)
-        return evalAddSub(expr)
+        return evalAddSub(expr, vars, evalScope)
     }
 
-    private fun evalAddSub(expr: String): String? {
+    private fun evalAddSub(expr: String, vars: Map<String, String>, evalScope: ExprScope): String? {
         var i = expr.length - 1
         var depth = 0
         while (i >= 0) {
@@ -439,8 +461,14 @@ object ExprEval {
                 ')' -> depth++
                 '(' -> depth--
                 '+', '-' -> if (depth == 0 && i > 0) {
-                    val l = evalAddSub(expr.substring(0, i)) ?: return null
-                    val r = evalMulDiv(expr.substring(i + 1)) ?: return null
+                    val prevChar = expr[i - 1]
+                    // Не разбиваем по унарному минусу после оператора (+, -, *, /, %)
+                    if (expr[i] == '-' && (prevChar == '+' || prevChar == '-' || prevChar == '*' || prevChar == '/' || prevChar == '%' || prevChar == '(')) {
+                        i--
+                        continue
+                    }
+                    val l = evalAddSub(expr.substring(0, i), vars, evalScope) ?: return null
+                    val r = evalMulDiv(expr.substring(i + 1), vars, evalScope) ?: return null
                     if (expr[i] == '+') {
                         val lv = l.toDoubleOrNull()
                         val rv = r.toDoubleOrNull()
@@ -454,19 +482,19 @@ object ExprEval {
             }
             i--
         }
-        return evalMulDiv(expr)
+        return evalMulDiv(expr, vars, evalScope)
     }
 
-    private fun evalMulDiv(expr: String): String? {
+    private fun evalMulDiv(expr: String, vars: Map<String, String>, evalScope: ExprScope): String? {
         var i = expr.length - 1
         var depth = 0
         while (i >= 0) {
             when (expr[i]) {
                 ')' -> depth++
                 '(' -> depth--
-                '*', '/', '%' -> if (depth == 0) {
-                    val l = evalMulDiv(expr.substring(0, i)) ?: return null
-                    val r = evalAtom(expr.substring(i + 1)) ?: return null
+                '*', '/', '%' -> if (depth == 0 && i > 0) {
+                    val l = evalMulDiv(expr.substring(0, i), vars, evalScope) ?: return null
+                    val r = evalAtom(expr.substring(i + 1), vars, evalScope) ?: return null
                     val lv = l.toDoubleOrNull() ?: return null
                     val rv = r.toDoubleOrNull() ?: return null
                     return fmt(when (expr[i]) {
@@ -479,14 +507,32 @@ object ExprEval {
             }
             i--
         }
-        return evalAtom(expr)
+        return evalAtom(expr, vars, evalScope)
     }
 
-    private fun evalAtom(expr: String): String? {
+    private fun isWrappedInMatchingParens(s: String): Boolean {
+        if (s.length < 2 || !s.startsWith("(") || !s.endsWith(")")) return false
+        var depth = 0
+        for (i in 0 until s.length - 1) {
+            when (s[i]) {
+                '(' -> depth++
+                ')' -> {
+                    depth--
+                    if (depth <= 0) return false
+                }
+            }
+        }
+        return depth == 1
+    }
+
+    private fun evalAtom(expr: String, vars: Map<String, String>, evalScope: ExprScope): String? {
         val t = expr.trim()
-        if (t.startsWith("(") && t.endsWith(")")) return evalAddSub(t.substring(1, t.length - 1))
-        if ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'")))
+        if (isWrappedInMatchingParens(t)) {
+            return evalAddSub(t.substring(1, t.length - 1), vars, evalScope)
+        }
+        if ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'"))) {
             return t.substring(1, t.length - 1)
+        }
         return t.toDoubleOrNull()?.let { fmt(it) } ?: t.ifEmpty { null }
     }
 
@@ -496,7 +542,8 @@ object ExprEval {
     /** Разбивает строку аргументов по запятой с учётом вложенности скобок */
     private fun splitArgs(s: String): List<String> {
         val result = mutableListOf<String>()
-        var depth = 0; var start = 0
+        var depth = 0
+        var start = 0
         for (i in s.indices) {
             when (s[i]) {
                 '(' -> depth++
@@ -522,10 +569,16 @@ object ExprEval {
      * Операторы: == != > < >= <=
      * Сравнение числовое если оба — числа, иначе строковое.
      */
-    fun evalCondition(left: String, op: String, right: String, vars: Map<String, String>): Pair<Boolean, String?> {
-        val lRes = eval(left, vars)
+    fun evalCondition(
+        left: String,
+        op: String,
+        right: String,
+        vars: Map<String, String>,
+        evalScope: ExprScope = fallbackScope
+    ): Pair<Boolean, String?> {
+        val lRes = eval(left, vars, evalScope)
         if (lRes.error != null) return false to lRes.error
-        val rRes = eval(right, vars)
+        val rRes = eval(right, vars, evalScope)
         if (rRes.error != null) return false to rRes.error
 
         val lv = lRes.value

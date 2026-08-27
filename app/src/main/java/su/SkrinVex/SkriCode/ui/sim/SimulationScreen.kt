@@ -455,6 +455,14 @@ private fun DrawScope.drawHitbox(obj: SimObject, cx: Float, cy: Float) {
     }
 }
 
+private val spritePaint = android.graphics.Paint().apply { isAntiAlias = true }
+private val textPaint = android.graphics.Paint().apply {
+    isAntiAlias = true
+    textAlign = android.graphics.Paint.Align.CENTER
+}
+private val dstRectF = android.graphics.RectF()
+private val srcRectAndroid = AndroidRect()
+
 private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean, debugMode: Boolean = true) {
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
@@ -471,16 +479,16 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
         // Спрайт
         val bitmap = obj.spriteName?.let { bitmapCache[it] }
         if (bitmap != null) {
-            val paint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
-            }
+            spritePaint.alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
             val srcRect = if (obj.spriteCropW > 0 && obj.spriteCropH > 0) {
-                AndroidRect(obj.spriteCropX, obj.spriteCropY,
-                    obj.spriteCropX + obj.spriteCropW, obj.spriteCropY + obj.spriteCropH)
+                srcRectAndroid.set(
+                    obj.spriteCropX, obj.spriteCropY,
+                    obj.spriteCropX + obj.spriteCropW, obj.spriteCropY + obj.spriteCropH
+                )
+                srcRectAndroid
             } else null
-            val dstRect = android.graphics.RectF(left, top, left + obj.width, top + obj.height)
-            drawContext.canvas.nativeCanvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+            dstRectF.set(left, top, left + obj.width, top + obj.height)
+            drawContext.canvas.nativeCanvas.drawBitmap(bitmap, srcRect, dstRectF, spritePaint)
         }
 
         // Обводка
@@ -496,31 +504,28 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
             drawRoundRect(
                 color = strokeColor,
                 topLeft = Offset(left - 1f, top - 1f),
-            size = Size(obj.width + 2f, obj.height + 2f),
-            cornerRadius = CornerRadius(obj.radius + 1f, obj.radius + 1f),
-            style = Stroke(width = if (highlighted) 3f else if (obj.tapScriptId != null) 2f else 1f)
-        )
-    }
+                size = Size(obj.width + 2f, obj.height + 2f),
+                cornerRadius = CornerRadius(obj.radius + 1f, obj.radius + 1f),
+                style = Stroke(width = if (highlighted) 3f else if (obj.tapScriptId != null) 2f else 1f)
+            )
+        }
 
-    // Текст — только если label задан явно
-    if (obj.label.isNotBlank()) {
-        val textSize = obj.fontSize * density
-        val tc = obj.textColor ?: Color.White
-        drawContext.canvas.nativeCanvas.drawText(
-            obj.label,
-            left + obj.width / 2f,
-            top + obj.height / 2f + textSize / 3f,
-            android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(
-                    (tc.alpha * 255).toInt(), (tc.red * 255).toInt(),
-                    (tc.green * 255).toInt(), (tc.blue * 255).toInt()
-                )
-                this.textSize = textSize
-                textAlign = android.graphics.Paint.Align.CENTER
-                isAntiAlias = true
-                isFakeBoldText = obj.bold
-            }
-        )
-    }
+        // Текст — только если label задан явно
+        if (obj.label.isNotBlank()) {
+            val textSize = obj.fontSize * density
+            val tc = obj.textColor ?: Color.White
+            textPaint.color = android.graphics.Color.argb(
+                (tc.alpha * 255).toInt(), (tc.red * 255).toInt(),
+                (tc.green * 255).toInt(), (tc.blue * 255).toInt()
+            )
+            textPaint.textSize = textSize
+            textPaint.isFakeBoldText = obj.bold
+            drawContext.canvas.nativeCanvas.drawText(
+                obj.label,
+                left + obj.width / 2f,
+                top + obj.height / 2f + textSize / 3f,
+                textPaint
+            )
+        }
     } // end rotate
 }

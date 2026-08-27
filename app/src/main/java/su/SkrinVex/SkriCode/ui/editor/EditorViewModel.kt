@@ -589,8 +589,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         _physicsJob?.cancel()
         _activeHolds.clear()
         _physicsJob = viewModelScope.launch {
-            val runningCollisionScripts = mutableSetOf<String>()
-            val runningHoldScripts = mutableSetOf<String>()
+            val runningCollisionScripts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+            val runningHoldScripts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
             while (true) {
                 delay(16)
                 if (_simState.value?.isStopped == true) continue
