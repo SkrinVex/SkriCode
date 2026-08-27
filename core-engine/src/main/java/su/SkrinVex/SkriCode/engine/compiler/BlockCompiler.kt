@@ -118,6 +118,55 @@ object BlockCompiler {
                     cropHExpr = expr("cropH", "0")
                 )
 
+                "anim_play" -> result += CompiledBlock.AnimPlay(
+                    targetExpr = expr("name"),
+                    spriteExpr = expr("sprite"),
+                    colsExpr = expr("cols", "4"),
+                    rowsExpr = expr("rows", "1"),
+                    startFrameExpr = expr("startFrame", "0"),
+                    endFrameExpr = expr("endFrame", "0"),
+                    fpsExpr = expr("fps", "12"),
+                    loopExpr = expr("loop", "true")
+                )
+
+                "anim_stop" -> result += CompiledBlock.AnimStop(expr("name"))
+                "anim_set_frame" -> result += CompiledBlock.AnimSetFrame(expr("name"), expr("frame", "0"))
+
+                "particle_burst" -> result += CompiledBlock.ParticleBurst(
+                    xExpr = expr("x", "0"),
+                    yExpr = expr("y", "0"),
+                    countExpr = expr("count", "20"),
+                    colorStartExpr = expr("colorStart", "#FFAA00"),
+                    colorEndExpr = expr("colorEnd", "#FF0000"),
+                    speedExpr = expr("speed", "150"),
+                    sizeStartExpr = expr("sizeStart", "12"),
+                    sizeEndExpr = expr("sizeEnd", "2"),
+                    lifetimeExpr = expr("lifetime", "0.8"),
+                    gravityExpr = expr("gravity", "-100")
+                )
+
+                "particle_emitter" -> result += CompiledBlock.ParticleEmitterCreate(
+                    name = p("name", "fire1"),
+                    targetExpr = expr("target"),
+                    xExpr = expr("x", "0"),
+                    yExpr = expr("y", "0"),
+                    rateExpr = expr("rate", "15"),
+                    countExpr = expr("count", "2"),
+                    speedExpr = expr("speed", "60"),
+                    sizeStartExpr = expr("sizeStart", "10"),
+                    sizeEndExpr = expr("sizeEnd", "2"),
+                    colorStartExpr = expr("colorStart", "#FFAA00"),
+                    colorEndExpr = expr("colorEnd", "#FF0000"),
+                    lifetimeExpr = expr("lifetime", "0.6"),
+                    gravityExpr = expr("gravity", "50")
+                )
+
+                "particle_emitter_stop" -> result += CompiledBlock.ParticleEmitterStop(p("name", "fire1"))
+
+                "screen_shake" -> result += CompiledBlock.ScreenShake(expr("intensity", "15"), expr("duration", "0.3"))
+                "screen_flash" -> result += CompiledBlock.ScreenFlash(expr("color", "#FFFFFF"), expr("duration", "0.2"))
+                "camera_bounds" -> result += CompiledBlock.CameraBounds(expr("minX", "-1000"), expr("maxX", "1000"), expr("minY", "-1000"), expr("maxY", "1000"))
+
                 "sim_physics" -> result += CompiledBlock.SimPhysics(
                     targetExpr = expr("name"),
                     gravityExpr = expr("gravity", "-9.8"),

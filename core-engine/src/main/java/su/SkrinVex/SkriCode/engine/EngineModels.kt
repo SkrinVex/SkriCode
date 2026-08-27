@@ -54,7 +54,17 @@ data class SimObject(
     val spriteCropX: Int = 0,
     val spriteCropY: Int = 0,
     val spriteCropW: Int = 0,
-    val spriteCropH: Int = 0
+    val spriteCropH: Int = 0,
+    // Покадровая анимация спрайт-листа
+    val animCols: Int = 1,
+    val animRows: Int = 1,
+    val animFps: Float = 0f,
+    val animStartFrame: Int = 0,
+    val animEndFrame: Int = 0,
+    val animLoop: Boolean = true,
+    val animPlaying: Boolean = false,
+    val animCurrentFrame: Int = 0,
+    val animElapsed: Float = 0f
 )
 
 data class JoystickState(
@@ -83,7 +93,65 @@ data class SimCamera(
     val smoothing: Float = 1f,     // 0..1: 1 = мгновенно, 0.05 = очень плавно
     // runtime — текущее смещение камеры
     val offsetX: Float = 0f,
-    val offsetY: Float = 0f
+    val offsetY: Float = 0f,
+    // Ограничение границами мира
+    val boundMinX: Float? = null,
+    val boundMaxX: Float? = null,
+    val boundMinY: Float? = null,
+    val boundMaxY: Float? = null
+)
+
+/** Отдельная частица */
+data class Particle(
+    val x: Float,
+    val y: Float,
+    val vx: Float,
+    val vy: Float,
+    val life: Float,
+    val maxLife: Float,
+    val sizeStart: Float,
+    val sizeEnd: Float,
+    val colorStart: Color,
+    val colorEnd: Color,
+    val gravity: Float = 0f,
+    val rotation: Float = 0f,
+    val vRot: Float = 0f
+)
+
+/** Эмиттер (постоянный источник) частиц */
+data class ParticleEmitterState(
+    val name: String,
+    val targetName: String = "",
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val rate: Float = 10f,             // испусканий в секунду
+    val countPerEmission: Int = 2,
+    val speed: Float = 60f,
+    val sizeStart: Float = 12f,
+    val sizeEnd: Float = 2f,
+    val colorStart: Color = Color(0xFFFFAA00),
+    val colorEnd: Color = Color(0xFFFF0000),
+    val lifetime: Float = 0.8f,
+    val gravity: Float = 0f,
+    val enabled: Boolean = true,
+    val timer: Float = 0f
+)
+
+/** Тряска экрана */
+data class ScreenShakeState(
+    val intensity: Float = 0f,
+    val duration: Float = 0f,
+    val elapsed: Float = 0f,
+    val currentOffsetX: Float = 0f,
+    val currentOffsetY: Float = 0f
+)
+
+/** Вспышка экрана */
+data class ScreenFlashState(
+    val color: Color = Color.White,
+    val duration: Float = 0f,
+    val elapsed: Float = 0f,
+    val active: Boolean = false
 )
 
 data class SimState(
@@ -99,7 +167,12 @@ data class SimState(
     val camera: SimCamera? = null,
     val pendingSceneSwitch: String? = null,  // имя сцены для перехода
     val sprites: List<SpriteAsset> = emptyList(),
-    val projectId: String = ""
+    val projectId: String = "",
+    // Новые системы
+    val particles: List<Particle> = emptyList(),
+    val particleEmitters: Map<String, ParticleEmitterState> = emptyMap(),
+    val screenShake: ScreenShakeState = ScreenShakeState(),
+    val screenFlash: ScreenFlashState = ScreenFlashState()
 )
 
 /**

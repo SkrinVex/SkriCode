@@ -50,4 +50,37 @@ class BlockCompilerTest {
         assertEquals(3, (compiled[0] as CompiledBlock.ForLoopStart).endPc)
         assertEquals(0, (compiled[2] as CompiledBlock.ForLoopEnd).startPc)
     }
+
+    @Test
+    fun testCompileAnimationAndVisualBlocks() {
+        val blocks = listOf(
+            BlockDef("1", "anim_play", "Играть анимацию", params = mapOf(
+                "name" to BlockParam("hero", "name"),
+                "sprite" to BlockParam("hero_run", "sprite"),
+                "cols" to BlockParam("6", "cols"),
+                "rows" to BlockParam("1", "rows"),
+                "fps" to BlockParam("10", "fps")
+            )),
+            BlockDef("2", "particle_burst", "Взрыв", params = mapOf(
+                "x" to BlockParam("100", "x"),
+                "y" to BlockParam("200", "y"),
+                "count" to BlockParam("30", "count")
+            )),
+            BlockDef("3", "screen_shake", "Тряска", params = mapOf(
+                "intensity" to BlockParam("20", "intensity"),
+                "duration" to BlockParam("0.5", "duration")
+            )),
+            BlockDef("4", "camera_bounds", "Границы", params = mapOf(
+                "minX" to BlockParam("-500", "minX"),
+                "maxX" to BlockParam("500", "maxX")
+            ))
+        )
+
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(4, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.AnimPlay)
+        assertTrue(compiled[1] is CompiledBlock.ParticleBurst)
+        assertTrue(compiled[2] is CompiledBlock.ScreenShake)
+        assertTrue(compiled[3] is CompiledBlock.CameraBounds)
+    }
 }

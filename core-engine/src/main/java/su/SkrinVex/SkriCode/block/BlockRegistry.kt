@@ -16,10 +16,11 @@ object BlockRegistry {
         "for_loop_open", "while_loop_open", "wait_open",
         "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",
         "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete", "sim_layer",
-        "set_texture", "sim_sprite",
+        "set_texture", "sim_sprite", "anim_play", "anim_stop", "anim_set_frame",
         "sim_physics", "sim_hitbox", "physics_toggle",
         "physics_impulse", "physics_move", "sim_no_collision",
-        "sim_camera", "camera_toggle",
+        "particle_burst", "particle_emitter", "particle_emitter_stop",
+        "sim_camera", "camera_toggle", "camera_bounds", "screen_shake", "screen_flash",
         "sound_play", "sound_stop", "music_play", "music_pause", "music_resume", "music_stop", "music_volume",
         "scene_switch"
     )

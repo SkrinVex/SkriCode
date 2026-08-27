@@ -121,6 +121,10 @@ object SimEngine {
         }
         val cameraRef: Array<SimCamera?> = arrayOf(null)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
+        val particles = mutableListOf<Particle>()
+        val particleEmitters = mutableMapOf<String, ParticleEmitterState>()
+        val screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState())
+        val screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState())
         val onStartScripts = scripts.filter { it.event == ScriptEvent.ON_START }
 
         fun launchScript(scope: kotlinx.coroutines.CoroutineScope, script: Script) {
@@ -134,7 +138,9 @@ object SimEngine {
                 runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                     allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
                     cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
-                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId)) })
+                    particles = particles, particleEmitters = particleEmitters,
+                    screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
+                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId, particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) })
                 globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
                 globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
             }
@@ -153,7 +159,9 @@ object SimEngine {
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
             physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0],
-            sprites = sprites, projectId = projectId)
+            sprites = sprites, projectId = projectId,
+            particles = particles.toList(), particleEmitters = particleEmitters.toMap(),
+            screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])
     }
 
     fun bindEventScripts(
@@ -199,15 +207,48 @@ object SimEngine {
         return runScriptOnState(script, scripts, currentState, onUpdate = onUpdate, collisionTarget = otherName, collisionSelf = selfName, getLatestState = getLatestState)
     }
 
-    fun physicsTick(state: SimState): Triple<SimState, Set<Pair<String,String>>, Set<Pair<String,String>>> =
-        PhysicsWorld.tick(state)
+    fun physicsTick(state: SimState): Triple<SimState, Set<Pair<String,String>>, Set<Pair<String,String>>> {
+        val (afterPhysics, newCols, endedCols) = PhysicsWorld.tick(state)
+
+        // 1. Анимации спрайтов
+        val animObjects = ParticleSystem.tickAnimations(afterPhysics.objects, PhysicsWorld.DT)
+
+        // 2. Частицы и эмиттеры
+        val (nextParticles, nextEmitters) = ParticleSystem.tick(
+            afterPhysics.particles, afterPhysics.particleEmitters, animObjects, PhysicsWorld.DT
+        )
+
+        // 3. Тряска экрана и вспышка
+        val nextShake = ParticleSystem.tickShake(afterPhysics.screenShake, PhysicsWorld.DT)
+        val nextFlash = ParticleSystem.tickFlash(afterPhysics.screenFlash, PhysicsWorld.DT)
+
+        val updated = afterPhysics.copy(
+            objects = animObjects,
+            particles = nextParticles,
+            particleEmitters = nextEmitters,
+            screenShake = nextShake,
+            screenFlash = nextFlash
+        )
+
+        return Triple(updated, newCols, endedCols)
+    }
 
     fun tickCamera(state: SimState): SimState {
         val cam = state.camera ?: return state
         if (!cam.enabled || cam.targetName.isBlank()) return state
         val target = state.objects[cam.targetName] ?: return state
-        val targetOffX = -target.x
-        val targetOffY = target.y
+
+        var targetX = target.x
+        var targetY = target.y
+        if (cam.boundMinX != null && cam.boundMaxX != null) {
+            targetX = targetX.coerceIn(minOf(cam.boundMinX, cam.boundMaxX), maxOf(cam.boundMinX, cam.boundMaxX))
+        }
+        if (cam.boundMinY != null && cam.boundMaxY != null) {
+            targetY = targetY.coerceIn(minOf(cam.boundMinY, cam.boundMaxY), maxOf(cam.boundMinY, cam.boundMaxY))
+        }
+
+        val targetOffX = -targetX
+        val targetOffY = targetY
         val s = cam.smoothing.coerceIn(0.01f, 1f)
         val newCam = cam.copy(
             offsetX = cam.offsetX + (targetOffX - cam.offsetX) * s,
@@ -256,6 +297,10 @@ object SimEngine {
         var physicsEnabled = currentState.physicsEnabled
         val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
+        val particles = currentState.particles.toMutableList()
+        val particleEmitters = currentState.particleEmitters.toMutableMap()
+        val screenShakeRef: Array<ScreenShakeState> = arrayOf(currentState.screenShake)
+        val screenFlashRef: Array<ScreenFlashState> = arrayOf(currentState.screenFlash)
 
         val deletedObjects = mutableSetOf<String>()
         val deletedJoysticks = mutableSetOf<String>()
@@ -265,11 +310,13 @@ object SimEngine {
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
+            particles = particles, particleEmitters = particleEmitters,
+            screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
             getLatestState = getLatestState,
             deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
             modifiedFields = modifiedFields,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId)) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) }
             } else null
         )
         globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
@@ -301,6 +348,15 @@ object SimEngine {
                         spriteCropY = if ("spriteCrop" in fields || "cropY" in fields) scriptObj.spriteCropY else liveObj.spriteCropY,
                         spriteCropW = if ("spriteCrop" in fields || "cropW" in fields) scriptObj.spriteCropW else liveObj.spriteCropW,
                         spriteCropH = if ("spriteCrop" in fields || "cropH" in fields) scriptObj.spriteCropH else liveObj.spriteCropH,
+                        animCols = if ("anim" in fields) scriptObj.animCols else liveObj.animCols,
+                        animRows = if ("anim" in fields) scriptObj.animRows else liveObj.animRows,
+                        animFps = if ("anim" in fields) scriptObj.animFps else liveObj.animFps,
+                        animStartFrame = if ("anim" in fields) scriptObj.animStartFrame else liveObj.animStartFrame,
+                        animEndFrame = if ("anim" in fields) scriptObj.animEndFrame else liveObj.animEndFrame,
+                        animLoop = if ("anim" in fields) scriptObj.animLoop else liveObj.animLoop,
+                        animPlaying = if ("anim" in fields) scriptObj.animPlaying else liveObj.animPlaying,
+                        animCurrentFrame = if ("anim" in fields) scriptObj.animCurrentFrame else liveObj.animCurrentFrame,
+                        animElapsed = if ("anim" in fields) scriptObj.animElapsed else liveObj.animElapsed,
                         zOrder = if ("zOrder" in fields || "layer" in fields) scriptObj.zOrder else liveObj.zOrder,
                         collisionIgnore = if ("collisionIgnore" in fields) scriptObj.collisionIgnore else liveObj.collisionIgnore,
                         width = if ("width" in fields) scriptObj.width else liveObj.width,
@@ -338,7 +394,11 @@ object SimEngine {
             tables = allTables.mapValues { it.value.toMap() },
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
             camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
-            pendingSceneSwitch = sceneSwitchRef[0]
+            pendingSceneSwitch = sceneSwitchRef[0],
+            particles = particles.toList(),
+            particleEmitters = particleEmitters.toMap(),
+            screenShake = if (screenShakeRef[0] != currentState.screenShake) screenShakeRef[0] else baseState.screenShake,
+            screenFlash = if (screenFlashRef[0] != currentState.screenFlash) screenFlashRef[0] else baseState.screenFlash
         )
     }
 
@@ -355,6 +415,10 @@ object SimEngine {
         setPhysicsEnabled: (Boolean) -> Unit = {},
         cameraRef: Array<SimCamera?> = arrayOf(null),
         sceneSwitchRef: Array<String?> = arrayOf(null),
+        particles: MutableList<Particle> = mutableListOf(),
+        particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
+        screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
+        screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         getLatestState: (() -> SimState)? = null,
         deletedObjects: MutableSet<String> = mutableSetOf(),
         deletedJoysticks: MutableSet<String> = mutableSetOf(),
@@ -367,6 +431,7 @@ object SimEngine {
         return executeCompiled(
             compiled, vars, objects, joysticks, tables, log, errors,
             allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+            particles, particleEmitters, screenShakeRef, screenFlashRef,
             getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
         )
     }
@@ -384,6 +449,10 @@ object SimEngine {
         setPhysicsEnabled: (Boolean) -> Unit,
         cameraRef: Array<SimCamera?>,
         sceneSwitchRef: Array<String?>,
+        particles: MutableList<Particle> = mutableListOf(),
+        particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
+        screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
+        screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         getLatestState: (() -> SimState)?,
         deletedObjects: MutableSet<String>,
         deletedJoysticks: MutableSet<String>,
@@ -781,6 +850,146 @@ object SimEngine {
                     pc++
                 }
 
+                // ── Покадровая анимация ───────────────────────────────────
+                is CompiledBlock.AnimPlay -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val targets = getObjectsByNameOrTag(target)
+                    val sprite = inst.spriteExpr.evalString(vars, evalScope)
+                    val cols = inst.colsExpr.evalFloat(vars, evalScope, 4f).toInt().coerceAtLeast(1)
+                    val rows = inst.rowsExpr.evalFloat(vars, evalScope, 1f).toInt().coerceAtLeast(1)
+                    val start = inst.startFrameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val end = inst.endFrameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val fps = inst.fpsExpr.evalFloat(vars, evalScope, 12f).coerceAtLeast(0.1f)
+                    val loop = inst.loopExpr.evalString(vars, evalScope) != "false"
+
+                    targets.forEach { (n, obj) ->
+                        objects[n] = obj.copy(
+                            spriteName = sprite.ifBlank { obj.spriteName },
+                            animCols = cols,
+                            animRows = rows,
+                            animStartFrame = start,
+                            animEndFrame = end,
+                            animFps = fps,
+                            animLoop = loop,
+                            animPlaying = true,
+                            animCurrentFrame = start,
+                            animElapsed = 0f
+                        )
+                        modifiedFields.getOrPut(n) { mutableSetOf() }.addAll(setOf("anim", "sprite"))
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.AnimStop -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val targets = getObjectsByNameOrTag(target)
+                    targets.forEach { (n, obj) ->
+                        objects[n] = obj.copy(animPlaying = false)
+                        modifiedFields.getOrPut(n) { mutableSetOf() }.add("anim")
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.AnimSetFrame -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val targets = getObjectsByNameOrTag(target)
+                    val frame = inst.frameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    targets.forEach { (n, obj) ->
+                        objects[n] = obj.copy(animCurrentFrame = frame, animElapsed = 0f)
+                        modifiedFields.getOrPut(n) { mutableSetOf() }.add("anim")
+                    }
+                    pc++
+                }
+
+                // ── Частицы ───────────────────────────────────────────────
+                is CompiledBlock.ParticleBurst -> {
+                    val bx = inst.xExpr.evalFloat(vars, evalScope, 0f)
+                    val by = inst.yExpr.evalFloat(vars, evalScope, 0f)
+                    val count = inst.countExpr.evalFloat(vars, evalScope, 20f).toInt().coerceIn(1, 100)
+                    val cStart = parseColor(inst.colorStartExpr.evalString(vars, evalScope).ifBlank { "#FFAA00" })
+                    val cEnd = parseColor(inst.colorEndExpr.evalString(vars, evalScope).ifBlank { "#FF0000" })
+                    val spd = inst.speedExpr.evalFloat(vars, evalScope, 150f)
+                    val sStart = inst.sizeStartExpr.evalFloat(vars, evalScope, 12f)
+                    val sEnd = inst.sizeEndExpr.evalFloat(vars, evalScope, 2f)
+                    val life = inst.lifetimeExpr.evalFloat(vars, evalScope, 0.8f)
+                    val grav = inst.gravityExpr.evalFloat(vars, evalScope, -100f)
+
+                    val spawned = ParticleSystem.burst(bx, by, count, cStart, cEnd, spd, sStart, sEnd, life, grav)
+                    particles.addAll(spawned)
+                    if (particles.size > ParticleSystem.MAX_PARTICLES) {
+                        val excess = particles.size - ParticleSystem.MAX_PARTICLES
+                        particles.subList(0, excess).clear()
+                    }
+                    onUpdate?.invoke()
+                    pc++
+                }
+
+                is CompiledBlock.ParticleEmitterCreate -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val ex = inst.xExpr.evalFloat(vars, evalScope, 0f)
+                    val ey = inst.yExpr.evalFloat(vars, evalScope, 0f)
+                    val rate = inst.rateExpr.evalFloat(vars, evalScope, 15f).coerceAtLeast(0.1f)
+                    val count = inst.countExpr.evalFloat(vars, evalScope, 2f).toInt().coerceIn(1, 20)
+                    val spd = inst.speedExpr.evalFloat(vars, evalScope, 60f)
+                    val sStart = inst.sizeStartExpr.evalFloat(vars, evalScope, 10f)
+                    val sEnd = inst.sizeEndExpr.evalFloat(vars, evalScope, 2f)
+                    val cStart = parseColor(inst.colorStartExpr.evalString(vars, evalScope).ifBlank { "#FFAA00" })
+                    val cEnd = parseColor(inst.colorEndExpr.evalString(vars, evalScope).ifBlank { "#FF0000" })
+                    val life = inst.lifetimeExpr.evalFloat(vars, evalScope, 0.6f)
+                    val grav = inst.gravityExpr.evalFloat(vars, evalScope, 50f)
+
+                    particleEmitters[inst.name] = ParticleEmitterState(
+                        name = inst.name,
+                        targetName = target,
+                        x = ex, y = ey,
+                        rate = rate,
+                        countPerEmission = count,
+                        speed = spd,
+                        sizeStart = sStart, sizeEnd = sEnd,
+                        colorStart = cStart, colorEnd = cEnd,
+                        lifetime = life, gravity = grav,
+                        enabled = true, timer = 0f
+                    )
+                    pc++
+                }
+
+                is CompiledBlock.ParticleEmitterStop -> {
+                    if (inst.name == "all" || inst.name.isBlank()) {
+                        particleEmitters.clear()
+                    } else {
+                        particleEmitters.remove(inst.name)
+                    }
+                    pc++
+                }
+
+                // ── Визуальные эффекты ────────────────────────────────────
+                is CompiledBlock.ScreenShake -> {
+                    val intensity = inst.intensityExpr.evalFloat(vars, evalScope, 15f)
+                    val duration = inst.durationExpr.evalFloat(vars, evalScope, 0.3f)
+                    screenShakeRef[0] = ScreenShakeState(intensity = intensity, duration = duration, elapsed = 0f)
+                    pc++
+                }
+
+                is CompiledBlock.ScreenFlash -> {
+                    val colStr = inst.colorExpr.evalString(vars, evalScope)
+                    val col = parseColor(colStr.ifBlank { "#FFFFFF" })
+                    val duration = inst.durationExpr.evalFloat(vars, evalScope, 0.2f)
+                    screenFlashRef[0] = ScreenFlashState(color = col, duration = duration, elapsed = 0f, active = true)
+                    pc++
+                }
+
+                is CompiledBlock.CameraBounds -> {
+                    val minX = inst.minXExpr.evalFloat(vars, evalScope, -1000f)
+                    val maxX = inst.maxXExpr.evalFloat(vars, evalScope, 1000f)
+                    val minY = inst.minYExpr.evalFloat(vars, evalScope, -1000f)
+                    val maxY = inst.maxYExpr.evalFloat(vars, evalScope, 1000f)
+                    val existing = cameraRef[0] ?: SimCamera(name = "cam1", enabled = true)
+                    cameraRef[0] = existing.copy(
+                        boundMinX = minX, boundMaxX = maxX, boundMinY = minY, boundMaxY = maxY
+                    )
+                    pc++
+                }
+
                 is CompiledBlock.SimCameraBlock -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
                     val smoothing = inst.smoothingExpr.evalFloat(vars, evalScope, 0.1f).coerceIn(0.01f, 1f)
@@ -994,6 +1203,7 @@ object SimEngine {
                                 val ok = executeCompiled(
                                     inst.innerBlocks, vars, objects, joysticks, tables, log, errors,
                                     allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                                    particles, particleEmitters, screenShakeRef, screenFlashRef,
                                     getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
                                 )
                                 if (!ok) return false

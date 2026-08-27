@@ -44,4 +44,27 @@ class ExprCompilerTest {
         val vars = mapOf("a" to "15", "b" to "42")
         assertEquals(42.0, ast.evalDouble(vars, ExprEval.fallbackScope)!!, 0.001)
     }
+
+    @Test
+    fun testAdvancedMathFunctions() {
+        // Clamp
+        val clampAst = ExprCompiler.compile("\$clamp(150, 0, 100)")
+        assertEquals(100.0, clampAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        // Lerp
+        val lerpAst = ExprCompiler.compile("\$lerp(10, 20, 0.5)")
+        assertEquals(15.0, lerpAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        // Dist
+        val distAst = ExprCompiler.compile("\$dist(0, 0, 3, 4)")
+        assertEquals(5.0, distAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        // Angle
+        val angleAst = ExprCompiler.compile("\$angle(0, 0, 10, 0)")
+        assertEquals(0.0, angleAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        // Vlen
+        val vlenAst = ExprCompiler.compile("\$vlen(6, 8)")
+        assertEquals(10.0, vlenAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+    }
 }

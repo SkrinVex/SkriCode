@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="su.SkrinVex.SkriCode.engine.ExprCompilerTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-08-27T20:14:28.266Z" hostname="notebook" time="0.005">
+<testsuite name="su.SkrinVex.SkriCode.engine.ExprCompilerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-08-27T20:48:27.042Z" hostname="notebook" time="0.406">
   <properties/>
-  <testcase name="testCompileBuiltinFunc" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.001"/>
-  <testcase name="testCompileArithmeticPrecedence" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.001"/>
-  <testcase name="testCompileNumberAndVar" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.0"/>
-  <testcase name="testCompileCondition" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.001"/>
+  <testcase name="testCompileBuiltinFunc" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.278"/>
+  <testcase name="testCompileArithmeticPrecedence" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.016"/>
+  <testcase name="testCompileNumberAndVar" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.016"/>
+  <testcase name="testAdvancedMathFunctions" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.075"/>
+  <testcase name="testCompileCondition" classname="su.SkrinVex.SkriCode.engine.ExprCompilerTest" time="0.007"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

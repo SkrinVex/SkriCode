@@ -799,30 +799,31 @@ internal fun BlockParamContent(
             block.type == "scene_switch" && key == "scene" ->
                 SceneChip(param = param, sceneNames = sceneNames,
                     onChange = { onParamChange(key, it) })
-            (block.type == "set_texture" || block.type == "sim_sprite") && key == "sprite" ->
+            (block.type == "set_texture" || block.type == "sim_sprite" || block.type == "anim_play") && key == "sprite" ->
                 SpriteChip(param = param, spriteNames = spriteNames,
                     onChange = { onParamChange(key, it) })
             (block.category == BlockCategory.AUDIO || block.type == "sound_play" || block.type == "sound_stop" || block.type == "music_play") && key == "sound" ->
                 SoundChip(param = param, soundNames = soundNames,
                     onChange = { onParamChange(key, it) })
-            block.category == BlockCategory.AUDIO && key == "loop" ->
+            (block.category == BlockCategory.AUDIO || block.type == "anim_play") && key == "loop" ->
                 BoolToggle(param = param, onChange = { onParamChange(key, it) })
             (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
                 EncryptToggle(param = param, onChange = { onParamChange(key, it) })
-            (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
+            (key == "name" || key == "target") && (block.category == BlockCategory.SIMULATION || block.category == BlockCategory.SPRITE || block.category == BlockCategory.PHYSICS) && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" && block.type != "particle_emitter" ->
                 ObjectNameChip(param = param, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, false) })
-            key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick") ->
+            key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick" || block.type == "particle_emitter") ->
                 ExprChip(param = param, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, false) })
-            key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" ->
+            key == "color" || key == "baseColor" || key == "knobColor" || key == "textColor" || key == "colorStart" || key == "colorEnd" ->
                 ColorField(param = param, onChange = { onParamChange(key, it) })
             block.type == "sim_move" && key == "mode" ->
                 MoveModeToggle(value = param.value, onChange = { onParamChange(key, it) })
             (block.type == "sim_rotate") && key == "mode" ->
                 RotateModeToggle(value = param.value, onChange = { onParamChange(key, it) })
             key == "bold" || (block.type == "sim_joystick" && key == "directional") ||
-            (block.type == "sim_camera" && key == "enabled") ->
+            (block.type == "sim_camera" && key == "enabled") || (block.type == "camera_toggle" && key == "enabled") ||
+            (block.type == "physics_toggle" && key == "enabled") || (block.type == "sim_physics" && key == "static") ->
                 BoolToggle(param = param, onChange = { onParamChange(key, it) })
             key == "op" || key == "op1" || key == "op2" ->
                 OperatorSelector(param = param, onChange = { onParamChange(key, it) })

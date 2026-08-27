@@ -165,6 +165,37 @@ data class BuiltinFunc(val name: String, val args: List<AstExpr>) : AstExpr {
             "round" -> args.firstOrNull()?.evalDouble(vars, scope)?.let { round(it) }
             "floor" -> args.firstOrNull()?.evalDouble(vars, scope)?.let { floor(it) }
             "ceil" -> args.firstOrNull()?.evalDouble(vars, scope)?.let { ceil(it) }
+            "clamp" -> {
+                val v = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val minV = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                val maxV = args.getOrNull(2)?.evalDouble(vars, scope) ?: return null
+                v.coerceIn(min(minV, maxV), max(minV, maxV))
+            }
+            "lerp" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                val t = args.getOrNull(2)?.evalDouble(vars, scope) ?: return null
+                a + (b - a) * t
+            }
+            "dist" -> {
+                val x1 = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val y1 = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                val x2 = args.getOrNull(2)?.evalDouble(vars, scope) ?: return null
+                val y2 = args.getOrNull(3)?.evalDouble(vars, scope) ?: return null
+                hypot(x2 - x1, y2 - y1)
+            }
+            "angle" -> {
+                val x1 = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val y1 = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                val x2 = args.getOrNull(2)?.evalDouble(vars, scope) ?: return null
+                val y2 = args.getOrNull(3)?.evalDouble(vars, scope) ?: return null
+                Math.toDegrees(atan2(y2 - y1, x2 - x1))
+            }
+            "vlen" -> {
+                val vx = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val vy = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                hypot(vx, vy)
+            }
             "length" -> args.firstOrNull()?.evalString(vars, scope)?.length?.toDouble()
             "objX" -> {
                 val objName = args.firstOrNull()?.evalString(vars, scope) ?: return null

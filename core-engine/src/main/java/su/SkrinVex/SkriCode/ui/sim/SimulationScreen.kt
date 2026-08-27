@@ -185,8 +185,10 @@ fun SimulationScreen(
             canvasSize = Pair(size.width, size.height)
             // Обновляем базовые физические размеры экрана из реального размера Canvas
             ExprEval.updateDeviceResolution(size.width, size.height)
-            val cx = size.width / 2f
-            val cy = size.height / 2f
+            val shakeOx = state.screenShake.currentOffsetX
+            val shakeOy = state.screenShake.currentOffsetY
+            val cx = size.width / 2f + shakeOx
+            val cy = size.height / 2f + shakeOy
             // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap
             @Suppress("UNUSED_EXPRESSION") bitmapCacheVersion
             if (debugMode) drawGrid(cx, cy)
@@ -210,6 +212,25 @@ fun SimulationScreen(
                     drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode)
                 }
             }
+
+            // Отрисовка частиц (мировые координаты)
+            if (state.particles.isNotEmpty()) {
+                state.particles.forEach { p ->
+                    val ox = cx + camOx + p.x
+                    val oy = cy + camOy - p.y
+                    if (ox >= -50f && ox <= size.width + 50f && oy >= -50f && oy <= size.height + 50f) {
+                        val progress = if (p.maxLife > 0f) (1f - (p.life / p.maxLife)).coerceIn(0f, 1f) else 1f
+                        val currentRadius = (p.sizeStart + (p.sizeEnd - p.sizeStart) * progress) / 2f
+                        val alpha = if (p.maxLife > 0f) (p.life / p.maxLife).coerceIn(0f, 1f) else 0f
+                        val r = p.colorStart.red + (p.colorEnd.red - p.colorStart.red) * progress
+                        val g = p.colorStart.green + (p.colorEnd.green - p.colorStart.green) * progress
+                        val b = p.colorStart.blue + (p.colorEnd.blue - p.colorStart.blue) * progress
+                        val col = Color(r, g, b, alpha)
+                        drawCircle(color = col, radius = currentRadius.coerceAtLeast(1f), center = Offset(ox, oy))
+                    }
+                }
+            }
+
             if (showHitboxes) {
                 sortedObjects.forEach { obj ->
                     if (obj.visible) {
@@ -233,6 +254,19 @@ fun SimulationScreen(
                 }
             }
             state.joysticks.values.forEach { if (it.visible) drawJoystick(it, cx, cy) }
+
+            // Вспышка экрана
+            if (state.screenFlash.active && state.screenFlash.duration > 0f) {
+                val progress = (state.screenFlash.elapsed / state.screenFlash.duration).coerceIn(0f, 1f)
+                val flashAlpha = (1f - progress).coerceIn(0f, 1f)
+                if (flashAlpha > 0f) {
+                    drawRect(
+                        color = state.screenFlash.color.copy(alpha = flashAlpha),
+                        topLeft = Offset.Zero,
+                        size = size
+                    )
+                }
+            }
         }
 
         // Кнопка закрыть — только в debug или при ошибках
@@ -483,7 +517,20 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
         val bitmap = obj.spriteName?.let { bitmapCache[it] }
         if (bitmap != null) {
             spritePaint.alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
-            val srcRect = if (obj.spriteCropW > 0 && obj.spriteCropH > 0) {
+            val srcRect = if (obj.animCols > 1 || obj.animRows > 1) {
+                val cols = obj.animCols.coerceAtLeast(1)
+                val rows = obj.animRows.coerceAtLeast(1)
+                val frameW = bitmap.width / cols
+                val frameH = bitmap.height / rows
+                val totalFrames = cols * rows
+                val curFrame = obj.animCurrentFrame.coerceIn(0, totalFrames - 1)
+                val col = curFrame % cols
+                val row = curFrame / cols
+                val leftCrop = col * frameW
+                val topCrop = row * frameH
+                srcRectAndroid.set(leftCrop, topCrop, leftCrop + frameW, topCrop + frameH)
+                srcRectAndroid
+            } else if (obj.spriteCropW > 0 && obj.spriteCropH > 0) {
                 srcRectAndroid.set(
                     obj.spriteCropX, obj.spriteCropY,
                     obj.spriteCropX + obj.spriteCropW, obj.spriteCropY + obj.spriteCropH

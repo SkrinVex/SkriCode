@@ -21,36 +21,43 @@
 ### Основные компоненты
 
 ```
-SkriPts/
-├── app/src/main/
-│   └── java/su/SkrinVex/SkriCode/
-│       ├── MainActivity.kt     # Точка входа, навигация
-│       │
-│       ├── block/              # Система блоков
-│       │   ├── Block.kt        # Определение блока
-│       │   ├── BlockRegistry.kt # Регистрация блоков
-│       │   └── BuiltinBlocks.kt # Встроенные блоки (100+ типов)
-│       │
-│       ├── data/               # Модели данных
-│       │   ├── ProjectIO.kt    # Сохранение/загрузка проектов
-│       │   ├── ProjectRepository.kt
-│       │   └── SpriteRepository.kt
-│       │
-│       ├── engine/             # Движок выполнения (Pure Kotlin, без JNI)
-│       │   ├── SimEngine.kt    # Движок симуляции и интерпретатор блоков
-│       │   ├── PhysicsWorld.kt # Высокопроизводительный 2D физический решатель (SAT + Spatial Hash)
-│       │   ├── ExprEval.kt     # Вычисление выражений и условий
-│       │   └── SaveCrypto.kt   # Шифрование сохранений с кэшированием ключей
-│       │
-│       └── ui/                 # Пользовательский интерфейс (Jetpack Compose)
-│           ├── home/           # Главный экран (список проектов)
-│           ├── editor/         # Редактор блоков и параметров
-│           ├── sim/            # Экран симуляции (оптимизированный Canvas)
-│           ├── expr/           # Редактор выражений и таблиц
-│           ├── resources/      # Управление спрайтами и экспорт APK
-│           └── theme/          # Темы оформления
+SkriCode/
+├── core-engine/                # Единый модуль движка (Pure Kotlin / Android)
+│   └── src/main/java/su/SkrinVex/SkriCode/
+│       ├── block/              # Блочная система и встроенные блоки
+│       │   ├── Block.kt        # Определение блока, параметры и категории
+│       │   ├── BlockRegistry.kt # Регистрация и метаданные блоков для редактора
+│       │   └── BuiltinBlocks.kt # Фабрика встроенных блоков
+│       ├── engine/             # Ядро симуляции и физики
+│       │   ├── SimEngine.kt    # Диспетчер событий и интерпретатор байткода
+│       │   ├── EngineModels.kt # Модели состояния: SimObject, SimState, Camera, Particles
+│       │   ├── ParticleSystem.kt # 2D частицы, эмиттеры, анимации спрайтов, шейк/флэш
+│       │   ├── PhysicsWorld.kt # Физический 2D решатель (SAT + Spatial Hashing)
+│       │   ├── SaveCrypto.kt   # Шифрование сохранений с AES-GCM
+│       │   ├── ast/            # AST выражений
+│       │   │   ├── AstExpr.kt  # Узлы AST: Const, Var, Table, BinOp, Func
+│       │   │   └── ExprCompiler.kt # Быстрый парсер и компилятор выражений
+│       │   └── compiler/       # Байткод блоков
+│       │       ├── CompiledBlock.kt # Структуры инструкций виртуальной машины
+│       │       └── BlockCompiler.kt # AOT-компилятор блоков в плоский байткод
+│       └── ui/sim/             # Единый компонент рендеринга симуляции
+│           ├── SimulationScreen.kt # Высокопроизводительный Canvas рендер
+│           └── SimulationViewModel.kt
 │
-└── app-runtime/                # Шаблон автономного APK рантайма
+├── app/src/main/               # Основное приложение (Редактор + IDE)
+│   └── java/su/SkrinVex/SkriCode/
+│       ├── MainActivity.kt     # Навигация и экран редактора
+│       ├── data/               # ProjectRepository, SoundRepository, SpriteRepository
+│       └── ui/                 # UI редактора блоков, сцен, хитбоксов, выражений
+│           ├── editor/         # BlockCard, BlockList, ChildBlockRow
+│           ├── home/           # HomeScreen, HelpSheet (Справка)
+│           ├── expr/           # ExpressionEditorDialog, TableEditor
+│           └── resources/      # Редактор спрайтов, звуков и экспорт APK
+│
+└── app-runtime/                # Модуль standalone рантайма игр
+    └── src/main/java/su/SkrinVex/SkriPts/
+        ├── MainActivity.kt     # Облегчённый лончер автономной игры
+        └── data/               # Загрузчик упакованного JSON проекта
 ```
 
 ---

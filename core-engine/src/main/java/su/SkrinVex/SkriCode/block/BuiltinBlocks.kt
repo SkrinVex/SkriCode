@@ -259,6 +259,70 @@ object BlockFactory {
             "height" to p("0", "Высота", "0 = по размеру спрайта", ParamType.NUMBER),
             "alpha"  to p("1.0", "Прозрачность", "0.0..1.0", ParamType.NUMBER)))
 
+        // ── Покадровая анимация ──────────────────────────────────────────────────
+        "anim_play" -> build("anim_play", "Играть анимацию", "Запускает покадровую анимацию спрайт-листа", BlockCategory.SPRITE, listOf(
+            "name"       to p("rect1", "Имя объекта", "Какой объект анимировать"),
+            "sprite"     to p("", "Спрайт-лист", "Имя текстуры с сеткой кадров"),
+            "cols"       to p("4", "Столбцов (кадров в ширину)", "Количество столбцов сетки", ParamType.NUMBER),
+            "rows"       to p("1", "Строк (кадров в высоту)", "Количество строк сетки", ParamType.NUMBER),
+            "startFrame" to p("0", "Начальный кадр", "Индекс от 0", ParamType.NUMBER),
+            "endFrame"   to p("0", "Конечный кадр", "0 = до последнего кадра", ParamType.NUMBER),
+            "fps"        to p("12", "Скорость (FPS)", "Кадров в секунду", ParamType.NUMBER),
+            "loop"       to p("true", "Зациклить", "true = бесконечно, false = один раз", ParamType.SELECT)))
+
+        "anim_stop" -> build("anim_stop", "Остановить анимацию", "Останавливает покадровую анимацию", BlockCategory.SPRITE, listOf(
+            "name" to p("rect1", "Имя объекта", "Какой объект остановить")))
+
+        "anim_set_frame" -> build("anim_set_frame", "Установить кадр", "Устанавливает конкретный кадр анимации", BlockCategory.SPRITE, listOf(
+            "name"  to p("rect1", "Имя объекта", "Какой объект"),
+            "frame" to p("0", "Номер кадра", "Индекс от 0", ParamType.NUMBER)))
+
+        // ── Частицы (Particle System) ─────────────────────────────────────────────
+        "particle_burst" -> build("particle_burst", "Взрыв частиц", "Создаёт мгновенную вспышку частиц в координатах", BlockCategory.PHYSICS, listOf(
+            "x"          to p("0", "X", "Позиция X", ParamType.NUMBER),
+            "y"          to p("0", "Y", "Позиция Y", ParamType.NUMBER),
+            "count"      to p("20", "Количество", "Сколько частиц создать (1..100)", ParamType.NUMBER),
+            "colorStart" to p("#FFAA00", "Цвет начала", "#RRGGBB"),
+            "colorEnd"   to p("#FF0000", "Цвет конца", "#RRGGBB"),
+            "speed"      to p("150", "Скорость разлёта", "Пикселей/сек", ParamType.NUMBER),
+            "sizeStart"  to p("12", "Размер начала", "В пикселях", ParamType.NUMBER),
+            "sizeEnd"    to p("2", "Размер конца", "В пикселях", ParamType.NUMBER),
+            "lifetime"   to p("0.8", "Время жизни (сек)", "Длительность", ParamType.NUMBER),
+            "gravity"    to p("-100", "Гравитация", "Вниз = -, вверх = +", ParamType.NUMBER)))
+
+        "particle_emitter" -> build("particle_emitter", "Источник частиц", "Создаёт постоянный генератор частиц (огонь, дым, след)", BlockCategory.PHYSICS, listOf(
+            "name"       to p("fire1", "Имя источника", "Уникальное имя эмиттера"),
+            "target"     to p("rect1", "Привязать к объекту", "Имя объекта (или пусто для X/Y)"),
+            "x"          to p("0", "X (если нет объекта)", "Позиция X", ParamType.NUMBER),
+            "y"          to p("0", "Y (если нет объекта)", "Позиция Y", ParamType.NUMBER),
+            "rate"       to p("15", "Частота (в сек)", "Сколько раз в секунду испускать", ParamType.NUMBER),
+            "count"      to p("2", "Частиц за раз", "Сколько за испускание", ParamType.NUMBER),
+            "speed"      to p("60", "Скорость", "Скорость разлёта", ParamType.NUMBER),
+            "sizeStart"  to p("10", "Размер начала", "В пикселях", ParamType.NUMBER),
+            "sizeEnd"    to p("2", "Размер конца", "В пикселях", ParamType.NUMBER),
+            "colorStart" to p("#FFAA00", "Цвет начала", "#RRGGBB"),
+            "colorEnd"   to p("#FF0000", "Цвет конца", "#RRGGBB"),
+            "lifetime"   to p("0.6", "Время жизни (сек)", "Длительность", ParamType.NUMBER),
+            "gravity"    to p("50", "Гравитация", "Вниз = -, вверх = +", ParamType.NUMBER)))
+
+        "particle_emitter_stop" -> build("particle_emitter_stop", "Остановить частицы", "Останавливает генератор частиц", BlockCategory.PHYSICS, listOf(
+            "name" to p("fire1", "Имя источника", "Имя эмиттера или all")))
+
+        // ── Визуальные эффекты экрана ─────────────────────────────────────────────
+        "screen_shake" -> build("screen_shake", "Тряска экрана", "Создаёт эффект удара или взрыва сотрясением экрана", BlockCategory.CAMERA, listOf(
+            "intensity" to p("15", "Сила (px)", "Максимальное смещение в пикселях", ParamType.NUMBER),
+            "duration"  to p("0.3", "Длительность (сек)", "Время затухания", ParamType.NUMBER)))
+
+        "screen_flash" -> build("screen_flash", "Вспышка экрана", "Эффект вспышки (урон, молния, победа)", BlockCategory.CAMERA, listOf(
+            "color"    to p("#FFFFFF", "Цвет", "#RRGGBB"),
+            "duration" to p("0.2", "Длительность (сек)", "Время затухания", ParamType.NUMBER)))
+
+        "camera_bounds" -> build("camera_bounds", "Границы камеры", "Ограничивает движение камеры размерами уровня", BlockCategory.CAMERA, listOf(
+            "minX" to p("-1000", "Левая граница X", "Минимум по X", ParamType.NUMBER),
+            "maxX" to p("1000", "Правая граница X", "Максимум по X", ParamType.NUMBER),
+            "minY" to p("-1000", "Нижняя граница Y", "Минимум по Y", ParamType.NUMBER),
+            "maxY" to p("1000", "Верхняя граница Y", "Максимум по Y", ParamType.NUMBER)))
+
         // ── Звуки и Музыка ────────────────────────────────────────────────────────
         "sound_play" -> build("sound_play", "Воспроизвести звук", "Короткий звуковой эффект через SoundPool", BlockCategory.AUDIO, listOf(
             "sound"  to p("", "Звук", "Имя звука из проекта"),

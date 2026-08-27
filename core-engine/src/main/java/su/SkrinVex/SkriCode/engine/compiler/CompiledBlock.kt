@@ -59,6 +59,21 @@ sealed interface CompiledBlock {
         val cropXExpr: AstExpr, val cropYExpr: AstExpr, val cropWExpr: AstExpr, val cropHExpr: AstExpr
     ) : CompiledBlock
 
+    // ── Покадровая анимация ──────────────────────────────────────────────────
+    data class AnimPlay(
+        val targetExpr: AstExpr,
+        val spriteExpr: AstExpr,
+        val colsExpr: AstExpr,
+        val rowsExpr: AstExpr,
+        val startFrameExpr: AstExpr,
+        val endFrameExpr: AstExpr,
+        val fpsExpr: AstExpr,
+        val loopExpr: AstExpr
+    ) : CompiledBlock
+
+    data class AnimStop(val targetExpr: AstExpr) : CompiledBlock
+    data class AnimSetFrame(val targetExpr: AstExpr, val frameExpr: AstExpr) : CompiledBlock
+
     // ── Физика ───────────────────────────────────────────────────────────────
     data class SimPhysics(
         val targetExpr: AstExpr, val gravityExpr: AstExpr, val isStatic: Boolean,
@@ -70,6 +85,43 @@ sealed interface CompiledBlock {
     data class SimHitbox(val targetExpr: AstExpr, val type: String, val pointsExpr: AstExpr) : CompiledBlock
     data class SimNoCollision(val targetExpr: AstExpr, val ignoreExpr: AstExpr) : CompiledBlock
     data class PhysicsToggle(val enabledExpr: AstExpr) : CompiledBlock
+
+    // ── Частицы (Particle System) ─────────────────────────────────────────────
+    data class ParticleBurst(
+        val xExpr: AstExpr,
+        val yExpr: AstExpr,
+        val countExpr: AstExpr,
+        val colorStartExpr: AstExpr,
+        val colorEndExpr: AstExpr,
+        val speedExpr: AstExpr,
+        val sizeStartExpr: AstExpr,
+        val sizeEndExpr: AstExpr,
+        val lifetimeExpr: AstExpr,
+        val gravityExpr: AstExpr
+    ) : CompiledBlock
+
+    data class ParticleEmitterCreate(
+        val name: String,
+        val targetExpr: AstExpr,
+        val xExpr: AstExpr,
+        val yExpr: AstExpr,
+        val rateExpr: AstExpr,
+        val countExpr: AstExpr,
+        val speedExpr: AstExpr,
+        val sizeStartExpr: AstExpr,
+        val sizeEndExpr: AstExpr,
+        val colorStartExpr: AstExpr,
+        val colorEndExpr: AstExpr,
+        val lifetimeExpr: AstExpr,
+        val gravityExpr: AstExpr
+    ) : CompiledBlock
+
+    data class ParticleEmitterStop(val name: String) : CompiledBlock
+
+    // ── Визуальные эффекты экрана ─────────────────────────────────────────────
+    data class ScreenShake(val intensityExpr: AstExpr, val durationExpr: AstExpr) : CompiledBlock
+    data class ScreenFlash(val colorExpr: AstExpr, val durationExpr: AstExpr) : CompiledBlock
+    data class CameraBounds(val minXExpr: AstExpr, val maxXExpr: AstExpr, val minYExpr: AstExpr, val maxYExpr: AstExpr) : CompiledBlock
 
     // ── Камера ───────────────────────────────────────────────────────────────
     data class SimCameraBlock(
