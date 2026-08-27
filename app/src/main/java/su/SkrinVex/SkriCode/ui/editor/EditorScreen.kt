@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2614,7 +2615,8 @@ internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: 
                 Text(
                     param.value.ifBlank { "Выбрать спрайт..." },
                     color = if (param.value.isBlank()) TextSec else TextPrim,
-                    fontSize = 13.sp, modifier = Modifier.weight(1f)
+                    fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
             }
@@ -2625,7 +2627,7 @@ internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: 
             ) {
                 spriteNames.forEach { name ->
                     DropdownMenuItem(
-                        text = { Text(name, color = if (name == param.value) su.SkrinVex.SkriCode.ui.theme.Warning else TextPrim, fontSize = 13.sp) },
+                        text = { Text(name, color = if (name == param.value) su.SkrinVex.SkriCode.ui.theme.Warning else TextPrim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(Icons.Default.Image, null, tint = if (name == param.value) su.SkrinVex.SkriCode.ui.theme.Warning else TextSec, modifier = Modifier.size(16.dp)) },
                         onClick = { onChange(name); expanded = false }
                     )
@@ -2662,7 +2664,8 @@ internal fun SoundChip(param: BlockParam, soundNames: List<String>, onChange: (S
                 Text(
                     param.value.ifBlank { "Выбрать звук..." },
                     color = if (param.value.isBlank()) TextSec else TextPrim,
-                    fontSize = 13.sp, modifier = Modifier.weight(1f)
+                    fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
             }
@@ -2673,7 +2676,7 @@ internal fun SoundChip(param: BlockParam, soundNames: List<String>, onChange: (S
             ) {
                 soundNames.forEach { name ->
                     DropdownMenuItem(
-                        text = { Text(name, color = if (name == param.value) Color(0xFFE879F9) else TextPrim, fontSize = 13.sp) },
+                        text = { Text(name, color = if (name == param.value) Color(0xFFE879F9) else TextPrim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(Icons.Default.MusicNote, null, tint = if (name == param.value) Color(0xFFE879F9) else TextSec, modifier = Modifier.size(16.dp)) },
                         onClick = { onChange(name); expanded = false }
                     )

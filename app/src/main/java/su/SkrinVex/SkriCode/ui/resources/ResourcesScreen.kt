@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -328,7 +329,7 @@ private fun SpriteCard(sprite: SpriteAsset, file: java.io.File?, onPreview: () -
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(sprite.name, color = TextPrim, fontSize = 11.sp, fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f), maxLines = 1)
+                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Icon(Icons.Default.DeleteOutline, "Удалить", tint = Danger.copy(alpha = 0.8f),
                         modifier = Modifier.size(16.dp).clickable { showConfirm = true })
                 }
@@ -383,22 +384,16 @@ private fun AddSpriteDialog(suggestedName: String, existingNames: List<String>, 
 private fun SpritePreviewDialog(sprite: SpriteAsset, file: java.io.File?, onDismiss: () -> Unit) {
     val bitmap = remember(file) { file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() } }
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(16.dp), color = Surface2, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Image, null, tint = Accent, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(sprite.name, color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface2)) {
+            Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(sprite.name, color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 if (bitmap != null) {
-                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = sprite.name,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Fit)
-                } else {
-                    Box(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(8.dp)).background(Surface3), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.BrokenImage, null, tint = TextSec, modifier = Modifier.size(48.dp))
-                    }
+                    Image(
+                        bitmap = bitmap.asImageBitmap(), contentDescription = sprite.name,
+                        modifier = Modifier.sizeIn(maxWidth = 240.dp, maxHeight = 240.dp).clip(RoundedCornerShape(8.dp))
+                    )
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.fillMaxWidth().background(Surface3, RoundedCornerShape(8.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Файл:", color = TextSec, fontSize = 13.sp, modifier = Modifier.width(90.dp))
                         Text(sprite.fileName, color = TextPrim, fontSize = 13.sp)
@@ -605,15 +600,19 @@ private fun SoundCard(
         else String.format(java.util.Locale.US, "%.1f МБ", sound.sizeBytes / (1024.0 * 1024.0))
     }
 
+    val formatTag = remember(sound.fileName) {
+        sound.fileName.substringAfterLast(".", "").uppercase().take(4)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2)
     ) {
         Row(
-            Modifier.padding(14.dp),
+            Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 Modifier.size(46.dp).clip(RoundedCornerShape(12.dp))
@@ -629,15 +628,55 @@ private fun SoundCard(
                 )
             }
 
-            Column(Modifier.weight(1f)) {
-                Text(sound.name, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(sound.fileName, color = TextSec, fontSize = 12.sp, maxLines = 1)
-                    Text("•", color = TextSec.copy(alpha = 0.5f), fontSize = 10.sp)
-                    Text(formattedDuration, color = TextSec, fontSize = 12.sp)
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    sound.name,
+                    color = TextPrim,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    sound.fileName,
+                    color = TextSec.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (formatTag.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFE879F9).copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                formatTag,
+                                color = Color(0xFFE879F9),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        formattedDuration,
+                        color = TextSec,
+                        fontSize = 11.sp
+                    )
                     if (formattedSize.isNotBlank()) {
-                        Text("•", color = TextSec.copy(alpha = 0.5f), fontSize = 10.sp)
-                        Text(formattedSize, color = TextSec, fontSize = 12.sp)
+                        Text("•", color = TextSec.copy(alpha = 0.4f), fontSize = 10.sp)
+                        Text(
+                            formattedSize,
+                            color = TextSec,
+                            fontSize = 11.sp
+                        )
                     }
                 }
             }
