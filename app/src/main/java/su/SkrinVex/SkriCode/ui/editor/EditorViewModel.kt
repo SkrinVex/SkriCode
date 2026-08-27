@@ -32,6 +32,7 @@ data class EditorState(
     val globalTags: List<ProjectTag> = emptyList(),
     val globalTables: List<ProjectTable> = emptyList(),
     val sprites: List<su.SkrinVex.SkriCode.data.SpriteAsset> = emptyList(),
+    val sounds: List<su.SkrinVex.SkriCode.data.SoundAsset> = emptyList(),
     val orientation: su.SkrinVex.SkriCode.data.ProjectOrientation = su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT,
     val packageName: String = "",
     val appLabel: String = "",
@@ -53,12 +54,17 @@ data class EditorState(
     val visibleTables: List<ProjectTable> get() = globalTables + (activeScript.localTables ?: emptyList())
     val sceneNames: List<String> get() = scenes.map { it.name }
     val spriteNames: List<String> get() = sprites.map { it.name }
+    val soundNames: List<String> get() = sounds.map { it.name }
 }
 
 @OptIn(FlowPreview::class)
 class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(EditorState())
-    val state = _state.asStateFlow()
+    val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    val soundManager = su.SkrinVex.SkriCode.engine.SoundManager(app) { soundName ->
+        getSoundFile(soundName)
+    }
 
     // Симуляция — отдельные flows, не триггерят рекомпозицию редактора
     private val _simState = MutableStateFlow<SimState?>(null)
@@ -142,7 +148,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             globalVars = globalVars,
             globalTags = globalTags,
             globalTables = globalTables,
-            sprites = project.sprites ?: emptyList()
+            sprites = project.sprites ?: emptyList(),
+            sounds = project.sounds ?: emptyList()
         )}
     }
 
@@ -516,6 +523,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
         SimEngine.projectName = state.projectName
+        SimEngine.soundManager = soundManager
         val initial = SimState()
         isSimulationRunning = true
         _simState.value = initial
@@ -701,6 +709,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPhysics() {
         _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear(); isSimulationRunning = false
         _logWatchJob?.cancel(); _logWatchJob = null
+        soundManager.stopAllSounds()
+        soundManager.stopMusic()
         // Финальный flush — записываем всё что не успел debounce
         val uri = _activeLogUri
         if (uri != null) {
@@ -932,7 +942,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             clearLogsOnStart = s.clearLogsOnStart.takeIf { it },
             scenes = updatedScenes, activeSceneId = s.activeSceneId,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
-            sprites = s.sprites
+            sprites = s.sprites,
+            sounds = s.sounds
         ))
     }
 
@@ -974,7 +985,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             clearLogsOnStart = s.clearLogsOnStart.takeIf { it },
             scenes = updatedScenes, activeSceneId = updatedScenes.first().id,
             globalVars = s.globalVars, globalTags = s.globalTags, globalTables = s.globalTables,
-            sprites = s.sprites
+            sprites = s.sprites,
+            sounds = s.sounds
         )
     }
 
@@ -999,12 +1011,37 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         return su.SkrinVex.SkriCode.data.SpriteRepository.getFile(getApplication(), projectId, asset.fileName)
     }
 
+    // --- Звуки ---
+    fun addSound(uri: android.net.Uri, name: String): String? {
+        if (_state.value.sounds.any { it.name == name })
+            return "Звук с именем «$name» уже существует"
+        return try {
+            val asset = su.SkrinVex.SkriCode.data.SoundRepository.importSound(getApplication(), projectId, uri, name)
+            _state.update { it.copy(sounds = it.sounds + asset) }
+            null
+        } catch (e: Exception) {
+            e.message ?: "Ошибка импорта аудиофайла"
+        }
+    }
+
+    fun deleteSound(name: String) {
+        val asset = _state.value.sounds.find { it.name == name } ?: return
+        su.SkrinVex.SkriCode.data.SoundRepository.delete(getApplication(), projectId, asset.fileName)
+        _state.update { it.copy(sounds = it.sounds.filter { s -> s.name != name }) }
+    }
+
+    fun getSoundFile(name: String): java.io.File? {
+        val asset = _state.value.sounds.find { it.name == name } ?: return null
+        return su.SkrinVex.SkriCode.data.SoundRepository.getFile(getApplication(), projectId, asset.fileName)
+    }
+
     fun getProjectId(): String = projectId
 
     override fun onCleared() {
         super.onCleared()
         _logWatchJob?.cancel()
         _activeLogUri = null
+        soundManager.release()
     }
 
     private fun validate(state: EditorState): List<String> {

@@ -16,16 +16,31 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     private val _simState = MutableStateFlow<SimState?>(null)
     val simState = _simState.asStateFlow()
 
+    private var _project: ScriptProject? = null
+    private val soundManager = SoundManager(app) { soundName ->
+        val p = _project ?: return@SoundManager null
+        val sound = p.sounds?.find { it.name == soundName } ?: return@SoundManager null
+        java.io.File(app.filesDir, "projects/${p.id}/sounds/${sound.fileName}")
+    }
+
     private var _scripts = listOf<Script>()
     private var _scenes = listOf<Scene>()
-    private var _project: ScriptProject? = null
     private var _physicsJob: Job? = null
     private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
     fun start(project: ScriptProject) {
         _project = project
         _scenes = project.scenes.orEmpty()
+        SimEngine.soundManager = soundManager
         launchScene(project.activeSceneId ?: _scenes.firstOrNull()?.id ?: return)
+    }
+
+    fun pauseAudio() {
+        soundManager.pauseAll()
+    }
+
+    fun resumeAudio() {
+        soundManager.resumeAll()
     }
 
     private fun launchScene(sceneId: String) {
@@ -225,5 +240,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         _simState.update { it?.copy(log = emptyList(), errors = emptyList()) }
     }
 
-    override fun onCleared() { _physicsJob?.cancel() }
+    override fun onCleared() {
+        _physicsJob?.cancel()
+        soundManager.release()
+    }
 }

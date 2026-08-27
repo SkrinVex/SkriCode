@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -20,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -31,6 +33,7 @@ import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import su.SkrinVex.SkriCode.build.ApkBuilder
+import su.SkrinVex.SkriCode.data.SoundAsset
 import su.SkrinVex.SkriCode.data.SpriteAsset
 import su.SkrinVex.SkriCode.ui.editor.EditorViewModel
 import su.SkrinVex.SkriCode.ui.theme.*
@@ -52,12 +55,19 @@ fun ResourcesScreen(
             sprites = state.sprites,
             onBack = { subScreen = null }
         )
+        "sounds" -> SoundsScreen(
+            vm = vm,
+            sounds = state.sounds,
+            onBack = { subScreen = null }
+        )
         else -> ResourcesHub(
             vm = vm,
             projectName = projectName,
             spriteCount = state.sprites.size,
+            soundCount = state.sounds.size,
             onOpenEditor = onOpenEditor,
             onOpenSprites = { subScreen = "sprites" },
+            onOpenSounds = { subScreen = "sounds" },
             onBack = onBack
         )
     }
@@ -68,8 +78,10 @@ private fun ResourcesHub(
     vm: EditorViewModel,
     projectName: String,
     spriteCount: Int,
+    soundCount: Int,
     onOpenEditor: () -> Unit,
     onOpenSprites: () -> Unit,
+    onOpenSounds: () -> Unit,
     onBack: () -> Unit
 ) {
     val state by vm.state.collectAsState()
@@ -107,7 +119,7 @@ private fun ResourcesHub(
                     onClick = onOpenEditor
                 )
             }
-            // Спрайты — только если есть или всегда показываем
+            // Спрайты
             item {
                 ResourceCard(
                     icon = Icons.Default.Image,
@@ -117,15 +129,15 @@ private fun ResourcesHub(
                     onClick = onOpenSprites
                 )
             }
-            // Звуки — в разработке
+            // Звуки
             item {
                 ResourceCard(
                     icon = Icons.Default.MusicNote,
-                    title = "Звуки",
-                    subtitle = "В разработке",
-                    color = TextSec,
-                    enabled = false,
-                    onClick = {}
+                    title = "Звуки и Музыка",
+                    subtitle = if (soundCount > 0) "$soundCount аудиофайлов" else "Нет звуков (до 20 МБ)",
+                    color = Color(0xFFE879F9),
+                    enabled = true,
+                    onClick = onOpenSounds
                 )
             }
             // Экспорт в APK
@@ -402,6 +414,280 @@ private fun SpritePreviewDialog(sprite: SpriteAsset, file: java.io.File?, onDism
             }
         }
     }
+}
+
+/** Полноэкранный экран управления звуками и музыкой */
+@Composable
+private fun SoundsScreen(
+    vm: EditorViewModel,
+    sounds: List<SoundAsset>,
+    onBack: () -> Unit
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    var playingSoundName by remember { mutableStateOf<String?>(null) }
+    var previewPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                previewPlayer?.stop()
+                previewPlayer?.release()
+            } catch (_: Exception) {}
+            previewPlayer = null
+        }
+    }
+
+    val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            pendingUri = uri
+            showAddDialog = true
+        }
+    }
+
+    fun togglePlay(sound: SoundAsset) {
+        if (playingSoundName == sound.name) {
+            try {
+                previewPlayer?.stop()
+                previewPlayer?.release()
+            } catch (_: Exception) {}
+            previewPlayer = null
+            playingSoundName = null
+            return
+        }
+
+        try {
+            previewPlayer?.stop()
+            previewPlayer?.release()
+        } catch (_: Exception) {}
+        previewPlayer = null
+
+        val file = vm.getSoundFile(sound.name)
+        if (file != null && file.exists()) {
+            try {
+                val mp = android.media.MediaPlayer()
+                java.io.FileInputStream(file).use { fis ->
+                    mp.setDataSource(fis.fd)
+                }
+                mp.prepare()
+                mp.start()
+                mp.setOnCompletionListener {
+                    playingSoundName = null
+                    previewPlayer = null
+                }
+                mp.setOnErrorListener { _, _, _ ->
+                    playingSoundName = null
+                    previewPlayer = null
+                    true
+                }
+                previewPlayer = mp
+                playingSoundName = sound.name
+            } catch (e: Exception) {
+                error = "Не удалось воспроизвести: ${e.message}"
+            }
+        } else {
+            error = "Файл звука не найден на устройстве"
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Navy900)) {
+        Surface(color = Surface1, shadowElevation = 4.dp) {
+            Row(
+                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, "Назад", tint = TextSec)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Звуки и Музыка", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("${sounds.size} аудиофайлов (макс. 20 МБ)", color = TextSec, fontSize = 12.sp)
+                }
+            }
+        }
+
+        Box(Modifier.fillMaxSize()) {
+            if (sounds.isEmpty()) {
+                Column(
+                    Modifier.align(Alignment.Center).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.MusicNote, null, tint = Color(0xFFE879F9), modifier = Modifier.size(64.dp))
+                    Text("Нет аудиофайлов", color = TextPrim, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                    Text("Нажми + чтобы добавить MP3, WAV, OGG, M4A, FLAC", color = TextSec, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(sounds, key = { it.name }) { sound ->
+                        SoundCard(
+                            sound = sound,
+                            isPlaying = playingSoundName == sound.name,
+                            onTogglePlay = { togglePlay(sound) },
+                            onDelete = {
+                                if (playingSoundName == sound.name) {
+                                    previewPlayer?.stop()
+                                    previewPlayer?.release()
+                                    previewPlayer = null
+                                    playingSoundName = null
+                                }
+                                vm.deleteSound(sound.name)
+                            }
+                        )
+                    }
+                }
+            }
+
+            FloatingActionButton(
+                onClick = { pickLauncher.launch(arrayOf("audio/*")) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+                containerColor = Color(0xFFE879F9)
+            ) {
+                Icon(Icons.Default.Add, "Добавить звук", tint = Navy900)
+            }
+        }
+    }
+
+    if (showAddDialog && pendingUri != null) {
+        AddSoundDialog(
+            suggestedName = pendingUri!!.lastPathSegment
+                ?.substringAfterLast("/")?.substringBeforeLast(".")
+                ?.replace(Regex("[^a-zA-Zа-яА-Я0-9_]"), "_") ?: "sound",
+            existingNames = sounds.map { it.name },
+            onConfirm = { name ->
+                val err = vm.addSound(pendingUri!!, name)
+                if (err != null) error = err
+                showAddDialog = false
+                pendingUri = null
+            },
+            onDismiss = { showAddDialog = false; pendingUri = null }
+        )
+    }
+
+    error?.let { err ->
+        AlertDialog(
+            onDismissRequest = { error = null }, containerColor = Surface2,
+            icon = { Icon(Icons.Default.ErrorOutline, null, tint = Danger) },
+            title = { Text("Ошибка", color = TextPrim) },
+            text = { Text(err, color = TextSec) },
+            confirmButton = { Button(onClick = { error = null }, colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text("OK", color = Navy900) } }
+        )
+    }
+}
+
+@Composable
+private fun SoundCard(
+    sound: SoundAsset,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+
+    val formattedDuration = remember(sound.durationMs) {
+        if (sound.durationMs <= 0) "--:--"
+        else {
+            val totalSec = sound.durationMs / 1000
+            val min = totalSec / 60
+            val sec = totalSec % 60
+            String.format(java.util.Locale.US, "%d:%02d", min, sec)
+        }
+    }
+
+    val formattedSize = remember(sound.sizeBytes) {
+        if (sound.sizeBytes <= 0) ""
+        else if (sound.sizeBytes < 1024 * 1024) "${sound.sizeBytes / 1024} КБ"
+        else String.format(java.util.Locale.US, "%.1f МБ", sound.sizeBytes / (1024.0 * 1024.0))
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface2)
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                Modifier.size(46.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFE879F9).copy(alpha = 0.15f))
+                    .clickable(onClick = onTogglePlay),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Пауза" else "Воспроизвести",
+                    tint = Color(0xFFE879F9),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Column(Modifier.weight(1f)) {
+                Text(sound.name, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(sound.fileName, color = TextSec, fontSize = 12.sp, maxLines = 1)
+                    Text("•", color = TextSec.copy(alpha = 0.5f), fontSize = 10.sp)
+                    Text(formattedDuration, color = TextSec, fontSize = 12.sp)
+                    if (formattedSize.isNotBlank()) {
+                        Text("•", color = TextSec.copy(alpha = 0.5f), fontSize = 10.sp)
+                        Text(formattedSize, color = TextSec, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            IconButton(onClick = { showConfirm = true }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.DeleteOutline, "Удалить", tint = Danger.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false }, containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить звук?", color = TextPrim) },
+            text = { Text("«${sound.name}» будет удалён из проекта.", color = TextSec) },
+            confirmButton = { Button(onClick = { onDelete(); showConfirm = false }, colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Удалить") } },
+            dismissButton = { TextButton(onClick = { showConfirm = false }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+}
+
+@Composable
+private fun AddSoundDialog(suggestedName: String, existingNames: List<String>, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(suggestedName) }
+    val isValid = name.isNotBlank() && name !in existingNames && name.matches(Regex("[a-zA-Zа-яА-Я0-9_]+"))
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface2,
+        icon = { Icon(Icons.Default.MusicNote, null, tint = Color(0xFFE879F9)) },
+        title = { Text("Добавить звук", color = TextPrim) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Имя звука — уникальный идентификатор в блоках (макс. 20 МБ).", color = TextSec, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, label = { Text("Имя звука") }, singleLine = true,
+                    isError = !isValid && name.isNotBlank(),
+                    supportingText = when {
+                        name in existingNames -> {{ Text("Имя уже занято", color = Danger) }}
+                        name.isNotBlank() && !name.matches(Regex("[a-zA-Zа-яА-Я0-9_]+")) -> {{ Text("Только буквы, цифры и _", color = Danger) }}
+                        else -> null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFE879F9), focusedLabelColor = Color(0xFFE879F9),
+                        cursorColor = Color(0xFFE879F9), focusedTextColor = TextPrim, unfocusedTextColor = TextPrim)
+                )
+            }
+        },
+        confirmButton = { Button(onClick = { if (isValid) onConfirm(name.trim()) }, enabled = isValid, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE879F9))) { Text("Добавить", color = Navy900) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
+    )
 }
 
 @Composable

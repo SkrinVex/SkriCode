@@ -3,6 +3,7 @@ package su.SkrinVex.SkriCode.build
 import android.content.Context
 import com.google.gson.Gson
 import su.SkrinVex.SkriCode.data.ScriptProject
+import su.SkrinVex.SkriCode.data.SoundRepository
 import su.SkrinVex.SkriCode.data.SpriteRepository
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -178,6 +179,7 @@ object ApkBuilder {
                     if (entry.name == "assets/savekey.dat") return@forEach
                     if (entry.name == "assets/project_id.txt") return@forEach
                     if (entry.name.startsWith("assets/sprites/")) return@forEach
+                    if (entry.name.startsWith("assets/sounds/")) return@forEach
 
                     val bytes = zip.getInputStream(entry).readBytes()
                     val isSo = entry.name.endsWith(".so")
@@ -221,6 +223,15 @@ object ApkBuilder {
                 if (spriteFile?.exists() == true) {
                     val encryptedSprite = aesEncrypt(spriteFile.readBytes(), aesKey)
                     zipOut.writeEntry("assets/sprites/${sprite.fileName}", encryptedSprite, stored = false)
+                }
+            }
+
+            // 5b. Добавляем зашифрованные звуки
+            project.sounds.orEmpty().forEach { sound ->
+                val soundFile = SoundRepository.getFile(ctx, project.id, sound.fileName)
+                if (soundFile?.exists() == true) {
+                    val encryptedSound = aesEncrypt(soundFile.readBytes(), aesKey)
+                    zipOut.writeEntry("assets/sounds/${sound.fileName}", encryptedSound, stored = false)
                 }
             }
 

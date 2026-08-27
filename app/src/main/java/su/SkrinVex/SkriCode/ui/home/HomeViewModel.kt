@@ -46,10 +46,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(id: String) {
-        // Удаляем спрайты проекта
+        // Удаляем спрайты и звуки проекта
         val project = ProjectRepository.load(getApplication(), id)
         project?.sprites.orEmpty().forEach { sprite ->
             su.SkrinVex.SkriCode.data.SpriteRepository.delete(getApplication(), id, sprite.fileName)
+        }
+        project?.sounds.orEmpty().forEach { sound ->
+            su.SkrinVex.SkriCode.data.SoundRepository.delete(getApplication(), id, sound.fileName)
         }
         ProjectRepository.delete(getApplication(), id)
         refresh()
@@ -76,8 +79,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     val existing = ProjectRepository.load(getApplication(), imported.id)
                     val toSave = if (existing != null) {
                         val newId = UUID.randomUUID().toString()
-                        // Копируем спрайты под новый ID
+                        // Копируем спрайты и звуки под новый ID
                         su.SkrinVex.SkriCode.data.SpriteRepository.copyAll(getApplication(), imported.id, newId)
+                        su.SkrinVex.SkriCode.data.SoundRepository.copyAll(getApplication(), imported.id, newId)
                         imported.copy(id = newId, name = "${imported.name} (импорт)")
                     } else imported
                     ProjectRepository.save(getApplication(), toSave)

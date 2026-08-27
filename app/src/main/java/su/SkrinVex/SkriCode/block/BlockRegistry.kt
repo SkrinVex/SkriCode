@@ -20,6 +20,7 @@ object BlockRegistry {
         "sim_physics", "sim_hitbox", "physics_toggle",
         "physics_impulse", "physics_move", "sim_no_collision",
         "sim_camera", "camera_toggle",
+        "sound_play", "sound_stop", "music_play", "music_pause", "music_resume", "music_stop", "music_volume",
         "scene_switch"
     )
 

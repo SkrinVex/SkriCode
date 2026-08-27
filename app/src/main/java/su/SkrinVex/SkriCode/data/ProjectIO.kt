@@ -13,6 +13,7 @@ import java.util.zip.ZipOutputStream
 private const val FORMAT_VERSION = 2
 private const val PROJECT_JSON_ENTRY = "project.json"
 private const val SPRITES_DIR = "sprites/"
+private const val SOUNDS_DIR = "sounds/"
 
 data class ExportEnvelope(
     val formatVersion: Int = FORMAT_VERSION,
@@ -42,6 +43,17 @@ object ProjectIO {
                         zip.closeEntry()
                     }
                 }
+
+                // sounds/
+                val soundsDir = SoundRepository.soundsDir(ctx, project.id)
+                project.sounds.orEmpty().forEach { sound ->
+                    val file = File(soundsDir, sound.fileName)
+                    if (file.exists()) {
+                        zip.putNextEntry(ZipEntry("$SOUNDS_DIR${sound.fileName}"))
+                        file.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
+                }
             }
         } ?: error("Не удалось открыть файл для записи")
     }
@@ -61,6 +73,7 @@ object ProjectIO {
     private fun importZip(ctx: Context, bytes: ByteArray): ScriptProject {
         var project: ScriptProject? = null
         val spriteFiles = mutableMapOf<String, ByteArray>()
+        val soundFiles = mutableMapOf<String, ByteArray>()
 
         ZipInputStream(bytes.inputStream()).use { zip ->
             var entry = zip.nextEntry
@@ -76,6 +89,12 @@ object ProjectIO {
                             spriteFiles[fileName] = zip.readBytes()
                         }
                     }
+                    entry.name.startsWith(SOUNDS_DIR) && !entry.isDirectory -> {
+                        val fileName = entry.name.removePrefix(SOUNDS_DIR)
+                        if (fileName.isNotBlank()) {
+                            soundFiles[fileName] = zip.readBytes()
+                        }
+                    }
                 }
                 zip.closeEntry()
                 entry = zip.nextEntry
@@ -89,6 +108,14 @@ object ProjectIO {
             val spritesDir = SpriteRepository.spritesDir(ctx, p.id)
             spriteFiles.forEach { (name, data) ->
                 File(spritesDir, name).writeBytes(data)
+            }
+        }
+
+        // Сохраняем файлы звуков
+        if (soundFiles.isNotEmpty()) {
+            val soundsDir = SoundRepository.soundsDir(ctx, p.id)
+            soundFiles.forEach { (name, data) ->
+                File(soundsDir, name).writeBytes(data)
             }
         }
 

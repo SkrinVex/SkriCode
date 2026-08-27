@@ -259,6 +259,30 @@ object BlockFactory {
             "height" to p("0", "Высота", "0 = по размеру спрайта", ParamType.NUMBER),
             "alpha"  to p("1.0", "Прозрачность", "0.0..1.0", ParamType.NUMBER)))
 
+        // ── Звуки и Музыка ────────────────────────────────────────────────────────
+        "sound_play" -> build("sound_play", "Воспроизвести звук", "Короткий звуковой эффект через SoundPool", BlockCategory.AUDIO, listOf(
+            "sound"  to p("", "Звук", "Имя звука из проекта"),
+            "volume" to p("1.0", "Громкость", "0.0..1.0", ParamType.NUMBER),
+            "loop"   to p("false", "Зациклить", "true = повторять, false = один раз", ParamType.SELECT),
+            "rate"   to p("1.0", "Скорость", "0.5..2.0 (1.0 = норма)", ParamType.NUMBER)))
+
+        "sound_stop" -> build("sound_stop", "Остановить звук", "Останавливает звуковой эффект", BlockCategory.AUDIO, listOf(
+            "sound" to p("", "Звук", "Имя звука или all для всех")))
+
+        "music_play" -> build("music_play", "Играть музыку", "Фоновая музыка через MediaPlayer со стримингом", BlockCategory.AUDIO, listOf(
+            "sound"  to p("", "Трек", "Имя аудиофайла из проекта"),
+            "volume" to p("1.0", "Громкость", "0.0..1.0", ParamType.NUMBER),
+            "loop"   to p("true", "Зациклить", "true = бесконечно", ParamType.SELECT)))
+
+        "music_pause" -> build("music_pause", "Пауза музыки", "Приостанавливает воспроизведение фоновой музыки", BlockCategory.AUDIO, emptyList())
+
+        "music_resume" -> build("music_resume", "Возобновить музыку", "Продолжает воспроизведение фоновой музыки", BlockCategory.AUDIO, emptyList())
+
+        "music_stop" -> build("music_stop", "Остановить музыку", "Останавливает и сбрасывает фоновую музыку", BlockCategory.AUDIO, emptyList())
+
+        "music_volume" -> build("music_volume", "Громкость музыки", "Изменяет громкость фоновой музыки", BlockCategory.AUDIO, listOf(
+            "volume" to p("1.0", "Громкость", "0.0..1.0", ParamType.NUMBER)))
+
         else -> null
     }
 }

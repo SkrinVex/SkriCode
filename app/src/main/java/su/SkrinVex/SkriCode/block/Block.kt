@@ -13,6 +13,7 @@ enum class BlockCategory(val label: String) {
     SPRITE("Спрайты"),
     PHYSICS("Физика"),
     CAMERA("Камера"),
+    AUDIO("Звук"),
 }
 
 enum class ParamType { TEXT, NUMBER, SELECT }

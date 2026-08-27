@@ -69,6 +69,7 @@ class RuntimeActivity : ComponentActivity() {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         extractSprites(project, key)
+        extractSounds(project, key)
         SimEngine.projectName = project.name
 
         // Загружаем ключ шифрования сохранений если он был упакован в APK
@@ -183,5 +184,34 @@ class RuntimeActivity : ComponentActivity() {
                 } catch (_: Exception) {}
             }
         }
+    }
+
+    private fun extractSounds(project: ScriptProject, key: ByteArray) {
+        // Путь должен совпадать с SoundRepository: filesDir/projects/{id}/sounds/
+        val soundsDir = File(filesDir, "projects/${project.id}/sounds").also { it.mkdirs() }
+        val cipher = if (key.isNotEmpty()) {
+            Cipher.getInstance("AES/ECB/PKCS5Padding").also {
+                it.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+            }
+        } else null
+        project.sounds.orEmpty().forEach { sound ->
+            val dest = File(soundsDir, sound.fileName)
+            if (!dest.exists()) {
+                try {
+                    val raw = assets.open("sounds/${sound.fileName}").readBytes()
+                    dest.writeBytes(if (cipher != null) cipher.doFinal(raw) else raw)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        vm.pauseAudio()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.resumeAudio()
     }
 }

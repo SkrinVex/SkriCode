@@ -76,6 +76,14 @@ data class SpriteAsset(
     val height: Int = 0
 )
 
+/** Метаданные звука — сам аудиофайл хранится в SoundRepository */
+data class SoundAsset(
+    val name: String,          // уникальный идентификатор (без расширения)
+    val fileName: String,      // имя файла с расширением (e.g. "jump.wav")
+    val durationMs: Long = 0,  // длительность аудио в миллисекундах
+    val sizeBytes: Long = 0    // размер файла в байтах
+)
+
 enum class ProjectOrientation { PORTRAIT, LANDSCAPE }
 
 data class ScriptProject(
@@ -98,6 +106,7 @@ data class ScriptProject(
     val globalTables: List<ProjectTable>? = emptyList(),
     val locationBlocks: List<SerializedBlock>? = emptyList(),
     val sprites: List<SpriteAsset>? = emptyList(),
+    val sounds: List<SoundAsset>? = emptyList(),
     // legacy
     val variables: List<ProjectVar>? = null,
     val blocks: List<SerializedBlock>? = null

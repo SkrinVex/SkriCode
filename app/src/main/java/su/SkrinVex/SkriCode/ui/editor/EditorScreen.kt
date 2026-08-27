@@ -434,6 +434,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         allBlocks = state.allScriptBlocks,
                         sceneNames = state.sceneNames,
                         spriteNames = state.spriteNames,
+                        soundNames = state.soundNames,
                         collapsed = collapsed,
                         scriptId = activeScriptId,
                         onToggleCollapse = {
@@ -766,6 +767,7 @@ internal fun BlockParamContent(
     variables: List<ProjectVar>,
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList(),
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit
 ) {
@@ -799,6 +801,11 @@ internal fun BlockParamContent(
             (block.type == "set_texture" || block.type == "sim_sprite") && key == "sprite" ->
                 SpriteChip(param = param, spriteNames = spriteNames,
                     onChange = { onParamChange(key, it) })
+            (block.category == BlockCategory.AUDIO || block.type == "sound_play" || block.type == "sound_stop" || block.type == "music_play") && key == "sound" ->
+                SoundChip(param = param, soundNames = soundNames,
+                    onChange = { onParamChange(key, it) })
+            block.category == BlockCategory.AUDIO && key == "loop" ->
+                BoolToggle(param = param, onChange = { onParamChange(key, it) })
             (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
                 EncryptToggle(param = param, onChange = { onParamChange(key, it) })
             (key == "name" || key == "target") && block.category == BlockCategory.SIMULATION && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" ->
@@ -833,6 +840,7 @@ internal fun BlockCard(
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList(),
     collapsed: Boolean,
     scriptId: String = "",
     onToggleCollapse: () -> Unit,
@@ -933,6 +941,7 @@ internal fun BlockCard(
                             IfBlockContent(
                                 block = block, variables = variables,
                                 allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
+                                soundNames = soundNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
                                 isChildCollapsed = isChildCollapsed,
@@ -950,6 +959,7 @@ internal fun BlockCard(
                             LoopBlockContent(
                                 block = block, variables = variables,
                                 allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
+                                soundNames = soundNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
                                 isChildCollapsed = isChildCollapsed,
@@ -1026,6 +1036,7 @@ internal fun BlockCard(
                                 BlockParamContent(
                                     block = block, variables = variables,
                                     sceneNames = sceneNames, spriteNames = spriteNames,
+                                    soundNames = soundNames,
                                     onParamChange = onParamChange, onOpenExpr = onOpenExpr
                                 )
                             }
@@ -1335,6 +1346,7 @@ internal fun IfBlockContent(
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList(),
     scriptId: String = "",
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
@@ -1406,7 +1418,7 @@ internal fun IfBlockContent(
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
         onOpenChildPositionPicker = onOpenChildPositionPicker,
         onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("then", ci, upd) }} else null,
-        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames, soundNames = soundNames
     )
     Spacer(Modifier.height(6.dp))
     IfBranchSection(
@@ -1422,7 +1434,7 @@ internal fun IfBlockContent(
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
         onOpenChildPositionPicker = onOpenChildPositionPicker,
         onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("else", ci, upd) }} else null,
-        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames, soundNames = soundNames
     )
 }
 
@@ -1445,7 +1457,8 @@ internal fun IfBranchSection(
     onUpdateChild: ((childIndex: Int, updated: BlockDef) -> Unit)? = null,
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
-    spriteNames: List<String> = emptyList()
+    spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList()
 ) {
     var showPicker by remember { mutableStateOf(false) }
 
@@ -1476,6 +1489,7 @@ internal fun IfBranchSection(
                     allBlocks = allBlocks,
                     sceneNames = sceneNames,
                     spriteNames = spriteNames,
+                    soundNames = soundNames,
                     accentColor = color,
                     collapsed = collapsedState.value,
                     onToggleCollapse = {
@@ -1530,6 +1544,7 @@ internal fun ChildBlockRow(
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList(),
     accentColor: Color,
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
@@ -1567,6 +1582,7 @@ internal fun ChildBlockRow(
                 BlockParamContent(
                     block = block, variables = variables,
                     sceneNames = sceneNames, spriteNames = spriteNames,
+                    soundNames = soundNames,
                     onParamChange = onParamChange, onOpenExpr = onOpenExpr
                 )
             }
@@ -1941,6 +1957,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.SPRITE     -> Color(0xFFFFD700)
     BlockCategory.PHYSICS    -> Color(0xFF22D3EE)
     BlockCategory.CAMERA     -> Color(0xFF4ADE80)
+    BlockCategory.AUDIO      -> Color(0xFFE879F9)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -1954,6 +1971,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.SPRITE     -> Icons.Default.Image
     BlockCategory.PHYSICS    -> Icons.Default.Science
     BlockCategory.CAMERA     -> Icons.Default.Videocam
+    BlockCategory.AUDIO      -> Icons.Default.MusicNote
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
@@ -1971,6 +1989,7 @@ internal fun LoopBlockContent(
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
+    soundNames: List<String> = emptyList(),
     scriptId: String = "",
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
@@ -2009,7 +2028,7 @@ internal fun LoopBlockContent(
         onChildParamChange = onChildParamChange,
         onOpenChildExpr = onOpenChildExpr,
         onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("body", ci, upd) }} else null,
-        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames
+        allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames, soundNames = soundNames
     )
 }
 
@@ -2614,6 +2633,54 @@ internal fun SpriteChip(param: BlockParam, spriteNames: List<String>, onChange: 
                 if (spriteNames.isEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Нет спрайтов в проекте", color = TextSec, fontSize = 13.sp) },
+                        onClick = { expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SoundChip(param: BlockParam, soundNames: List<String>, onChange: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Box {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3)
+                    .border(1.dp, Color(0xFFE879F9).copy(0.4f), RoundedCornerShape(8.dp))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.MusicNote, null, tint = Color(0xFFE879F9), modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    param.value.ifBlank { "Выбрать звук..." },
+                    color = if (param.value.isBlank()) TextSec else TextPrim,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Surface2)
+            ) {
+                soundNames.forEach { name ->
+                    DropdownMenuItem(
+                        text = { Text(name, color = if (name == param.value) Color(0xFFE879F9) else TextPrim, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.MusicNote, null, tint = if (name == param.value) Color(0xFFE879F9) else TextSec, modifier = Modifier.size(16.dp)) },
+                        onClick = { onChange(name); expanded = false }
+                    )
+                }
+                if (soundNames.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Нет звуков в проекте", color = TextSec, fontSize = 13.sp) },
                         onClick = { expanded = false }
                     )
                 }

@@ -115,6 +115,7 @@ object SimEngine {
 
     var appContext: Context? = null
     var projectName: String = ""
+    var soundManager: SoundManager? = null
 
     suspend fun run(
         scripts: List<Script>,
@@ -604,6 +605,50 @@ object SimEngine {
                     )
                     modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "sprite", "spriteAlpha", "hitbox"))
                     log += "  ${if (existing != null) "Обновлён" else "Создан"} спрайт «$name» (${getStr("x")}, ${getStr("y")}) ${w.toInt()}x${h.toInt()}"
+                }
+                "sound_play" -> {
+                    val soundName = getStr("sound")
+                    if (soundName.isBlank()) { errors += "Блок $num «Воспроизвести звук»: имя звука не заполнено"; continue }
+                    val volume = getF("volume", 1f).coerceIn(0f, 1f)
+                    val loop = getStr("loop", "false").toBoolean()
+                    val rate = getF("rate", 1f).coerceIn(0.5f, 2.0f)
+                    soundManager?.playSound(soundName, volume, loop, rate)
+                    log += "  Воспроизведение звука «$soundName» (громкость: $volume, loop: $loop)"
+                }
+                "sound_stop" -> {
+                    val soundName = getStr("sound")
+                    if (soundName.isBlank() || soundName.equals("all", ignoreCase = true)) {
+                        soundManager?.stopAllSounds()
+                        log += "  Остановка всех звуков"
+                    } else {
+                        soundManager?.stopSound(soundName)
+                        log += "  Остановка звука «$soundName»"
+                    }
+                }
+                "music_play" -> {
+                    val soundName = getStr("sound")
+                    if (soundName.isBlank()) { errors += "Блок $num «Играть музыку»: имя трека не заполнено"; continue }
+                    val volume = getF("volume", 1f).coerceIn(0f, 1f)
+                    val loop = getStr("loop", "true").toBoolean()
+                    soundManager?.playMusic(soundName, volume, loop)
+                    log += "  Воспроизведение музыки «$soundName» (громкость: $volume, loop: $loop)"
+                }
+                "music_pause" -> {
+                    soundManager?.pauseMusic()
+                    log += "  Пауза музыки"
+                }
+                "music_resume" -> {
+                    soundManager?.resumeMusic()
+                    log += "  Возобновление музыки"
+                }
+                "music_stop" -> {
+                    soundManager?.stopMusic()
+                    log += "  Остановка музыки"
+                }
+                "music_volume" -> {
+                    val volume = getF("volume", 1f).coerceIn(0f, 1f)
+                    soundManager?.setMusicVolume(volume)
+                    log += "  Громкость музыки -> $volume"
                 }
                 "if_block" -> {
                     val left  = block.params["left"]?.value ?: ""
