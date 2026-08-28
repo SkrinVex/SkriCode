@@ -25,6 +25,8 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
 
     private var _scripts = listOf<Script>()
     private var _scenes = listOf<Scene>()
+    private var _simJob: Job? = null
+    private val _runningTapJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
     private var _physicsJob: Job? = null
     private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
@@ -43,16 +45,27 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         soundManager.resumeAll()
     }
 
-    private fun launchScene(sceneId: String) {
-        _physicsJob?.cancel()
+    fun releaseAudio() {
+        soundManager.release()
+    }
+
+    private fun stopSimulation() {
+        _simJob?.cancel(); _simJob = null
+        _runningTapJobs.values.forEach { it.cancel() }
+        _runningTapJobs.clear()
+        _physicsJob?.cancel(); _physicsJob = null
         _activeHolds.clear()
+    }
+
+    private fun launchScene(sceneId: String) {
+        stopSimulation()
         val scene = _scenes.find { it.id == sceneId } ?: return
         _scripts = scene.scripts
         val project = _project ?: return
 
         _simState.value = SimState(sprites = project.sprites.orEmpty(), projectId = project.id)
 
-        viewModelScope.launch {
+        _simJob = viewModelScope.launch {
             val result = SimEngine.run(
                 scripts = _scripts,
                 globalVarDefs = project.globalVars.orEmpty(),
@@ -188,16 +201,16 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun switchScene(sceneName: String, globalVars: Map<String, String>) {
-        val scene = _scenes.find { it.name == sceneName } ?: return
-        _physicsJob?.cancel()
-        _activeHolds.clear()
+        val clean = sceneName.trim()
+        val scene = _scenes.find { it.name.trim() == clean } ?: return
+        stopSimulation()
         _scripts = scene.scripts
         val project = _project ?: return
         val updatedGlobalVarDefs = project.globalVars.orEmpty().map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
         _simState.value = SimState(globalVars = globalVars, sprites = project.sprites.orEmpty(), projectId = project.id)
-        viewModelScope.launch {
+        _simJob = viewModelScope.launch {
             val result = SimEngine.run(
                 scene.scripts, updatedGlobalVarDefs, project.globalTables.orEmpty(),
                 scene.locationBlocks, sprites = project.sprites.orEmpty(), projectId = project.id
@@ -209,8 +222,11 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun handleTap(name: String) {
-        val scriptId = _simState.value?.objects?.get(name)?.tapScriptId ?: return
-        viewModelScope.launch {
+        val obj = _simState.value?.objects?.get(name)
+        if (obj?.touchEnabled == false) return
+        val scriptId = obj?.tapScriptId ?: return
+        _runningTapJobs[name]?.cancel()
+        val job = viewModelScope.launch {
             val cur = _simState.value ?: return@launch
             val res = SimEngine.runTap(scriptId, _scripts, cur,
                 onUpdate = { live -> _simState.value = live },
@@ -220,10 +236,13 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
             if (next != null) { switchScene(next, res.globalVars); return@launch }
             _simState.value = res
         }
+        _runningTapJobs[name] = job
     }
 
     fun handleHoldStart(name: String, pid: Long) {
-        val scriptId = _simState.value?.objects?.get(name)?.holdScriptId ?: return
+        val obj = _simState.value?.objects?.get(name)
+        if (obj?.touchEnabled == false) return
+        val scriptId = obj?.holdScriptId ?: return
         _activeHolds[pid] = scriptId to name
     }
 
@@ -249,7 +268,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        _physicsJob?.cancel()
+        stopSimulation()
         soundManager.release()
     }
 }

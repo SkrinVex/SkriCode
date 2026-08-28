@@ -42,6 +42,8 @@ sealed interface CompiledBlock {
     data class SimRotate(val targetExpr: AstExpr, val mode: String, val angleExpr: AstExpr) : CompiledBlock
     data class SimHide(val targetExpr: AstExpr) : CompiledBlock
     data class SimShow(val targetExpr: AstExpr) : CompiledBlock
+    data class SimTouchDisable(val targetExpr: AstExpr) : CompiledBlock
+    data class SimTouchEnable(val targetExpr: AstExpr) : CompiledBlock
     data class SimDelete(val targetExpr: AstExpr) : CompiledBlock
     data class SimModify(val targetExpr: AstExpr, val props: List<Pair<String, AstExpr>>) : CompiledBlock
     data class SimLayer(val targetExpr: AstExpr, val layerExpr: AstExpr) : CompiledBlock

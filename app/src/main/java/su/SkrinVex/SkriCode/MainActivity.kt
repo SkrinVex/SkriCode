@@ -161,4 +161,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onPause() {
+        super.onPause()
+        editorVm.soundManager.pauseAll()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        editorVm.soundManager.resumeAll()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        editorVm.soundManager.release()
+    }
 }

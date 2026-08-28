@@ -123,11 +123,17 @@ object BlockFactory {
         "wait_close" -> build("wait_close", "Конец таймера", "Конец таймера", BlockCategory.CONTROL, emptyList())
 
         // Видимость объектов
-        "sim_hide" -> build("sim_hide", "Скрыть объект", "Делает объект невидимым и неклкабельным", BlockCategory.SIMULATION, listOf(
+        "sim_hide" -> build("sim_hide", "Скрыть объект", "Делает объект невидимым и некликабельным", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект скрыть")))
 
         "sim_show" -> build("sim_show", "Показать объект", "Делает объект видимым и кликабельным", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект показать")))
+
+        "sim_touch_disable" -> build("sim_touch_disable", "Запретить касание", "Блокирует нажатия и удержания на объекте", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Имя объекта или #тег")))
+
+        "sim_touch_enable" -> build("sim_touch_enable", "Разрешить касание", "Разрешает нажатия и удержания на объекте", BlockCategory.SIMULATION, listOf(
+            "name" to p("rect1", "Имя объекта", "Имя объекта или #тег")))
 
         "sim_rotate" -> build("sim_rotate", "Вращать объект", "Изменяет угол поворота объекта", BlockCategory.SIMULATION, listOf(
             "name"  to p("rect1", "Имя объекта", "Какой объект"),
@@ -287,7 +293,7 @@ object BlockFactory {
         "particle_burst" -> build("particle_burst", "Взрыв частиц", "Создаёт мгновенную вспышку частиц в координатах", BlockCategory.PHYSICS, listOf(
             "x"          to p("0", "X", "Позиция X", ParamType.NUMBER),
             "y"          to p("0", "Y", "Позиция Y", ParamType.NUMBER),
-            "count"      to p("20", "Количество", "Сколько частиц создать (1..100)", ParamType.NUMBER),
+            "count"      to p("20", "Количество", "Сколько частиц создать (например, 1..1000)", ParamType.NUMBER),
             "colorStart" to p("#FFAA00", "Цвет начала", "#RRGGBB"),
             "colorEnd"   to p("#FF0000", "Цвет конца", "#RRGGBB"),
             "speed"      to p("150", "Скорость разлёта", "Пикселей/сек", ParamType.NUMBER),

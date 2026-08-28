@@ -39,18 +39,22 @@ class SoundManager(
         val rate: Float
     )
     private val pendingQueue = ConcurrentLinkedQueue<PendingPlay>()
+    @Volatile
+    private var isPaused: Boolean = false
 
     init {
         soundPool?.setOnLoadCompleteListener { _, sampleId, status ->
             if (status == 0) {
                 loadedSoundIds[sampleId] = true
-                // Воспроизводим отложенные запросы для этого sampleId
+                // Воспроизводим отложенные запросы для этого sampleId (если не на паузе)
                 val iter = pendingQueue.iterator()
                 while (iter.hasNext()) {
                     val req = iter.next()
                     if (req.soundId == sampleId) {
                         iter.remove()
-                        playLoadedSound(req.name, req.soundId, req.volume, req.loop, req.rate)
+                        if (!isPaused) {
+                            playLoadedSound(req.name, req.soundId, req.volume, req.loop, req.rate)
+                        }
                     }
                 }
             }
@@ -61,6 +65,7 @@ class SoundManager(
      * Воспроизвести короткий звуковой эффект через SoundPool.
      */
     fun playSound(name: String, volume: Float = 1f, loop: Boolean = false, rate: Float = 1f): Int {
+        if (isPaused) return 0
         val sp = soundPool ?: return 0
         val clampedVol = volume.coerceIn(0f, 1f)
         val clampedRate = rate.coerceIn(0.5f, 2.0f)
@@ -139,7 +144,7 @@ class SoundManager(
         musicVolume = clampedVol
 
         if (currentMusicName == name && mediaPlayer != null) {
-            if (isMusicPaused) {
+            if (isMusicPaused && !isPaused) {
                 resumeMusic()
             }
             mediaPlayer?.setVolume(clampedVol, clampedVol)
@@ -166,11 +171,15 @@ class SoundManager(
             player.isLooping = loop
             player.setVolume(clampedVol, clampedVol)
             player.prepare()
-            player.start()
+            if (!isPaused) {
+                player.start()
+                isMusicPaused = false
+            } else {
+                isMusicPaused = true
+            }
 
             mediaPlayer = player
             currentMusicName = name
-            isMusicPaused = false
 
             player.setOnCompletionListener {
                 if (!loop) {
@@ -201,6 +210,7 @@ class SoundManager(
 
     @Synchronized
     fun resumeMusic() {
+        if (isPaused) return
         mediaPlayer?.let {
             if (isMusicPaused) {
                 it.start()
@@ -237,6 +247,7 @@ class SoundManager(
      */
     @Synchronized
     fun pauseAll() {
+        isPaused = true
         soundPool?.autoPause()
         pauseMusic()
     }
@@ -246,6 +257,7 @@ class SoundManager(
      */
     @Synchronized
     fun resumeAll() {
+        isPaused = false
         soundPool?.autoResume()
         resumeMusic()
     }

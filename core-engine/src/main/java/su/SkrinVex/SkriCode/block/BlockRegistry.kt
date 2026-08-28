@@ -15,7 +15,7 @@ object BlockRegistry {
         "if_open", "sim_stop",
         "for_loop_open", "while_loop_open", "wait_open",
         "sim_create", "sim_move", "sim_resize", "sim_color", "sim_text", "sim_update_text",
-        "sim_hide", "sim_show", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete", "sim_layer",
+        "sim_hide", "sim_show", "sim_touch_disable", "sim_touch_enable", "sim_rotate", "sim_joystick", "sim_modify", "sim_delete", "sim_layer",
         "set_texture", "sim_sprite", "anim_play", "anim_stop", "anim_set_frame",
         "sim_physics", "sim_hitbox", "physics_toggle",
         "physics_impulse", "physics_move", "sim_no_collision",

@@ -7,7 +7,7 @@ import kotlin.random.Random
 
 object ParticleSystem {
 
-    const val MAX_PARTICLES = 300
+    const val MAX_PARTICLES = 2000
 
     fun burst(
         x: Float,
@@ -21,7 +21,7 @@ object ParticleSystem {
         lifetime: Float,
         gravity: Float
     ): List<Particle> {
-        val countClamped = count.coerceIn(1, 100)
+        val countClamped = count.coerceIn(1, MAX_PARTICLES)
         val list = ArrayList<Particle>(countClamped)
         for (i in 0 until countClamped) {
             val angle = Random.nextFloat() * 2f * Math.PI.toFloat()
@@ -92,7 +92,13 @@ object ParticleSystem {
             var emX = emitter.x
             var emY = emitter.y
             if (emitter.targetName.isNotBlank()) {
-                val target = objects[emitter.targetName]
+                val tName = emitter.targetName.trim()
+                val target = if (tName.startsWith("#")) {
+                    val tag = tName.substring(1)
+                    objects.values.firstOrNull { tag in it.tags }
+                } else {
+                    objects[tName] ?: objects.entries.firstOrNull { it.key.trim() == tName }?.value
+                }
                 if (target != null) {
                     emX = target.x
                     emY = target.y

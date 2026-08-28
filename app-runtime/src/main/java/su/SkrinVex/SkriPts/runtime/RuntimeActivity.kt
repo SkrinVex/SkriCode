@@ -218,4 +218,9 @@ class RuntimeActivity : ComponentActivity() {
         super.onResume()
         vm.resumeAudio()
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        vm.releaseAudio()
+    }
 }

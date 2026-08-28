@@ -40,8 +40,16 @@ object SpriteRepository {
 
     /** Возвращает File для спрайта или null если не существует */
     fun getFile(ctx: Context, projectId: String, fileName: String): File? {
-        val f = File(dir(ctx, projectId), fileName)
-        return if (f.exists()) f else null
+        val d = dir(ctx, projectId)
+        val f = File(d, fileName)
+        if (f.exists()) return f
+        val withPng = File(d, "$fileName.png")
+        if (withPng.exists()) return withPng
+        val withJpg = File(d, "$fileName.jpg")
+        if (withJpg.exists()) return withJpg
+        val withJpeg = File(d, "$fileName.jpeg")
+        if (withJpeg.exists()) return withJpeg
+        return d.listFiles()?.firstOrNull { it.nameWithoutExtension == fileName || it.name == fileName }
     }
 
     /** Удаляет файл спрайта */

@@ -87,8 +87,14 @@ object SoundRepository {
 
     /** Возвращает File для звука или null если не существует */
     fun getFile(ctx: Context, projectId: String, fileName: String): File? {
-        val f = File(dir(ctx, projectId), fileName)
-        return if (f.exists()) f else null
+        val d = dir(ctx, projectId)
+        val f = File(d, fileName)
+        if (f.exists()) return f
+        for (ext in ALLOWED_EXTENSIONS) {
+            val withExt = File(d, "$fileName.$ext")
+            if (withExt.exists()) return withExt
+        }
+        return d.listFiles()?.firstOrNull { it.nameWithoutExtension == fileName || it.name == fileName }
     }
 
     /** Удаляет аудиофайл */

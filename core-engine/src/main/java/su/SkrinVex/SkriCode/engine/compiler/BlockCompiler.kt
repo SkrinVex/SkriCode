@@ -14,8 +14,16 @@ object BlockCompiler {
         var i = 0
         while (i < blocks.size) {
             val b = blocks[i]
-            fun p(key: String, def: String = ""): String = b.params[key]?.value ?: def
-            fun expr(key: String, def: String = "") = ExprCompiler.compile(p(key, def))
+            fun p(key: String, def: String = "", altKey: String = ""): String {
+                val v1 = b.params[key]?.value
+                if (!v1.isNullOrBlank()) return v1
+                if (altKey.isNotBlank()) {
+                    val v2 = b.params[altKey]?.value
+                    if (!v2.isNullOrBlank()) return v2
+                }
+                return v1 ?: def
+            }
+            fun expr(key: String, def: String = "", altKey: String = "") = ExprCompiler.compile(p(key, def, altKey))
 
             when (b.type) {
                 "set_var" -> result += CompiledBlock.SetVar(p("name"), expr("value", "0"))
@@ -69,9 +77,13 @@ object BlockCompiler {
                 "sim_color" -> result += CompiledBlock.SimColor(expr("name"), expr("color", "#EF4444"))
                 "sim_update_text" -> result += CompiledBlock.SimUpdateText(expr("name"), expr("text"))
                 "sim_rotate" -> result += CompiledBlock.SimRotate(expr("name"), p("mode", "instant"), expr("angle", "0"))
-                "sim_hide" -> result += CompiledBlock.SimHide(expr("name"))
-                "sim_show" -> result += CompiledBlock.SimShow(expr("name"))
-                "sim_delete" -> result += CompiledBlock.SimDelete(expr("name"))
+                "sim_hide" -> result += CompiledBlock.SimHide(expr("name", altKey = "target"))
+                "sim_show" -> result += CompiledBlock.SimShow(expr("name", altKey = "target"))
+                "sim_touch_disable", "touch_disable", "disable_touch", "sim_disable_touch" ->
+                    result += CompiledBlock.SimTouchDisable(expr("name", altKey = "target"))
+                "sim_touch_enable", "touch_enable", "enable_touch", "sim_enable_touch" ->
+                    result += CompiledBlock.SimTouchEnable(expr("name", altKey = "target"))
+                "sim_delete" -> result += CompiledBlock.SimDelete(expr("name", altKey = "target"))
 
                 "sim_joystick" -> {
                     fun parseColorSafe(hex: String, def: Color): Color {
@@ -107,7 +119,7 @@ object BlockCompiler {
                 "sim_layer" -> result += CompiledBlock.SimLayer(expr("name"), expr("layer", "0"))
 
                 "set_texture" -> result += CompiledBlock.SetTexture(
-                    targetExpr = expr("name"),
+                    targetExpr = expr("name", altKey = "target"),
                     spriteExpr = expr("sprite"),
                     scaleXExpr = expr("scaleX", "1.0"),
                     scaleYExpr = expr("scaleY", "1.0"),
@@ -119,7 +131,7 @@ object BlockCompiler {
                 )
 
                 "anim_play" -> result += CompiledBlock.AnimPlay(
-                    targetExpr = expr("name"),
+                    targetExpr = expr("name", altKey = "target"),
                     spriteExpr = expr("sprite"),
                     colsExpr = expr("cols", "4"),
                     rowsExpr = expr("rows", "1"),
@@ -135,8 +147,8 @@ object BlockCompiler {
                     frameHExpr = expr("frameH", "0")
                 )
 
-                "anim_stop" -> result += CompiledBlock.AnimStop(expr("name"))
-                "anim_set_frame" -> result += CompiledBlock.AnimSetFrame(expr("name"), expr("frame", "0"))
+                "anim_stop" -> result += CompiledBlock.AnimStop(expr("name", altKey = "target"))
+                "anim_set_frame" -> result += CompiledBlock.AnimSetFrame(expr("name", altKey = "target"), expr("frame", "0"))
 
                 "particle_burst" -> result += CompiledBlock.ParticleBurst(
                     xExpr = expr("x", "0"),

@@ -39,6 +39,7 @@ data class SimObject(
     val collisionScriptId: String? = null,
     val collisionEndScriptId: String? = null,
     val visible: Boolean = true,
+    val touchEnabled: Boolean = true,
     val rotation: Float = 0f,
     val tags: Set<String> = emptySet(),
     val physicsBody: PhysicsBody? = null,

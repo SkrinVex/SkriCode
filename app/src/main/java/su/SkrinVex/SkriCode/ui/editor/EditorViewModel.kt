@@ -513,18 +513,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --- Симуляция ---
+    private var _simJob: kotlinx.coroutines.Job? = null
+    private val _runningTapJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private var _physicsJob: kotlinx.coroutines.Job? = null
     private var _logWatchJob: kotlinx.coroutines.Job? = null
     private var _activeLogUri: android.net.Uri? = null
     private var _logFlushedCount = 0
 
     fun runSim() {
+        stopPhysics()
         val state = _state.value
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
         SimEngine.projectName = state.projectName
         SimEngine.soundManager = soundManager
-        val initial = SimState()
+        val initial = SimState(sprites = state.sprites, projectId = projectId)
         isSimulationRunning = true
         _simState.value = initial
         _simRunCount.value++
@@ -539,7 +542,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         startLogWatch()
 
-        viewModelScope.launch {
+        _simJob = viewModelScope.launch {
             val result = SimEngine.run(state.scripts, state.globalVars, state.globalTables, state.locationBlocks,
                 sprites = state.sprites, projectId = projectId) { liveState ->
                 _simState.value = liveState
@@ -712,6 +715,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopPhysics() {
+        _simJob?.cancel(); _simJob = null
+        _runningTapJobs.values.forEach { it.cancel() }
+        _runningTapJobs.clear()
         _physicsJob?.cancel(); _physicsJob = null; _activeHolds.clear(); isSimulationRunning = false
         _logWatchJob?.cancel(); _logWatchJob = null
         soundManager.stopAllSounds()
@@ -733,8 +739,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun handleTap(objectName: String) {
-        val scriptId = _simState.value?.objects?.get(objectName)?.tapScriptId ?: return
-        viewModelScope.launch {
+        val obj = _simState.value?.objects?.get(objectName)
+        if (obj?.touchEnabled == false) return
+        val scriptId = obj?.tapScriptId ?: return
+        _runningTapJobs[objectName]?.cancel()
+        val job = viewModelScope.launch {
             val currentSim = _simState.value ?: return@launch
             val newSim = SimEngine.runTap(scriptId, _simScripts, currentSim,
                 onUpdate = { liveState -> _simState.value = liveState },
@@ -744,13 +753,16 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (next != null) { switchScene(next, newSim.globalVars); return@launch }
             _simState.value = newSim
         }
+        _runningTapJobs[objectName] = job
     }
 
     // Хранит активные hold-скрипты по pointerId: pointerId -> (scriptId, objectName)
     private val _activeHolds = mutableMapOf<Long, Pair<String, String>>()
 
     fun handleHoldStart(objectName: String, pointerId: Long) {
-        val scriptId = _simState.value?.objects?.get(objectName)?.holdScriptId ?: return
+        val obj = _simState.value?.objects?.get(objectName)
+        if (obj?.touchEnabled == false) return
+        val scriptId = obj?.holdScriptId ?: return
         _activeHolds[pointerId] = scriptId to objectName
     }
 
@@ -879,20 +891,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Переключение сцены во время симуляции — сохраняем globalVars и запускаем новую сцену */
     private fun switchScene(sceneName: String, globalVars: Map<String, String>) {
         val s = _state.value
-        val targetScene = s.scenes.find { it.name == sceneName }
+        val cleanName = sceneName.trim()
+        val targetScene = s.scenes.find { it.name.trim() == cleanName }
         if (targetScene == null) {
             _simState.update { it?.copy(errors = (it.errors) + "Сцена «$sceneName» не найдена", pendingSceneSwitch = null) }
             return
         }
         stopPhysics()
+        isSimulationRunning = true
         val updatedGlobalVarDefs = s.globalVars.map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
-        _simState.value = SimState(globalVars = globalVars)
+        _simState.value = SimState(globalVars = globalVars, sprites = s.sprites, projectId = s.projectId)
         _simRunCount.value++
         _simScripts = targetScene.scripts
         _state.update { it.copy(globalVars = updatedGlobalVarDefs) }
-        viewModelScope.launch {
+        _simJob = viewModelScope.launch {
             val result = SimEngine.run(
                 targetScene.scripts, updatedGlobalVarDefs, s.globalTables,
                 targetScene.locationBlocks, sprites = s.sprites, projectId = s.projectId

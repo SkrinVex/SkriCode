@@ -152,14 +152,17 @@ fun SimulationScreen(
                                             val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
                                             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
                                             val uiTags = cam?.uiTags ?: emptySet()
-                                            val hit = currentState.objects.values.filter { it.visible }.lastOrNull { obj ->
-                                                val isUi = obj.tags.any { it in uiTags }
-                                                val ox = if (isUi) cx else cx + camOx
-                                                val oy = if (isUi) cy else cy + camOy
-                                                val left = ox + obj.x - obj.width / 2f
-                                                val top  = oy - obj.y - obj.height / 2f
-                                                offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
-                                            }
+                                            val hit = currentState.objects.values
+                                                .filter { it.visible && it.touchEnabled }
+                                                .sortedWith(compareBy({ it.tags.any { tag -> tag in uiTags } }, { it.zOrder }))
+                                                .lastOrNull { obj ->
+                                                    val isUi = obj.tags.any { it in uiTags }
+                                                    val ox = if (isUi) cx else cx + camOx
+                                                    val oy = if (isUi) cy else cy + camOy
+                                                    val left = ox + obj.x - obj.width / 2f
+                                                    val top  = oy - obj.y - obj.height / 2f
+                                                    offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                                                }
                                             if (hit != null) {
                                                 onTap(hit.name)
                                                 onHoldStart(hit.name, pid)

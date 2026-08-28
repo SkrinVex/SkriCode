@@ -25,6 +25,23 @@ class ParticleSystemTest {
     }
 
     @Test
+    fun testParticleBurstLargeCount() {
+        val particles = ParticleSystem.burst(
+            x = 50f, y = 50f, count = 999,
+            colorStart = Color.Yellow, colorEnd = Color.Red,
+            speed = 150f, sizeStart = 12f, sizeEnd = 2f,
+            lifetime = 0.8f, gravity = -100f
+        )
+        assertEquals(999, particles.size)
+        particles.forEach { p ->
+            assertEquals(50f, p.x, 0.001f)
+            assertEquals(50f, p.y, 0.001f)
+            assertTrue(p.life > 0f)
+            assertEquals(-100f, p.gravity, 0.001f)
+        }
+    }
+
+    @Test
     fun testParticleTick() {
         val particles = ParticleSystem.burst(
             x = 0f, y = 0f, count = 5,
