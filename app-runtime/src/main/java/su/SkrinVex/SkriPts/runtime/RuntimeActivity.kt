@@ -177,12 +177,14 @@ class RuntimeActivity : ComponentActivity() {
         } else null
         project.sprites.orEmpty().forEach { sprite ->
             val dest = File(spritesDir, sprite.fileName)
-            if (!dest.exists()) {
-                try {
-                    val raw = assets.open("sprites/${sprite.fileName}").readBytes()
-                    dest.writeBytes(if (cipher != null) cipher.doFinal(raw) else raw)
-                } catch (_: Exception) {}
-            }
+            try {
+                val raw = assets.open("sprites/${sprite.fileName}").readBytes()
+                val decrypted = if (cipher != null) cipher.doFinal(raw) else raw
+                if (!dest.exists() || dest.length() != decrypted.size.toLong()) {
+                    dest.parentFile?.mkdirs()
+                    dest.writeBytes(decrypted)
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -196,12 +198,14 @@ class RuntimeActivity : ComponentActivity() {
         } else null
         project.sounds.orEmpty().forEach { sound ->
             val dest = File(soundsDir, sound.fileName)
-            if (!dest.exists()) {
-                try {
-                    val raw = assets.open("sounds/${sound.fileName}").readBytes()
-                    dest.writeBytes(if (cipher != null) cipher.doFinal(raw) else raw)
-                } catch (_: Exception) {}
-            }
+            try {
+                val raw = assets.open("sounds/${sound.fileName}").readBytes()
+                val decrypted = if (cipher != null) cipher.doFinal(raw) else raw
+                if (!dest.exists() || dest.length() != decrypted.size.toLong()) {
+                    dest.parentFile?.mkdirs()
+                    dest.writeBytes(decrypted)
+                }
+            } catch (_: Exception) {}
         }
     }
 

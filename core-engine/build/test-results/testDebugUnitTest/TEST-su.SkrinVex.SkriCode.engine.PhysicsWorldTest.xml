@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-08-27T20:48:28.299Z" hostname="notebook" time="0.093">
+<testsuite name="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-08-28T11:10:24.719Z" hostname="notebook" time="0.121">
   <properties/>
-  <testcase name="testPhysicsWorldCollisionAndRestitution" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.077"/>
-  <testcase name="testPhysicsWorldTick_GravityAndMotion" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.008"/>
-  <testcase name="testSeparatingObjectsDoNotStick" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.001"/>
+  <testcase name="testPhysicsWorldCollisionAndRestitution" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.102"/>
+  <testcase name="testPhysicsWorldTick_GravityAndMotion" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.005"/>
+  <testcase name="testSeparatingObjectsDoNotStick" classname="su.SkrinVex.SkriCode.engine.PhysicsWorldTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

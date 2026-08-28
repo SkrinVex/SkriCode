@@ -49,6 +49,8 @@ import su.SkrinVex.SkriCode.ui.theme.*
 
 data class ExprEditTarget(val blockIndex: Int, val paramKey: String, val paramLabel: String, val currentValue: String, val isIdentifier: Boolean = false, val branch: String? = null, val childIndex: Int = -1)
 
+data class AnimEditorTarget(val blockIndex: Int, val block: BlockDef, val branch: String? = null, val childIndex: Int = -1)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Boolean) -> Unit = {}) {
@@ -61,6 +63,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
     var positionPickerBlock by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     // blockIndex -> sim_hitbox block
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
+    var animEditorTarget by remember { mutableStateOf<AnimEditorTarget?>(null) }
     var showLocationEditor by remember { mutableStateOf(false) }
 
     // Редактор локации — всегда портретная ориентация устройства, но рамка экрана по ориентации проекта
@@ -129,6 +132,67 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                 hitboxEditorTarget = null
             },
             onDismiss = { hitboxEditorTarget = null }
+        )
+        return
+    }
+
+    // Редактор анимации спрайт-листов — полноэкранный
+    animEditorTarget?.let { target ->
+        val b = target.block
+        val sprite = b.params["sprite"]?.value ?: ""
+        val cols = b.params["cols"]?.value?.toIntOrNull() ?: 4
+        val rows = b.params["rows"]?.value?.toIntOrNull() ?: 1
+        val start = b.params["startFrame"]?.value?.toIntOrNull() ?: 0
+        val end = b.params["endFrame"]?.value?.toIntOrNull() ?: 0
+        val fps = b.params["fps"]?.value?.toFloatOrNull() ?: 12f
+        val loop = b.params["loop"]?.value != "false"
+        val offX = b.params["offsetX"]?.value?.toIntOrNull() ?: 0
+        val offY = b.params["offsetY"]?.value?.toIntOrNull() ?: 0
+        val spX = b.params["spacingX"]?.value?.toIntOrNull() ?: 0
+        val spY = b.params["spacingY"]?.value?.toIntOrNull() ?: 0
+        val fw = b.params["frameW"]?.value?.toIntOrNull() ?: 0
+        val fh = b.params["frameH"]?.value?.toIntOrNull() ?: 0
+
+        SpriteAnimationEditorScreen(
+            initialSprite = sprite,
+            initialCols = cols,
+            initialRows = rows,
+            initialStartFrame = start,
+            initialEndFrame = end,
+            initialFps = fps,
+            initialLoop = loop,
+            initialOffsetX = offX,
+            initialOffsetY = offY,
+            initialSpacingX = spX,
+            initialSpacingY = spY,
+            initialFrameW = fw,
+            initialFrameH = fh,
+            sprites = state.sprites,
+            projectId = state.projectId,
+            onConfirm = { sName, nCols, nRows, nStart, nEnd, nFps, nLoop, nOffX, nOffY, nSpX, nSpY, nFw, nFh ->
+                fun setP(key: String, value: String) {
+                    if (target.branch != null && target.childIndex >= 0) {
+                        vm.updateChildParam(target.blockIndex, target.branch, target.childIndex, key, value)
+                    } else {
+                        vm.updateParam(target.blockIndex, key, value)
+                    }
+                }
+                setP("sprite", sName)
+                setP("cols", nCols.toString())
+                setP("rows", nRows.toString())
+                setP("startFrame", nStart.toString())
+                setP("endFrame", nEnd.toString())
+                setP("fps", nFps.toInt().toString())
+                setP("loop", nLoop.toString())
+                setP("offsetX", nOffX.toString())
+                setP("offsetY", nOffY.toString())
+                setP("spacingX", nSpX.toString())
+                setP("spacingY", nSpY.toString())
+                setP("frameW", nFw.toString())
+                setP("frameH", nFh.toString())
+                animEditorTarget = null
+            },
+            onDismiss = { animEditorTarget = null }
         )
         return
     }
@@ -454,6 +518,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
                         onOpenPositionPicker = { b -> positionPickerBlock = index to b },
                         onOpenHitboxEditor = { b -> hitboxEditorTarget = index to b },
+                        onOpenAnimEditor = { b -> animEditorTarget = AnimEditorTarget(index, b) },
                         onAddChild = { branch, type -> vm.addChildBlock(index, branch, type) },
                         onRemoveChild = { branch, ci -> vm.removeChildBlock(index, branch, ci) },
                         onChildParamChange = { branch, ci, k, v -> vm.updateChildParam(index, branch, ci, k, v) },
@@ -462,6 +527,11 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                             val childBlock = state.activeScript.blocks[index].deserialize()
                                 ?.children?.get(branch)?.getOrNull(ci) ?: b
                             positionPickerBlock = index to childBlock
+                        },
+                        onOpenChildAnimEditor = { branch, ci, b ->
+                            val childBlock = state.activeScript.blocks[index].deserialize()
+                                ?.children?.get(branch)?.getOrNull(ci) ?: b
+                            animEditorTarget = AnimEditorTarget(index, childBlock, branch, ci)
                         },
                         onUpdateChild = { branch, ci, updated -> vm.replaceChildBlock(index, branch, ci, updated) },
                         indentStart = indentDp
@@ -859,11 +929,13 @@ internal fun BlockCard(
     onCopyBlock: (() -> Unit)? = null,
     onOpenPositionPicker: ((block: BlockDef) -> Unit)? = null,
     onOpenHitboxEditor: ((block: BlockDef) -> Unit)? = null,
+    onOpenAnimEditor: ((block: BlockDef) -> Unit)? = null,
     onAddChild: (branch: String, type: String) -> Unit = { _, _ -> },
     onRemoveChild: (branch: String, childIndex: Int) -> Unit = { _, _ -> },
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit = { _, _, _, _, _, _ -> },
     onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onOpenChildAnimEditor: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
     onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null,
     indentStart: Dp = 0.dp
 ) {
@@ -951,6 +1023,7 @@ internal fun BlockCard(
                                 onAddChild = onAddChild, onRemoveChild = onRemoveChild,
                                 onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
                                 onOpenChildPositionPicker = onOpenChildPositionPicker,
+                                onOpenChildAnimEditor = onOpenChildAnimEditor,
                                 onUpdateChild = onUpdateChild
                             )
                         }
@@ -998,6 +1071,17 @@ internal fun BlockCard(
                                 block = block, variables = variables,
                                 onOpenExpr = onOpenExpr,
                                 onOpenHitboxEditor = if (onOpenHitboxEditor != null) {{ onOpenHitboxEditor(block) }} else null
+                            )
+                        }
+                        "anim_play" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            AnimPlayBlockContent(
+                                block = block, variables = variables,
+                                spriteNames = spriteNames,
+                                onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                                onOpenAnimEditor = if (onOpenAnimEditor != null) {{ onOpenAnimEditor(block) }} else null
                             )
                         }
                         "physics_toggle" -> {
@@ -1359,6 +1443,7 @@ internal fun IfBlockContent(
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onOpenChildAnimEditor: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
     onUpdateChild: ((branch: String, childIndex: Int, updated: BlockDef) -> Unit)? = null
 ) {
 
@@ -1419,6 +1504,7 @@ internal fun IfBlockContent(
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
         onOpenChildPositionPicker = onOpenChildPositionPicker,
+        onOpenChildAnimEditor = onOpenChildAnimEditor,
         onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("then", ci, upd) }} else null,
         allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames, soundNames = soundNames
     )
@@ -1435,6 +1521,7 @@ internal fun IfBlockContent(
         onAddChild = onAddChild, onRemoveChild = onRemoveChild,
         onChildParamChange = onChildParamChange, onOpenChildExpr = onOpenChildExpr,
         onOpenChildPositionPicker = onOpenChildPositionPicker,
+        onOpenChildAnimEditor = onOpenChildAnimEditor,
         onUpdateChild = if (onUpdateChild != null) {{ ci, upd -> onUpdateChild("else", ci, upd) }} else null,
         allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames, soundNames = soundNames
     )
@@ -1456,6 +1543,7 @@ internal fun IfBranchSection(
     onChildParamChange: (branch: String, childIndex: Int, key: String, value: String) -> Unit,
     onOpenChildExpr: (branch: String, childIndex: Int, key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onOpenChildPositionPicker: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
+    onOpenChildAnimEditor: ((branch: String, childIndex: Int, block: BlockDef) -> Unit)? = null,
     onUpdateChild: ((childIndex: Int, updated: BlockDef) -> Unit)? = null,
     allBlocks: List<BlockDef> = emptyList(),
     sceneNames: List<String> = emptyList(),
@@ -1502,6 +1590,7 @@ internal fun IfBranchSection(
                     onParamChange = { k, v -> onChildParamChange(branch, ci, k, v) },
                     onOpenExpr = { k, lbl, cur, isId -> onOpenChildExpr(branch, ci, k, lbl, cur, isId) },
                     onOpenPositionPicker = if (onOpenChildPositionPicker != null) {{ onOpenChildPositionPicker(branch, ci, child) }} else null,
+                    onOpenAnimEditor = if (onOpenChildAnimEditor != null) {{ onOpenChildAnimEditor(branch, ci, child) }} else null,
                     onAddGrandchild = { childBranch, type ->
                         val newBlock = BlockRegistry.create(type) ?: return@ChildBlockRow
                         val newChildren = child.children.toMutableMap()
@@ -1554,6 +1643,7 @@ internal fun ChildBlockRow(
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onOpenPositionPicker: (() -> Unit)? = null,
+    onOpenAnimEditor: (() -> Unit)? = null,
     onAddGrandchild: (childBranch: String, type: String) -> Unit = { _, _ -> },
     onRemoveGrandchild: (childBranch: String, grandchildIndex: Int) -> Unit = { _, _ -> },
     onGrandchildParamChange: (childBranch: String, grandchildIndex: Int, key: String, value: String) -> Unit = { _, _, _, _ -> },
@@ -1581,12 +1671,21 @@ internal fun ChildBlockRow(
             }
             if (!collapsed && block.params.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                BlockParamContent(
-                    block = block, variables = variables,
-                    sceneNames = sceneNames, spriteNames = spriteNames,
-                    soundNames = soundNames,
-                    onParamChange = onParamChange, onOpenExpr = onOpenExpr
-                )
+                if (block.type == "anim_play") {
+                    AnimPlayBlockContent(
+                        block = block, variables = variables,
+                        spriteNames = spriteNames,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr,
+                        onOpenAnimEditor = onOpenAnimEditor
+                    )
+                } else {
+                    BlockParamContent(
+                        block = block, variables = variables,
+                        sceneNames = sceneNames, spriteNames = spriteNames,
+                        soundNames = soundNames,
+                        onParamChange = onParamChange, onOpenExpr = onOpenExpr
+                    )
+                }
             }
             // Рендеринг children для специальных блоков
             if (!collapsed && block.children.isNotEmpty()) {
@@ -2131,6 +2230,141 @@ internal fun HitboxBlockContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun AnimPlayBlockContent(
+    block: BlockDef,
+    variables: List<ProjectVar>,
+    spriteNames: List<String>,
+    onParamChange: (String, String) -> Unit,
+    onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
+    onOpenAnimEditor: (() -> Unit)? = null
+) {
+    val nameParam = block.params["name"]
+    if (nameParam != null) {
+        ObjectNameChip(param = nameParam, variables = variables,
+            onClick = { onOpenExpr("name", nameParam.label, nameParam.value, false) })
+        Spacer(Modifier.height(8.dp))
+    }
+
+    val spriteName = block.params["sprite"]?.value ?: ""
+    val cols = block.params["cols"]?.value ?: "4"
+    val rows = block.params["rows"]?.value ?: "1"
+    val startFrame = block.params["startFrame"]?.value ?: "0"
+    val endFrame = block.params["endFrame"]?.value ?: "0"
+    val fps = block.params["fps"]?.value ?: "12"
+    val animColor = Color(0xFFF59E0B)
+
+    val offX = block.params["offsetX"]?.value ?: "0"
+    val offY = block.params["offsetY"]?.value ?: "0"
+
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface3.copy(alpha = 0.6f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onOpenAnimEditor != null) { onOpenAnimEditor?.invoke() }
+    ) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Movie, null, tint = animColor, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Редактор анимации спрайт-листа", color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Сетка, смещения, кадры, FPS и предпросмотр", color = TextSec, fontSize = 11.sp)
+                }
+                if (onOpenAnimEditor != null) {
+                    Button(
+                        onClick = onOpenAnimEditor,
+                        colors = ButtonDefaults.buttonColors(containerColor = animColor),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Icon(Icons.Default.Tune, null, tint = Navy900, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Настроить", color = Navy900, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(color = Surface2, shape = RoundedCornerShape(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Image, null, tint = if (spriteName.isNotBlank()) Accent else Danger, modifier = Modifier.size(12.dp))
+                        Text(
+                            if (spriteName.isNotBlank()) spriteName else "Нет спрайта",
+                            color = if (spriteName.isNotBlank()) TextPrim else Danger,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                Surface(color = Surface2, shape = RoundedCornerShape(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.GridOn, null, tint = TextSec, modifier = Modifier.size(12.dp))
+                        Text("${cols}×$rows", color = TextPrim, fontSize = 11.sp)
+                    }
+                }
+                Surface(color = Surface2, shape = RoundedCornerShape(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.ViewCarousel, null, tint = TextSec, modifier = Modifier.size(12.dp))
+                        val frameText = if (endFrame == "0" || endFrame.isBlank()) "0..все" else "$startFrame..$endFrame"
+                        Text(frameText, color = TextPrim, fontSize = 11.sp)
+                    }
+                }
+                Surface(color = Surface2, shape = RoundedCornerShape(6.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Speed, null, tint = animColor, modifier = Modifier.size(12.dp))
+                        Text("$fps FPS", color = animColor, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                if ((offX != "0" && offX.isNotBlank()) || (offY != "0" && offY.isNotBlank())) {
+                    Surface(color = Surface2, shape = RoundedCornerShape(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Tune, null, tint = TextSec, modifier = Modifier.size(12.dp))
+                            Text("+$offX,+$offY", color = TextSec, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    val spriteParam = block.params["sprite"]
+    if (spriteParam != null) {
+        SpriteChip(param = spriteParam, spriteNames = spriteNames, onChange = { onParamChange("sprite", it) })
+        Spacer(Modifier.height(6.dp))
+    }
+    val loopParam = block.params["loop"]
+    if (loopParam != null) {
+        BoolToggle(param = loopParam.copy(label = "Зациклить анимацию"), onChange = { onParamChange("loop", it) })
     }
 }
 

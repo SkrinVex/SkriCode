@@ -93,7 +93,12 @@ object SimEngine {
                     tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
                 )
                 "sim_sprite" -> {
-                    val spriteAsset = sprites.find { it.name == p("sprite") }
+                    val spriteName = p("sprite")
+                    val spriteAsset = sprites.find { it.name == spriteName }
+                    if (spriteName.isNotBlank() && spriteAsset == null) {
+                        val msg = "Спрайт «$spriteName» объекта «$name» не найден в проекте"
+                        if (msg !in errors && errors.size < 50) errors += msg
+                    }
                     val rawW = pf("width", 0f); val rawH = pf("height", 0f)
                     val w = if (rawW > 0f) rawW else (spriteAsset?.width?.toFloat() ?: 100f)
                     val h = if (rawH > 0f) rawH else (spriteAsset?.height?.toFloat() ?: 100f)
@@ -103,7 +108,7 @@ object SimEngine {
                         y = ExprCompiler.compile(p("y").ifBlank { "0" }).evalFloat(emptyMap(), ExprEval.fallbackScope),
                         width = w.coerceAtLeast(1f), height = h.coerceAtLeast(1f),
                         radius = 0f, color = Color.Transparent,
-                        spriteName = p("sprite").ifBlank { null },
+                        spriteName = spriteName.ifBlank { null },
                         spriteAlpha = pf("alpha", 1f).coerceIn(0f, 1f),
                         tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
                     )
@@ -154,7 +159,7 @@ object SimEngine {
             }
         }
 
-        bindEventScripts(scripts, objects, errors, warnMissing = false)
+        bindEventScripts(scripts, objects, errors, warnMissing = true)
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
@@ -178,8 +183,10 @@ object SimEngine {
                     val tag = target.substring(1)
                     objects.filter { (_, o) -> tag in o.tags }.keys.toList()
                 } else listOfNotNull(target.takeIf { objects.containsKey(it) })
-                if (targets.isEmpty() && warnMissing)
-                    errors += "Скрипт «${script.name}»: объект/тег «$target» не найден для ${event.name}"
+                if (targets.isEmpty() && warnMissing) {
+                    val msg = "Скрипт «${script.name}»: объект/тег «$target» не найден для события ${event.name}"
+                    if (msg !in errors && errors.size < 50) errors += msg
+                }
                 targets.forEach { name -> objects[name] = objects[name]!!.assign(script.id) }
             }
         }
@@ -357,6 +364,12 @@ object SimEngine {
                         animPlaying = if ("anim" in fields) scriptObj.animPlaying else liveObj.animPlaying,
                         animCurrentFrame = if ("anim" in fields) scriptObj.animCurrentFrame else liveObj.animCurrentFrame,
                         animElapsed = if ("anim" in fields) scriptObj.animElapsed else liveObj.animElapsed,
+                        animOffsetX = if ("anim" in fields) scriptObj.animOffsetX else liveObj.animOffsetX,
+                        animOffsetY = if ("anim" in fields) scriptObj.animOffsetY else liveObj.animOffsetY,
+                        animSpacingX = if ("anim" in fields) scriptObj.animSpacingX else liveObj.animSpacingX,
+                        animSpacingY = if ("anim" in fields) scriptObj.animSpacingY else liveObj.animSpacingY,
+                        animFrameWidth = if ("anim" in fields) scriptObj.animFrameWidth else liveObj.animFrameWidth,
+                        animFrameHeight = if ("anim" in fields) scriptObj.animFrameHeight else liveObj.animFrameHeight,
                         zOrder = if ("zOrder" in fields || "layer" in fields) scriptObj.zOrder else liveObj.zOrder,
                         collisionIgnore = if ("collisionIgnore" in fields) scriptObj.collisionIgnore else liveObj.collisionIgnore,
                         width = if ("width" in fields) scriptObj.width else liveObj.width,
@@ -460,6 +473,12 @@ object SimEngine {
         evalScope: ExprScope,
         onUpdate: (() -> Unit)?
     ): Boolean {
+        fun recordError(msg: String) {
+            if (msg.isNotBlank() && msg !in errors && errors.size < 50) {
+                errors += msg
+            }
+        }
+
         fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
             return if (nameOrTag.startsWith("#")) {
                 val tag = nameOrTag.substring(1)
@@ -467,6 +486,24 @@ object SimEngine {
             } else {
                 val obj = objects[nameOrTag]
                 if (obj != null) listOf(nameOrTag to obj) else emptyList()
+            }
+        }
+
+        fun getObjectsOrReport(target: String, blockName: String = ""): List<Pair<String, SimObject>> {
+            if (target.isBlank()) {
+                recordError("Не указано имя объекта${if (blockName.isNotBlank()) " (блок $blockName)" else ""}")
+                return emptyList()
+            }
+            val targets = getObjectsByNameOrTag(target)
+            if (targets.isEmpty()) {
+                recordError("Объект «$target» не найден в симуляции")
+            }
+            return targets
+        }
+
+        fun checkSpriteOrReport(spriteName: String, blockName: String = "") {
+            if (spriteName.isNotBlank() && ExprEval.sprites.none { it.name == spriteName }) {
+                recordError("Спрайт «$spriteName» не найден в ресурсах проекта")
             }
         }
 
@@ -485,11 +522,11 @@ object SimEngine {
                 is CompiledBlock.SetTag -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
                     val tag = inst.tagExpr.evalString(vars, evalScope)
-                    val obj = objects[target]
-                    if (obj != null) {
-                        objects[target] = obj.copy(tags = obj.tags + tag)
-                        modifiedFields.getOrPut(target) { mutableSetOf() }.add("tags")
-                        log += "  Тег #$tag установлен для «$target»"
+                    val targets = getObjectsOrReport(target, "set_tag")
+                    targets.forEach { (name, obj) ->
+                        objects[name] = obj.copy(tags = obj.tags + tag)
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.add("tags")
+                        log += "  Тег #$tag установлен для «$name»"
                     }
                     pc++
                 }
@@ -513,10 +550,13 @@ object SimEngine {
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
                             collisionEndScriptId = existing?.collisionEndScriptId,
+                            physicsBody = existing?.physicsBody,
                             hitbox = existing?.hitbox ?: Hitbox()
                         )
-                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "radius", "color", "hitbox"))
-                        log += "  Создан/обновлён «$name» ($x, $y) ${w.toInt()}x${h.toInt()}"
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "color", "radius", "tags", "hitbox"))
+                        log += "  Объект «$name» ($x, $y) ${w.toInt()}x${h.toInt()}"
+                    } else {
+                        recordError("Блок sim_create: не указано имя создаваемого объекта")
                     }
                     pc++
                 }
@@ -531,21 +571,23 @@ object SimEngine {
                         val w = inst.widthExpr.evalFloat(vars, evalScope, 200f).coerceAtLeast(1f)
                         val h = inst.heightExpr.evalFloat(vars, evalScope, 40f).coerceAtLeast(1f)
                         val size = inst.sizeExpr.evalFloat(vars, evalScope, 16f).coerceAtLeast(6f)
-                        val tc = inst.textColorExpr.evalString(vars, evalScope)
-                        val textColor = if (tc.isNotBlank()) parseColor(tc) else null
+                        val col = parseColor(inst.textColorExpr.evalString(vars, evalScope).ifBlank { "#FFFFFF" })
 
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w, height = h, radius = 0f,
-                            color = Color.Transparent, label = text, fontSize = size, bold = inst.bold,
-                            textColor = textColor, tags = inst.tags, zOrder = inst.zOrder,
+                            color = col, label = text, fontSize = size, bold = inst.bold,
+                            tags = inst.tags, zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
                             collisionEndScriptId = existing?.collisionEndScriptId,
+                            physicsBody = existing?.physicsBody,
                             hitbox = existing?.hitbox ?: Hitbox()
                         )
-                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "label", "fontSize", "bold", "textColor", "hitbox"))
-                        log += "  Текст «$name»: «$text»"
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "label", "fontSize", "bold", "color", "hitbox"))
+                        log += "  Текст «$name»: \"$text\""
+                    } else {
+                        recordError("Блок sim_text: не указано имя текстового объекта")
                     }
                     pc++
                 }
@@ -555,6 +597,7 @@ object SimEngine {
                     if (name.isNotBlank()) {
                         val existing = objects[name]
                         val sprite = inst.spriteExpr.evalString(vars, evalScope)
+                        checkSpriteOrReport(sprite, "sim_sprite")
                         val alpha = inst.alphaExpr.evalFloat(vars, evalScope, 1f).coerceIn(0f, 1f)
                         val spriteAsset = ExprEval.sprites.find { it.name == sprite }
                         val rawW = inst.widthExpr.evalFloat(vars, evalScope, 0f)
@@ -577,13 +620,15 @@ object SimEngine {
                         )
                         modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "sprite", "spriteAlpha", "hitbox"))
                         log += "  Спрайт «$name» ($x, $y) ${w.toInt()}x${h.toInt()}"
+                    } else {
+                        recordError("Блок sim_sprite: не указано имя спрайт-объекта")
                     }
                     pc++
                 }
 
                 is CompiledBlock.SimMove -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_move")
                     val mode = inst.mode
                     val dx = inst.xExpr.evalFloat(vars, evalScope, 0f)
                     val dy = inst.yExpr.evalFloat(vars, evalScope, 0f)
@@ -603,7 +648,7 @@ object SimEngine {
 
                 is CompiledBlock.SimResize -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_resize")
                     val w = inst.widthExpr.evalFloat(vars, evalScope, 100f).coerceAtLeast(1f)
                     val h = inst.heightExpr.evalFloat(vars, evalScope, 60f).coerceAtLeast(1f)
                     targets.forEach { (name, obj) ->
@@ -616,7 +661,7 @@ object SimEngine {
 
                 is CompiledBlock.SimColor -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_color")
                     val col = parseColor(inst.colorExpr.evalString(vars, evalScope))
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(color = col)
@@ -628,7 +673,7 @@ object SimEngine {
 
                 is CompiledBlock.SimUpdateText -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_update_text")
                     val text = inst.textExpr.evalString(vars, evalScope)
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(label = text)
@@ -640,7 +685,7 @@ object SimEngine {
 
                 is CompiledBlock.SimRotate -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_rotate")
                     val angle = inst.angleExpr.evalFloat(vars, evalScope, 0f)
                     targets.forEach { (name, obj) ->
                         val nr = if (inst.mode == "step") obj.rotation + angle else angle
@@ -653,7 +698,7 @@ object SimEngine {
 
                 is CompiledBlock.SimHide -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_hide")
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(visible = false)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("visible")
@@ -665,7 +710,7 @@ object SimEngine {
 
                 is CompiledBlock.SimShow -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_show")
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(visible = true)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("visible")
@@ -677,7 +722,7 @@ object SimEngine {
 
                 is CompiledBlock.SimDelete -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_delete")
                     targets.forEach { (name, _) -> objects.remove(name); deletedObjects += name }
                     if (joysticks.containsKey(target)) { joysticks.remove(target); deletedJoysticks += target }
                     pc++
@@ -685,7 +730,7 @@ object SimEngine {
 
                 is CompiledBlock.SimModify -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_modify")
                     targets.forEach { (name, obj) ->
                         var modified = obj
                         val mSet = modifiedFields.getOrPut(name) { mutableSetOf() }
@@ -715,7 +760,7 @@ object SimEngine {
 
                 is CompiledBlock.SimPhysics -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_physics")
                     val g = inst.gravityExpr.evalFloat(vars, evalScope, -9.8f)
                     val bounce = inst.bouncinessExpr.evalFloat(vars, evalScope, 0f).coerceIn(0f, 1f)
                     val m = inst.massExpr.evalFloat(vars, evalScope, 1f).coerceAtLeast(0.01f)
@@ -733,7 +778,7 @@ object SimEngine {
 
                 is CompiledBlock.PhysicsImpulse -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "physics_impulse")
                     val dvx = inst.vxExpr.evalFloat(vars, evalScope, 0f)
                     val dvy = inst.vyExpr.evalFloat(vars, evalScope, 0f)
                     targets.forEach { (name, obj) ->
@@ -749,7 +794,7 @@ object SimEngine {
 
                 is CompiledBlock.PhysicsMove -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "physics_move")
                     val speed = inst.speedExpr.evalFloat(vars, evalScope, 0f)
                     val turn = inst.turnExpr.evalFloat(vars, evalScope, 0f)
                     val friction = inst.frictionExpr.evalFloat(vars, evalScope, 0.9f).coerceIn(0f, 1f)
@@ -772,7 +817,7 @@ object SimEngine {
 
                 is CompiledBlock.SimHitbox -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_hitbox")
                     val ptsStr = inst.pointsExpr.evalString(vars, evalScope)
                     val hbType = if (inst.type == "manual" && ptsStr.isNotBlank()) HitboxType.MANUAL else HitboxType.AUTO
                     val pts = if (hbType == HitboxType.MANUAL) parseHitboxPoints(ptsStr) else emptyList()
@@ -785,7 +830,7 @@ object SimEngine {
 
                 is CompiledBlock.SimLayer -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_layer")
                     val layer = inst.layerExpr.evalFloat(vars, evalScope, 0f).toInt()
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(zOrder = layer)
@@ -796,7 +841,7 @@ object SimEngine {
 
                 is CompiledBlock.SimNoCollision -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "sim_no_collision")
                     val ignore = inst.ignoreExpr.evalString(vars, evalScope).split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(collisionIgnore = obj.collisionIgnore + ignore)
@@ -829,8 +874,9 @@ object SimEngine {
 
                 is CompiledBlock.SetTexture -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "set_texture")
                     val sprite = inst.spriteExpr.evalString(vars, evalScope)
+                    checkSpriteOrReport(sprite, "set_texture")
                     val alpha = inst.alphaExpr.evalFloat(vars, evalScope, 1f).coerceIn(0f, 1f)
                     val sx = inst.scaleXExpr.evalFloat(vars, evalScope, 1f)
                     val sy = inst.scaleYExpr.evalFloat(vars, evalScope, 1f)
@@ -853,18 +899,26 @@ object SimEngine {
                 // ── Покадровая анимация ───────────────────────────────────
                 is CompiledBlock.AnimPlay -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "anim_play")
                     val sprite = inst.spriteExpr.evalString(vars, evalScope)
+                    checkSpriteOrReport(sprite, "anim_play")
                     val cols = inst.colsExpr.evalFloat(vars, evalScope, 4f).toInt().coerceAtLeast(1)
                     val rows = inst.rowsExpr.evalFloat(vars, evalScope, 1f).toInt().coerceAtLeast(1)
                     val start = inst.startFrameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
                     val end = inst.endFrameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
                     val fps = inst.fpsExpr.evalFloat(vars, evalScope, 12f).coerceAtLeast(0.1f)
                     val loop = inst.loopExpr.evalString(vars, evalScope) != "false"
+                    val offX = inst.offsetXExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val offY = inst.offsetYExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val spX = inst.spacingXExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val spY = inst.spacingYExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val fw = inst.frameWExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
+                    val fh = inst.frameHExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
 
                     targets.forEach { (n, obj) ->
+                        val chosenSprite = sprite.ifBlank { obj.spriteName }
                         objects[n] = obj.copy(
-                            spriteName = sprite.ifBlank { obj.spriteName },
+                            spriteName = chosenSprite,
                             animCols = cols,
                             animRows = rows,
                             animStartFrame = start,
@@ -873,7 +927,13 @@ object SimEngine {
                             animLoop = loop,
                             animPlaying = true,
                             animCurrentFrame = start,
-                            animElapsed = 0f
+                            animElapsed = 0f,
+                            animOffsetX = offX,
+                            animOffsetY = offY,
+                            animSpacingX = spX,
+                            animSpacingY = spY,
+                            animFrameWidth = fw,
+                            animFrameHeight = fh
                         )
                         modifiedFields.getOrPut(n) { mutableSetOf() }.addAll(setOf("anim", "sprite"))
                     }
@@ -882,7 +942,7 @@ object SimEngine {
 
                 is CompiledBlock.AnimStop -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "anim_stop")
                     targets.forEach { (n, obj) ->
                         objects[n] = obj.copy(animPlaying = false)
                         modifiedFields.getOrPut(n) { mutableSetOf() }.add("anim")
@@ -892,7 +952,7 @@ object SimEngine {
 
                 is CompiledBlock.AnimSetFrame -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val targets = getObjectsByNameOrTag(target)
+                    val targets = getObjectsOrReport(target, "anim_set_frame")
                     val frame = inst.frameExpr.evalFloat(vars, evalScope, 0f).toInt().coerceAtLeast(0)
                     targets.forEach { (n, obj) ->
                         objects[n] = obj.copy(animCurrentFrame = frame, animElapsed = 0f)

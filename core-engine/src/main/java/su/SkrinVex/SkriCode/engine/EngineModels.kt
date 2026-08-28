@@ -64,7 +64,13 @@ data class SimObject(
     val animLoop: Boolean = true,
     val animPlaying: Boolean = false,
     val animCurrentFrame: Int = 0,
-    val animElapsed: Float = 0f
+    val animElapsed: Float = 0f,
+    val animOffsetX: Int = 0,
+    val animOffsetY: Int = 0,
+    val animSpacingX: Int = 0,
+    val animSpacingY: Int = 0,
+    val animFrameWidth: Int = 0,
+    val animFrameHeight: Int = 0
 )
 
 data class JoystickState(

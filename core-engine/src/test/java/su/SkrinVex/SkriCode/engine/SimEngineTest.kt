@@ -103,4 +103,62 @@ class SimEngineTest {
         assertEquals(40f, updatedHero!!.y, 0.001f)
         assertEquals(SimEngine.parseColor("#00FF00"), updatedHero.color)
     }
+
+    @Test
+    fun testMissingObjectErrorLogging() = runBlocking {
+        // Script trying to move a non-existent object "ghost"
+        val moveBlock = SerializedBlock(
+            type = "sim_move",
+            params = mapOf(
+                "name" to "ghost",
+                "mode" to "step",
+                "x" to "10",
+                "y" to "10"
+            )
+        )
+        val script = Script(
+            id = "s_err",
+            name = "ErrorScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(moveBlock)
+        )
+
+        val state = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = emptyList()
+        )
+
+        org.junit.Assert.assertTrue(
+            "State should contain an error about missing object",
+            state.errors.any { it.contains("Объект «ghost» не найден") }
+        )
+    }
+
+    @Test
+    fun testMissingSpriteErrorLogging() = runBlocking {
+        // Script creating an object with unknown sprite
+        val spriteBlock = SerializedBlock(
+            type = "sim_sprite",
+            params = mapOf(
+                "name" to "player",
+                "sprite" to "missing_texture"
+            )
+        )
+        val script = Script(
+            id = "s_sprite_err",
+            name = "SpriteErrorScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(spriteBlock)
+        )
+
+        val state = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = emptyList()
+        )
+
+        org.junit.Assert.assertTrue(
+            "State should contain an error about missing sprite",
+            state.errors.any { it.contains("Спрайт «missing_texture» не найден") }
+        )
+    }
 }

@@ -268,7 +268,13 @@ object BlockFactory {
             "startFrame" to p("0", "Начальный кадр", "Индекс от 0", ParamType.NUMBER),
             "endFrame"   to p("0", "Конечный кадр", "0 = до последнего кадра", ParamType.NUMBER),
             "fps"        to p("12", "Скорость (FPS)", "Кадров в секунду", ParamType.NUMBER),
-            "loop"       to p("true", "Зациклить", "true = бесконечно, false = один раз", ParamType.SELECT)))
+            "loop"       to p("true", "Зациклить", "true = бесконечно, false = один раз", ParamType.SELECT),
+            "offsetX"    to p("0", "Смещение X (px)", "Отступ сетки слева в пикселях", ParamType.NUMBER),
+            "offsetY"    to p("0", "Смещение Y (px)", "Отступ сетки сверху в пикселях", ParamType.NUMBER),
+            "spacingX"   to p("0", "Отступ X (px)", "Промежуток между кадрами по горизонтали", ParamType.NUMBER),
+            "spacingY"   to p("0", "Отступ Y (px)", "Промежуток между кадрами по вертикали", ParamType.NUMBER),
+            "frameW"     to p("0", "Ширина кадра (px)", "0 = авто расчет по колонкам", ParamType.NUMBER),
+            "frameH"     to p("0", "Высота кадра (px)", "0 = авто расчет по строкам", ParamType.NUMBER)))
 
         "anim_stop" -> build("anim_stop", "Остановить анимацию", "Останавливает покадровую анимацию", BlockCategory.SPRITE, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект остановить")))

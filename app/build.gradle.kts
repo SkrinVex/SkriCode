@@ -18,8 +18,8 @@ android {
         applicationId = "su.SkrinVex.SkriCode"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.5"
+        versionCode = 17
+        versionName = "1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -76,4 +76,9 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+// Автоматически собираем и копируем свежий runtime.apk в assets перед сборкой основного приложения
+tasks.named("preBuild") {
+    dependsOn(":app-runtime:copyRuntimeApk")
 }

@@ -68,7 +68,13 @@ sealed interface CompiledBlock {
         val startFrameExpr: AstExpr,
         val endFrameExpr: AstExpr,
         val fpsExpr: AstExpr,
-        val loopExpr: AstExpr
+        val loopExpr: AstExpr,
+        val offsetXExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0"),
+        val offsetYExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0"),
+        val spacingXExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0"),
+        val spacingYExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0"),
+        val frameWExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0"),
+        val frameHExpr: AstExpr = su.SkrinVex.SkriCode.engine.ast.LiteralNumber(0.0, "0")
     ) : CompiledBlock
 
     data class AnimStop(val targetExpr: AstExpr) : CompiledBlock

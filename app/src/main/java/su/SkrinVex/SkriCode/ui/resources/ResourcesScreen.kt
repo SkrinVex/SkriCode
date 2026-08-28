@@ -211,6 +211,7 @@ private fun SpritesScreen(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var previewSprite by remember { mutableStateOf<SpriteAsset?>(null) }
+    var animPreviewSprite by remember { mutableStateOf<SpriteAsset?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -290,7 +291,27 @@ private fun SpritesScreen(
     }
 
     previewSprite?.let { sprite ->
-        SpritePreviewDialog(sprite = sprite, file = vm.getSpriteFile(sprite.name), onDismiss = { previewSprite = null })
+        SpritePreviewDialog(
+            sprite = sprite,
+            file = vm.getSpriteFile(sprite.name),
+            onOpenAnimEditor = {
+                previewSprite = null
+                animPreviewSprite = sprite
+            },
+            onDismiss = { previewSprite = null }
+        )
+    }
+
+    animPreviewSprite?.let { sprite ->
+        su.SkrinVex.SkriCode.ui.editor.SpriteAnimationEditorScreen(
+            initialSprite = sprite.name,
+            initialCols = 4,
+            initialRows = 1,
+            sprites = sprites,
+            projectId = vm.getProjectId(),
+            onConfirm = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> animPreviewSprite = null },
+            onDismiss = { animPreviewSprite = null }
+        )
     }
 
     error?.let { err ->
@@ -381,7 +402,12 @@ private fun AddSpriteDialog(suggestedName: String, existingNames: List<String>, 
 }
 
 @Composable
-private fun SpritePreviewDialog(sprite: SpriteAsset, file: java.io.File?, onDismiss: () -> Unit) {
+private fun SpritePreviewDialog(
+    sprite: SpriteAsset,
+    file: java.io.File?,
+    onOpenAnimEditor: () -> Unit,
+    onDismiss: () -> Unit
+) {
     val bitmap = remember(file) { file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() } }
     Dialog(onDismissRequest = onDismiss) {
         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Surface2)) {
@@ -402,6 +428,16 @@ private fun SpritePreviewDialog(sprite: SpriteAsset, file: java.io.File?, onDism
                         Text("Размер:", color = TextSec, fontSize = 13.sp, modifier = Modifier.width(90.dp))
                         Text("${sprite.width} × ${sprite.height} px", color = TextPrim, fontSize = 13.sp)
                     }
+                }
+                Button(
+                    onClick = onOpenAnimEditor,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Warning),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Movie, null, tint = Navy900, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Тест анимации спрайт-листа", color = Navy900, fontWeight = FontWeight.Bold)
                 }
                 Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
                     Text("Закрыть", color = Navy900)

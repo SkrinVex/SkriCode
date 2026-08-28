@@ -21,7 +21,7 @@ import su.SkrinVex.SkriCode.ui.theme.*
 import java.util.UUID
 
 // Блоки которые имеют смысл как setup для объекта локации
-private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate", "set_texture", "sim_layer")
+private val SETUP_BLOCK_TYPES = listOf("sim_physics", "sim_hitbox", "set_tag", "sim_rotate", "set_texture", "sim_layer", "anim_play")
 
 /**
  * Полноэкранный редактор setup-блоков объекта локации.
@@ -48,6 +48,7 @@ fun LocationObjectEditorScreen(
     var showPicker by remember { mutableStateOf(false) }
     var exprTarget by remember { mutableStateOf<ExprEditTarget?>(null) }
     var hitboxTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
+    var animTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
 
     // Синхронизируем имя объекта в setup-блоках при изменении mainBlock
     fun syncName(newName: String) {
@@ -125,6 +126,62 @@ fun LocationObjectEditorScreen(
                 hitboxTarget = null
             },
             onDismiss = { hitboxTarget = null }
+        )
+        return
+    }
+
+    // Редактор анимации спрайт-листа
+    animTarget?.let { (idx, block) ->
+        val sprite = block.params["sprite"]?.value?.ifBlank { null } ?: mainBlock.params["sprite"]?.value ?: ""
+        val cols = block.params["cols"]?.value?.toIntOrNull() ?: 4
+        val rows = block.params["rows"]?.value?.toIntOrNull() ?: 1
+        val start = block.params["startFrame"]?.value?.toIntOrNull() ?: 0
+        val end = block.params["endFrame"]?.value?.toIntOrNull() ?: 0
+        val fps = block.params["fps"]?.value?.toFloatOrNull() ?: 12f
+        val loop = block.params["loop"]?.value != "false"
+        val offX = block.params["offsetX"]?.value?.toIntOrNull() ?: 0
+        val offY = block.params["offsetY"]?.value?.toIntOrNull() ?: 0
+        val spX = block.params["spacingX"]?.value?.toIntOrNull() ?: 0
+        val spY = block.params["spacingY"]?.value?.toIntOrNull() ?: 0
+        val fw = block.params["frameW"]?.value?.toIntOrNull() ?: 0
+        val fh = block.params["frameH"]?.value?.toIntOrNull() ?: 0
+
+        SpriteAnimationEditorScreen(
+            initialSprite = sprite,
+            initialCols = cols,
+            initialRows = rows,
+            initialStartFrame = start,
+            initialEndFrame = end,
+            initialFps = fps,
+            initialLoop = loop,
+            initialOffsetX = offX,
+            initialOffsetY = offY,
+            initialSpacingX = spX,
+            initialSpacingY = spY,
+            initialFrameW = fw,
+            initialFrameH = fh,
+            sprites = sprites,
+            projectId = projectId,
+            onConfirm = { sName, nCols, nRows, nStart, nEnd, nFps, nLoop, nOffX, nOffY, nSpX, nSpY, nFw, nFh ->
+                setupBlocks = setupBlocks.toMutableList().also { list ->
+                    list[idx] = list[idx]
+                        .withParam("sprite", sName)
+                        .withParam("cols", nCols.toString())
+                        .withParam("rows", nRows.toString())
+                        .withParam("startFrame", nStart.toString())
+                        .withParam("endFrame", nEnd.toString())
+                        .withParam("fps", nFps.toInt().toString())
+                        .withParam("loop", nLoop.toString())
+                        .withParam("offsetX", nOffX.toString())
+                        .withParam("offsetY", nOffY.toString())
+                        .withParam("spacingX", nSpX.toString())
+                        .withParam("spacingY", nSpY.toString())
+                        .withParam("frameW", nFw.toString())
+                        .withParam("frameH", nFh.toString())
+                }
+                animTarget = null
+            },
+            onDismiss = { animTarget = null }
         )
         return
     }
@@ -256,7 +313,8 @@ fun LocationObjectEditorScreen(
                     onOpenExpr = { key, label, cur, isId ->
                         exprTarget = ExprEditTarget(index, key, label, cur, isId)
                     },
-                    onOpenHitboxEditor = { b -> hitboxTarget = index to b }
+                    onOpenHitboxEditor = { b -> hitboxTarget = index to b },
+                    onOpenAnimEditor = { b -> animTarget = index to b }
                 )
             }
         }

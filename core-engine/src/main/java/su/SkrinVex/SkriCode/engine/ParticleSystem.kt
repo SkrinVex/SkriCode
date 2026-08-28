@@ -169,37 +169,53 @@ object ParticleSystem {
                 continue
             }
 
-            val totalFrames = obj.animCols * obj.animRows
+            val totalFrames = (obj.animCols * obj.animRows).coerceAtLeast(1)
             val start = obj.animStartFrame.coerceIn(0, totalFrames - 1)
-            val end = if (obj.animEndFrame > start && obj.animEndFrame < totalFrames) obj.animEndFrame else totalFrames - 1
-            val frameCount = end - start + 1
+            val end = if (obj.animEndFrame > 0 && obj.animEndFrame in start until totalFrames) {
+                obj.animEndFrame
+            } else {
+                totalFrames - 1
+            }
+            val frameCount = (end - start + 1).coerceAtLeast(1)
             if (frameCount <= 1) {
-                next[name] = obj
+                if (obj.animCurrentFrame != start) {
+                    next[name] = obj.copy(animCurrentFrame = start)
+                    anyChanged = true
+                } else {
+                    next[name] = obj
+                }
                 continue
             }
 
             val frameDuration = 1f / obj.animFps
             var elapsed = obj.animElapsed + dt
             var curFrame = obj.animCurrentFrame
+            if (curFrame < start || curFrame > end) {
+                curFrame = start
+                anyChanged = true
+            }
 
             if (elapsed >= frameDuration) {
                 val advance = (elapsed / frameDuration).toInt()
                 elapsed %= frameDuration
 
-                var newFrameIdx = (curFrame - start) + advance
+                val relativeIndex = (curFrame - start) + advance
                 if (obj.animLoop) {
-                    newFrameIdx %= frameCount
-                    curFrame = start + newFrameIdx
+                    val newRelative = relativeIndex % frameCount
+                    curFrame = start + newRelative
                 } else {
-                    if (newFrameIdx >= frameCount) {
+                    if (relativeIndex >= frameCount) {
                         curFrame = end
                         next[name] = obj.copy(animPlaying = false, animCurrentFrame = curFrame, animElapsed = 0f)
                         anyChanged = true
                         continue
                     } else {
-                        curFrame = start + newFrameIdx
+                        curFrame = start + relativeIndex
                     }
                 }
+            }
+
+            if (elapsed != obj.animElapsed || curFrame != obj.animCurrentFrame) {
                 anyChanged = true
             }
 

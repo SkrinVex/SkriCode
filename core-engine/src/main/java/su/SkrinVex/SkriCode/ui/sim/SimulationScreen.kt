@@ -95,8 +95,8 @@ fun SimulationScreen(
     val ctx = LocalContext.current
     var bitmapCacheVersion by remember { mutableIntStateOf(0) }
 
-    // Перезагружаем bitmap при каждом запуске симуляции
-    LaunchedEffect(state.projectId, simRunCount) {
+    // Перезагружаем bitmap при каждом запуске симуляции или изменении списка спрайтов
+    LaunchedEffect(state.projectId, state.sprites, simRunCount) {
         bitmapCache.clear()
         state.sprites.forEach { sprite ->
             val file = su.SkrinVex.SkriCode.data.SpriteRepository.getFile(ctx, state.projectId, sprite.fileName)
@@ -209,7 +209,7 @@ fun SimulationScreen(
                     val oy = cy + camOy - obj.y
                     val hw = obj.width / 2f; val hh = obj.height / 2f
                     if (ox + hw < 0 || ox - hw > size.width || oy + hh < 0 || oy - hh > size.height) return@forEach
-                    drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode)
+                    drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode, state, ctx)
                 }
             }
 
@@ -243,7 +243,7 @@ fun SimulationScreen(
             sortedObjects.forEach { obj ->
                 if (!obj.visible) return@forEach
                 val isUi = obj.tags.any { it in uiTags }
-                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj, debugMode)
+                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj, debugMode, state, ctx)
             }
             if (showHitboxes) {
                 sortedObjects.forEach { obj ->
@@ -500,7 +500,15 @@ private val textPaint = android.graphics.Paint().apply {
 private val dstRectF = android.graphics.RectF()
 private val srcRectAndroid = AndroidRect()
 
-private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highlighted: Boolean, debugMode: Boolean = true) {
+private fun DrawScope.drawSimObject(
+    obj: SimObject,
+    cx: Float,
+    cy: Float,
+    highlighted: Boolean,
+    debugMode: Boolean = true,
+    state: SimState? = null,
+    ctx: android.content.Context? = null
+) {
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
     val cr = CornerRadius(obj.radius, obj.radius)
@@ -514,21 +522,44 @@ private fun DrawScope.drawSimObject(obj: SimObject, cx: Float, cy: Float, highli
         }
 
         // Спрайт
-        val bitmap = obj.spriteName?.let { bitmapCache[it] }
+        val bitmap = obj.spriteName?.let { name ->
+            bitmapCache[name] ?: run {
+                if (state != null && ctx != null) {
+                    val sprite = state.sprites.find { it.name == name }
+                    val fileName = sprite?.fileName ?: (name + ".png")
+                    val file = su.SkrinVex.SkriCode.data.SpriteRepository.getFile(ctx, state.projectId, fileName)
+                    val bmp = file?.let { runCatching { BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+                    if (bmp != null) {
+                        bitmapCache[name] = bmp
+                    }
+                    bmp
+                } else null
+            }
+        }
         if (bitmap != null) {
             spritePaint.alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
-            val srcRect = if (obj.animCols > 1 || obj.animRows > 1) {
+            val srcRect = if (obj.animCols > 1 || obj.animRows > 1 || obj.animPlaying || obj.animCurrentFrame > 0) {
                 val cols = obj.animCols.coerceAtLeast(1)
                 val rows = obj.animRows.coerceAtLeast(1)
-                val frameW = bitmap.width / cols
-                val frameH = bitmap.height / rows
+                val offX = obj.animOffsetX.coerceAtLeast(0)
+                val offY = obj.animOffsetY.coerceAtLeast(0)
+                val spX = obj.animSpacingX.coerceAtLeast(0)
+                val spY = obj.animSpacingY.coerceAtLeast(0)
+                val frameW = if (obj.animFrameWidth > 0) obj.animFrameWidth else {
+                    ((bitmap.width - offX - (cols - 1) * spX) / cols).coerceAtLeast(1)
+                }
+                val frameH = if (obj.animFrameHeight > 0) obj.animFrameHeight else {
+                    ((bitmap.height - offY - (rows - 1) * spY) / rows).coerceAtLeast(1)
+                }
                 val totalFrames = cols * rows
                 val curFrame = obj.animCurrentFrame.coerceIn(0, totalFrames - 1)
                 val col = curFrame % cols
                 val row = curFrame / cols
-                val leftCrop = col * frameW
-                val topCrop = row * frameH
-                srcRectAndroid.set(leftCrop, topCrop, leftCrop + frameW, topCrop + frameH)
+                val leftCrop = (offX + col * (frameW + spX)).coerceIn(0, bitmap.width)
+                val topCrop = (offY + row * (frameH + spY)).coerceIn(0, bitmap.height)
+                val rightCrop = (leftCrop + frameW).coerceIn(0, bitmap.width)
+                val bottomCrop = (topCrop + frameH).coerceIn(0, bitmap.height)
+                srcRectAndroid.set(leftCrop, topCrop, rightCrop, bottomCrop)
                 srcRectAndroid
             } else if (obj.spriteCropW > 0 && obj.spriteCropH > 0) {
                 srcRectAndroid.set(

@@ -126,7 +126,13 @@ object BlockCompiler {
                     startFrameExpr = expr("startFrame", "0"),
                     endFrameExpr = expr("endFrame", "0"),
                     fpsExpr = expr("fps", "12"),
-                    loopExpr = expr("loop", "true")
+                    loopExpr = expr("loop", "true"),
+                    offsetXExpr = expr("offsetX", "0"),
+                    offsetYExpr = expr("offsetY", "0"),
+                    spacingXExpr = expr("spacingX", "0"),
+                    spacingYExpr = expr("spacingY", "0"),
+                    frameWExpr = expr("frameW", "0"),
+                    frameHExpr = expr("frameH", "0")
                 )
 
                 "anim_stop" -> result += CompiledBlock.AnimStop(expr("name"))
