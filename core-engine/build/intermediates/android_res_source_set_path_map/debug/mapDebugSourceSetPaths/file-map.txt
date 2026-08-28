@@ -1,8 +1,0 @@
-su.SkrinVex.SkriCode.core.core-engine-pngs-0 /home/skrinvex/Projects/SkriCode/core-engine/build/generated/res/pngs/debug
-su.SkrinVex.SkriCode.core.core-engine-updated_navigation_xml-1 /home/skrinvex/Projects/SkriCode/core-engine/build/generated/updated_navigation_xml/debug
-su.SkrinVex.SkriCode.core.core-engine-mergeDebugResources-2 /home/skrinvex/Projects/SkriCode/core-engine/build/intermediates/incremental/debug/mergeDebugResources/merged.dir
-su.SkrinVex.SkriCode.core.core-engine-mergeDebugResources-3 /home/skrinvex/Projects/SkriCode/core-engine/build/intermediates/incremental/debug/mergeDebugResources/stripped.dir
-su.SkrinVex.SkriCode.core.core-engine-debug-4 /home/skrinvex/Projects/SkriCode/core-engine/build/intermediates/merged_res/debug/mergeDebugResources
-su.SkrinVex.SkriCode.core.core-engine-debug-5 /home/skrinvex/Projects/SkriCode/core-engine/build/intermediates/packaged_res/debug/packageDebugResources
-su.SkrinVex.SkriCode.core.core-engine-debug-6 /home/skrinvex/Projects/SkriCode/core-engine/src/debug/res
-su.SkrinVex.SkriCode.core.core-engine-main-7 /home/skrinvex/Projects/SkriCode/core-engine/src/main/res
