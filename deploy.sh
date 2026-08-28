@@ -15,9 +15,19 @@ case "${choice:-1}" in
     echo ""
     echo "→ Сборка release..."
     "$PROJECT_DIR/gradlew" assembleRelease --quiet
-    APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk"
-    cp "$APK" "$PROJECT_DIR/app-release.apk"
-    echo "✓ Готово! APK: $PROJECT_DIR/app-release.apk"
+    SIGNED_APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk"
+    UNSIGNED_APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release-unsigned.apk"
+    if [ -f "$SIGNED_APK" ]; then
+      cp "$SIGNED_APK" "$PROJECT_DIR/app-release.apk"
+      echo "✓ Готово! Подписанный релизный APK: $PROJECT_DIR/app-release.apk"
+    elif [ -f "$UNSIGNED_APK" ]; then
+      cp "$UNSIGNED_APK" "$PROJECT_DIR/app-release-unsigned.apk"
+      echo "⚠ Сборка завершена, но ключ не был найден в keystore.properties."
+      echo "✓ Неподписанный APK: $PROJECT_DIR/app-release-unsigned.apk"
+    else
+      echo "Ошибка: Релизный APK не найден."
+      exit 1
+    fi
     ;;
   3)
     echo ""

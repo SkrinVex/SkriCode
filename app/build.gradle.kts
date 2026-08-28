@@ -26,12 +26,16 @@ android {
 
     signingConfigs {
         val storePath = keystoreProps.getProperty("storeFile")
-        if (!storePath.isNullOrBlank() && file(storePath).exists()) {
-            create("release") {
-                storeFile = file(storePath)
-                storePassword = keystoreProps.getProperty("storePassword") ?: ""
-                keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
-                keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
+        if (!storePath.isNullOrBlank()) {
+            val keyFile = rootProject.file(storePath).takeIf { it.exists() }
+                ?: file(storePath).takeIf { it.exists() }
+            if (keyFile != null && keyFile.exists()) {
+                create("release") {
+                    storeFile = keyFile
+                    storePassword = keystoreProps.getProperty("storePassword") ?: ""
+                    keyAlias = keystoreProps.getProperty("keyAlias") ?: ""
+                    keyPassword = keystoreProps.getProperty("keyPassword") ?: ""
+                }
             }
         }
     }

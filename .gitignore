@@ -3,7 +3,7 @@
 *.aar
 *.ap_
 *.aab
-!app/src/main/assets/*.apk
+!app/src/main/assets/runtime.apk
 
 # Files for the ART/Dalvik VM
 *.dex
@@ -11,10 +11,9 @@
 # Java class files
 *.class
 
-# Generated build directories (do not ignore source packages named 'build')
-/build/
-app/build/
-app-runtime/build/
+# Generated build directories
+build/
+*/build/
 bin/
 gen/
 out/
@@ -34,13 +33,9 @@ proguard/
 *.log
 *.skrilogs
 
-# Android Studio Navigation editor temp files
+# Android Studio & IntelliJ IDEA
 .navigation/
-
-# Android Studio captures folder
 captures/
-
-# IntelliJ IDEA
 *.iml
 .idea/
 .idea/libraries
