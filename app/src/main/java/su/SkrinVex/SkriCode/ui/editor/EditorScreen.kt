@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -510,8 +512,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         isChildCollapsed = { childId -> vm.isBlockCollapsed(activeScriptId, childId) },
                         onRemove = { showDeleteConfirm = true },
                         onMoveUp = { if (vm.canMoveUp(index, activeBlocks)) vm.moveBlock(index, index - 1) },
-                        onMoveDown = { if (vm.canMoveDown(index, activeBlocks)) vm.moveBlock(index, index + 1) },                        canMoveUp = vm.canMoveUp(index, activeBlocks),
+                        onMoveDown = { if (vm.canMoveDown(index, activeBlocks)) vm.moveBlock(index, index + 1) },
+                        canMoveUp = vm.canMoveUp(index, activeBlocks),
                         canMoveDown = vm.canMoveDown(index, activeBlocks),
+                        onMoveTo = { targetIndex -> vm.moveBlock(index, targetIndex) },
                         onDuplicate = { vm.duplicateBlock(index) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
                         onCopyBlock = { vm.copyBlock(state.activeScript.blocks[index]) },
@@ -906,6 +910,131 @@ internal fun BlockParamContent(
 }
 
 @Composable
+internal fun MoveBlockDialog(
+    currentIndex: Int,
+    totalBlocks: Int,
+    onDismiss: () -> Unit,
+    onMove: (targetIndex: Int) -> Unit
+) {
+    var mode by remember { mutableStateOf("above") } // "above" (над) or "below" (под)
+    val defaultTarget = if (mode == "above") {
+        if (currentIndex > 0) "$currentIndex" else if (totalBlocks > 1) "2" else "1"
+    } else {
+        "${(currentIndex + 2).coerceAtMost(totalBlocks)}"
+    }
+    var targetText by remember { mutableStateOf(defaultTarget) }
+    val currentNumber = currentIndex + 1
+    val parsed = targetText.toIntOrNull()
+    val isValid = parsed != null && parsed in 1..totalBlocks && parsed != currentNumber
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        title = {
+            Text("Переместить блок №$currentNumber", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Укажите номер блока, относительно которого нужно переместить текущий блок:",
+                    color = TextSec,
+                    fontSize = 13.sp
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Surface3)
+                ) {
+                    listOf("above" to "Над блоком", "below" to "Под блок").forEach { (m, label) ->
+                        val active = mode == m
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (active) Accent.copy(0.2f) else Color.Transparent)
+                                .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    mode = m
+                                    if (m == "above") {
+                                        targetText = if (currentIndex > 0) "$currentIndex" else if (totalBlocks > 1) "2" else "1"
+                                    } else {
+                                        targetText = "${(currentIndex + 2).coerceAtMost(totalBlocks)}"
+                                    }
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label,
+                                color = if (active) Accent else TextSec,
+                                fontSize = 13.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = targetText,
+                    onValueChange = { targetText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Номер блока (1..$totalBlocks)", color = TextSec) },
+                    placeholder = { Text("1", color = TextSec.copy(0.5f)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = targetText.isNotEmpty() && !isValid,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrim,
+                        unfocusedTextColor = TextPrim,
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Surface3,
+                        focusedLabelColor = Accent,
+                        unfocusedLabelColor = TextSec,
+                        errorBorderColor = Danger,
+                        errorLabelColor = Danger
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (targetText.isNotEmpty() && !isValid) {
+                    val errMsg = if (parsed == null || parsed !in 1..totalBlocks) {
+                        "Введите число от 1 до $totalBlocks"
+                    } else {
+                        "Блок уже находится на этой позиции"
+                    }
+                    Text(errMsg, color = Danger, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (parsed != null && parsed in 1..totalBlocks) {
+                        val target0 = parsed - 1
+                        val newIndex = if (mode == "above") {
+                            if (currentIndex > target0) target0 else target0 - 1
+                        } else {
+                            if (currentIndex > target0) target0 + 1 else target0
+                        }
+                        onMove(newIndex.coerceIn(0, totalBlocks - 1))
+                        onDismiss()
+                    }
+                },
+                enabled = isValid,
+                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+            ) {
+                Text("Переместить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена", color = TextSec)
+            }
+        }
+    )
+}
+
+@Composable
 internal fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
@@ -923,6 +1052,7 @@ internal fun BlockCard(
     onMoveDown: () -> Unit,
     canMoveUp: Boolean = index > 0,
     canMoveDown: Boolean = index < total - 1,
+    onMoveTo: ((targetIndex: Int) -> Unit)? = null,
     onDuplicate: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
@@ -941,6 +1071,7 @@ internal fun BlockCard(
 ) {
     val accent = categoryColor(block.category)
     var showContextMenu by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
 
     // Специальный рендеринг для open/close блоков
     val isOpen = block.type in setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
@@ -951,6 +1082,7 @@ internal fun BlockCard(
             block = block,
             isOpen = isOpen,
             index = index,
+            total = total,
             variables = variables,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
@@ -958,6 +1090,9 @@ internal fun BlockCard(
             onToggleCollapse = onToggleCollapse,
             onMoveUp = onMoveUp,
             onMoveDown = onMoveDown,
+            onMoveTo = onMoveTo,
+            onDuplicate = onDuplicate,
+            onCopyBlock = onCopyBlock,
             onRemove = onRemove,
             onParamChange = onParamChange,
             onOpenExpr = onOpenExpr,
@@ -1137,7 +1272,7 @@ internal fun BlockCard(
         AlertDialog(
             onDismissRequest = { showContextMenu = false },
             containerColor = Surface2,
-            title = { Text("Действия с блоком", color = TextPrim) },
+            title = { Text("Действия с блоком №${index + 1}", color = TextPrim, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -1160,6 +1295,17 @@ internal fun BlockCard(
                             Text("Копировать блок")
                         }
                     }
+                    if (total > 1 && onMoveTo != null) {
+                        Button(
+                            onClick = { showContextMenu = false; showMoveDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E384D))
+                        ) {
+                            Icon(Icons.Default.SwapVert, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Переместить блок (над / под)...")
+                        }
+                    }
                     Button(
                         onClick = { onRemove(); showContextMenu = false },
                         modifier = Modifier.fillMaxWidth(),
@@ -1178,6 +1324,15 @@ internal fun BlockCard(
             }
         )
     }
+
+    if (showMoveDialog && onMoveTo != null) {
+        MoveBlockDialog(
+            currentIndex = index,
+            totalBlocks = total,
+            onDismiss = { showMoveDialog = false },
+            onMove = onMoveTo
+        )
+    }
 }
 
 @Composable
@@ -1185,6 +1340,7 @@ internal fun OpenCloseBlockCard(
     block: BlockDef,
     isOpen: Boolean,
     index: Int,
+    total: Int = 1,
     variables: List<ProjectVar>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -1192,6 +1348,9 @@ internal fun OpenCloseBlockCard(
     onToggleCollapse: () -> Unit = {},
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    onMoveTo: ((targetIndex: Int) -> Unit)? = null,
+    onDuplicate: (() -> Unit)? = null,
+    onCopyBlock: (() -> Unit)? = null,
     onRemove: () -> Unit,
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
@@ -1205,10 +1364,17 @@ internal fun OpenCloseBlockCard(
         isClose -> "}"
         else    -> "{"
     }
+    var showContextMenu by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth()
-            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { showContextMenu = true }
+                )
+            },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2)
     ) {
@@ -1248,6 +1414,74 @@ internal fun OpenCloseBlockCard(
                 }
             }
         }
+    }
+
+    if (showContextMenu) {
+        AlertDialog(
+            onDismissRequest = { showContextMenu = false },
+            containerColor = Surface2,
+            title = { Text("Действия с блоком №${index + 1}", color = TextPrim, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onDuplicate != null) {
+                        Button(
+                            onClick = { onDuplicate(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Дублировать блок")
+                        }
+                    }
+                    if (onCopyBlock != null) {
+                        Button(
+                            onClick = { onCopyBlock(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2F3E))
+                        ) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Копировать блок")
+                        }
+                    }
+                    if (total > 1 && onMoveTo != null) {
+                        Button(
+                            onClick = { showContextMenu = false; showMoveDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E384D))
+                        ) {
+                            Icon(Icons.Default.SwapVert, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Переместить блок (над / под)...")
+                        }
+                    }
+                    Button(
+                        onClick = { onRemove(); showContextMenu = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Удалить блок")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showContextMenu = false }) {
+                    Text("Отмена", color = TextSec)
+                }
+            }
+        )
+    }
+
+    if (showMoveDialog && onMoveTo != null) {
+        MoveBlockDialog(
+            currentIndex = index,
+            totalBlocks = total,
+            onDismiss = { showMoveDialog = false },
+            onMove = onMoveTo
+        )
     }
 }
 

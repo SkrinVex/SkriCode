@@ -1301,12 +1301,106 @@ object SimEngine {
                     pc = inst.startPc
                 }
 
+                is CompiledBlock.WaitDelay -> {
+                    val seconds = inst.secondsExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.001f, 60f)
+                    if (allowDelay) {
+                        onUpdate?.invoke()
+                        delay((seconds * 1000).toLong())
+                        getLatestState?.invoke()?.let { live ->
+                            deletedObjects.forEach { objects.remove(it) }
+                            deletedJoysticks.forEach { joysticks.remove(it) }
+                            live.objects.forEach { (name, liveObj) ->
+                                if (name !in deletedObjects) {
+                                    val currentObj = objects[name]
+                                    if (currentObj != null) {
+                                        val fields = modifiedFields[name] ?: emptySet()
+                                        objects[name] = currentObj.copy(
+                                            x = if ("x" in fields) currentObj.x else liveObj.x,
+                                            y = if ("y" in fields) currentObj.y else liveObj.y,
+                                            rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
+                                            visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+                                            touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+                                            physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
+                                            animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
+                                            animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
+                                            animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying
+                                        )
+                                    } else {
+                                        objects[name] = liveObj
+                                    }
+                                }
+                            }
+                            live.joysticks.forEach { (name, liveJoy) ->
+                                if (name !in deletedJoysticks && name !in joysticks) {
+                                    joysticks[name] = liveJoy
+                                }
+                            }
+                        }
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.WaitLoopStart -> {
+                    val seconds = inst.secondsExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.001f, 60f)
+                    val count = inst.countExpr.evalDouble(vars, evalScope)?.toInt() ?: 1
+                    val actualCount = if (count <= 0) Int.MAX_VALUE else count
+                    val current = loopCounters.getOrPut(inst.loopId) { 0 }
+                    if (current >= actualCount) {
+                        loopCounters.remove(inst.loopId)
+                        pc = if (inst.endPc >= 0) inst.endPc else instructions.size
+                    } else {
+                        if (allowDelay) {
+                            onUpdate?.invoke()
+                            delay((seconds * 1000).toLong())
+                            getLatestState?.invoke()?.let { live ->
+                                deletedObjects.forEach { objects.remove(it) }
+                                deletedJoysticks.forEach { joysticks.remove(it) }
+                                live.objects.forEach { (name, liveObj) ->
+                                    if (name !in deletedObjects) {
+                                        val currentObj = objects[name]
+                                        if (currentObj != null) {
+                                            val fields = modifiedFields[name] ?: emptySet()
+                                            objects[name] = currentObj.copy(
+                                                x = if ("x" in fields) currentObj.x else liveObj.x,
+                                                y = if ("y" in fields) currentObj.y else liveObj.y,
+                                                rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
+                                                visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+                                                touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+                                                physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
+                                                animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
+                                                animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
+                                                animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying
+                                            )
+                                        } else {
+                                            objects[name] = liveObj
+                                        }
+                                    }
+                                }
+                                live.joysticks.forEach { (name, liveJoy) ->
+                                    if (name !in deletedJoysticks && name !in joysticks) {
+                                        joysticks[name] = liveJoy
+                                    }
+                                }
+                            }
+                        }
+                        pc++
+                    }
+                }
+
+                is CompiledBlock.WaitLoopEnd -> {
+                    val cur = loopCounters[inst.loopId] ?: 0
+                    loopCounters[inst.loopId] = cur + 1
+                    pc = inst.startPc
+                }
+
                 is CompiledBlock.WaitTimer -> {
-                    val seconds = inst.secondsExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.016f, 60f)
+                    val seconds = inst.secondsExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.001f, 60f)
                     val count = inst.countExpr.evalDouble(vars, evalScope)?.toInt() ?: 1
                     val actualCount = if (count <= 0) Int.MAX_VALUE else count
                     if (allowDelay) {
                         repeat(actualCount) {
+                            onUpdate?.invoke()
+                            delay((seconds * 1000).toLong())
                             getLatestState?.invoke()?.let { live ->
                                 deletedObjects.forEach { objects.remove(it) }
                                 deletedJoysticks.forEach { joysticks.remove(it) }
@@ -1348,7 +1442,6 @@ object SimEngine {
                                 if (!ok) return false
                             }
                             onUpdate?.invoke()
-                            delay((seconds * 1000).toLong())
                         }
                     }
                     pc++

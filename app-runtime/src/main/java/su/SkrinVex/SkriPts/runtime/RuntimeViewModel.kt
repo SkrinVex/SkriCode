@@ -33,6 +33,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
     fun start(project: ScriptProject) {
         _project = project
         _scenes = project.scenes.orEmpty()
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(project.orientation ?: su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT)
         SimEngine.soundManager = soundManager
         launchScene(project.activeSceneId ?: _scenes.firstOrNull()?.id ?: return)
     }
@@ -62,6 +63,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         val scene = _scenes.find { it.id == sceneId } ?: return
         _scripts = scene.scripts
         val project = _project ?: return
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(project.orientation ?: su.SkrinVex.SkriCode.data.ProjectOrientation.PORTRAIT)
 
         _simState.value = SimState(sprites = project.sprites.orEmpty(), projectId = project.id)
 

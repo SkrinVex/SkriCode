@@ -380,4 +380,302 @@ class SimEngineTest {
         assertEquals("spinner must have rotated 2 * 20 = 40 degrees", 40f, spinner!!.rotation, 0.001f)
         org.junit.Assert.assertTrue("updates should capture rotations", updates.contains(20f) && updates.contains(40f))
     }
+
+    @Test
+    fun testRussianRouletteButtonResizeAndRestoreWithWaitOpen() = runBlocking {
+        val createObj = SerializedBlock(
+            type = "sim_create",
+            params = mapOf("name" to "Play", "x" to "0", "y" to "0", "width" to "250", "height" to "100", "color" to "#FFFFFF")
+        )
+        val enlarge = SerializedBlock(
+            type = "sim_resize",
+            params = mapOf("name" to "Play", "width" to "300", "height" to "150")
+        )
+        val waitOpen = SerializedBlock(
+            type = "wait_open",
+            params = mapOf("seconds" to "0.02", "count" to "1")
+        )
+        val restore = SerializedBlock(
+            type = "sim_resize",
+            params = mapOf("name" to "Play", "width" to "250", "height" to "100")
+        )
+        val waitClose = SerializedBlock(type = "wait_close", params = emptyMap())
+
+        val script = Script(
+            id = "s_play",
+            name = "Play",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(createObj, enlarge, waitOpen, restore, waitClose)
+        )
+
+        val widths = mutableListOf<Float>()
+        val finalState = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = emptyList(),
+            onUpdate = { live ->
+                live.objects["Play"]?.width?.let { widths.add(it) }
+            }
+        )
+
+        val btn = finalState.objects["Play"]
+        assertNotNull("btn must exist", btn)
+        assertEquals("btn must be restored to 250", 250f, btn!!.width, 0.001f)
+        org.junit.Assert.assertTrue("intermediate updates MUST have captured enlarged width 300: $widths", widths.contains(300f))
+    }
+
+    @Test
+    fun testProject4ForLoopWithWaitOpen() = runBlocking {
+        val forOpen = SerializedBlock(
+            type = "for_loop_open",
+            params = mapOf("count" to "5")
+        )
+        val setVar = SerializedBlock(
+            type = "set_var",
+            params = mapOf("name" to "Time_Intro", "value" to "\$add({Time_Intro}, 1)")
+        )
+        val waitOpen = SerializedBlock(
+            type = "wait_open",
+            params = mapOf("seconds" to "0.01", "count" to "1")
+        )
+        val forClose = SerializedBlock(type = "for_loop_close", params = emptyMap())
+        val waitClose = SerializedBlock(type = "wait_close", params = emptyMap())
+
+        val script = Script(
+            id = "s_loop",
+            name = "Intro",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(forOpen, setVar, waitOpen, forClose, waitClose)
+        )
+
+        val finalState = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = listOf(su.SkrinVex.SkriCode.data.ProjectVar("Time_Intro", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("Time_Intro must be 5 after 5 iterations", "5", finalState.globalVars["Time_Intro"])
+    }
+
+    @Test
+    fun testProject4ScreenHeightDivisionInLandscape() = runBlocking {
+        ExprEval.updateDeviceResolution(1080f, 2400f)
+        ExprEval.setOrientation(su.SkrinVex.SkriCode.data.ProjectOrientation.LANDSCAPE)
+
+        val textBlock = SerializedBlock(
+            type = "sim_text",
+            params = mapOf(
+                "name" to "ReadText",
+                "text" to "None",
+                "x" to "0",
+                "y" to "0",
+                "width" to "\$screenWidth",
+                "height" to "\$screenHeight / 30",
+                "size" to "16"
+            )
+        )
+
+        val script = Script(
+            id = "s_txt",
+            name = "Text",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(textBlock)
+        )
+
+        val finalState = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = emptyList()
+        )
+
+        val obj = finalState.objects["ReadText"]
+        assertNotNull("ReadText must exist", obj)
+        assertEquals("width must be screenWidth in landscape (2400)", 2400f, obj!!.width, 0.1f)
+        assertEquals("height must be screenHeight / 30 in landscape (1080 / 30 = 36)", 36f, obj.height, 0.1f)
+    }
+
+    @Test
+    fun testHierarchicalIfBlocksInElseBranch() = runBlocking {
+        // Тест на иерархическую вложенность IfBlock внутри else ветки
+        // If (choice == 1) then res="1" else [
+        //   If (choice == 2) then res="2" else [
+        //     If (choice == 3) then res="3"
+        //   ]
+        // ]
+        fun createIfScript(): Script {
+            val if3 = SerializedBlock(
+                type = "if_block",
+                params = mapOf("left" to "{choice}", "op" to "==", "right" to "3"),
+                children = mapOf(
+                    "then" to listOf(SerializedBlock(type = "set_var", params = mapOf("name" to "res", "value" to "3")))
+                )
+            )
+            val if2 = SerializedBlock(
+                type = "if_block",
+                params = mapOf("left" to "{choice}", "op" to "==", "right" to "2"),
+                children = mapOf(
+                    "then" to listOf(SerializedBlock(type = "set_var", params = mapOf("name" to "res", "value" to "2"))),
+                    "else" to listOf(if3)
+                )
+            )
+            val if1 = SerializedBlock(
+                type = "if_block",
+                params = mapOf("left" to "{choice}", "op" to "==", "right" to "1"),
+                children = mapOf(
+                    "then" to listOf(SerializedBlock(type = "set_var", params = mapOf("name" to "res", "value" to "1"))),
+                    "else" to listOf(if2)
+                )
+            )
+            return Script(
+                id = "s_nested_if",
+                name = "NestedIf",
+                event = ScriptEvent.ON_START,
+                blocks = listOf(if1)
+            )
+        }
+
+        // Проверяем для choice = 3
+        val state3 = SimEngine.run(
+            scripts = listOf(createIfScript()),
+            globalVarDefs = listOf(
+                su.SkrinVex.SkriCode.data.ProjectVar("choice", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "3"),
+                su.SkrinVex.SkriCode.data.ProjectVar("res", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0")
+            )
+        )
+        assertEquals("When choice is 3, res must be 3", "3", state3.globalVars["res"])
+
+        // Проверяем для choice = 2
+        val state2 = SimEngine.run(
+            scripts = listOf(createIfScript()),
+            globalVarDefs = listOf(
+                su.SkrinVex.SkriCode.data.ProjectVar("choice", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "2"),
+                su.SkrinVex.SkriCode.data.ProjectVar("res", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0")
+            )
+        )
+        assertEquals("When choice is 2, res must be 2", "2", state2.globalVars["res"])
+
+        // Проверяем для choice = 1
+        val state1 = SimEngine.run(
+            scripts = listOf(createIfScript()),
+            globalVarDefs = listOf(
+                su.SkrinVex.SkriCode.data.ProjectVar("choice", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "1"),
+                su.SkrinVex.SkriCode.data.ProjectVar("res", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0")
+            )
+        )
+        assertEquals("When choice is 1, res must be 1", "1", state1.globalVars["res"])
+    }
+
+    @Test
+    fun testWhileLoopExecution() = runBlocking {
+        val whileOpen = SerializedBlock(
+            type = "while_loop_open",
+            params = mapOf("left" to "{i}", "op" to "<", "right" to "5")
+        )
+        val incVar = SerializedBlock(
+            type = "set_var",
+            params = mapOf("name" to "i", "value" to "\$add({i}, 1)")
+        )
+        val whileClose = SerializedBlock(type = "while_loop_close", params = emptyMap())
+
+        val script = Script(
+            id = "s_while",
+            name = "WhileTest",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(whileOpen, incVar, whileClose)
+        )
+
+        val finalState = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = listOf(su.SkrinVex.SkriCode.data.ProjectVar("i", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("i must be 5 after while loop", "5", finalState.globalVars["i"])
+    }
+
+    @Test
+    fun testTableOperations() = runBlocking {
+        val setTbl = SerializedBlock(
+            type = "table_set",
+            params = mapOf("table" to "highscore", "key" to "player1", "value" to "999")
+        )
+        val getTbl = SerializedBlock(
+            type = "table_get",
+            params = mapOf("table" to "highscore", "key" to "player1", "var" to "loadedScore")
+        )
+
+        val script = Script(
+            id = "s_tbl",
+            name = "TableTest",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(setTbl, getTbl)
+        )
+
+        val finalState = SimEngine.run(
+            scripts = listOf(script),
+            globalVarDefs = listOf(su.SkrinVex.SkriCode.data.ProjectVar("loadedScore", su.SkrinVex.SkriCode.data.VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("Table value must be retrieved into loadedScore", "999", finalState.globalVars["loadedScore"])
+    }
+
+    @Test
+    fun testTagSelectorModification() = runBlocking {
+        val obj1 = SerializedBlock(type = "sim_create", params = mapOf("name" to "enemy1", "x" to "10", "y" to "20"))
+        val obj2 = SerializedBlock(type = "sim_create", params = mapOf("name" to "enemy2", "x" to "30", "y" to "40"))
+        val tag1 = SerializedBlock(type = "set_tag", params = mapOf("object" to "enemy1", "tag" to "mobs"))
+        val tag2 = SerializedBlock(type = "set_tag", params = mapOf("object" to "enemy2", "tag" to "mobs"))
+        val hideMobs = SerializedBlock(type = "sim_hide", params = mapOf("name" to "#mobs"))
+
+        val script = Script(
+            id = "s_tags",
+            name = "TagTest",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(obj1, obj2, tag1, tag2, hideMobs)
+        )
+
+        val finalState = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        assertNotNull("enemy1 must exist", finalState.objects["enemy1"])
+        assertNotNull("enemy2 must exist", finalState.objects["enemy2"])
+        assertEquals("enemy1 must be hidden via #mobs tag", false, finalState.objects["enemy1"]?.visible)
+        assertEquals("enemy2 must be hidden via #mobs tag", false, finalState.objects["enemy2"]?.visible)
+    }
+
+    @Test
+    fun testTouchEnableDisable() = runBlocking {
+        val create = SerializedBlock(type = "sim_create", params = mapOf("name" to "btn", "x" to "0", "y" to "0"))
+        val disable = SerializedBlock(type = "sim_touch_disable", params = mapOf("name" to "btn"))
+
+        val script1 = Script(id = "s_t1", name = "T1", event = ScriptEvent.ON_START, blocks = listOf(create, disable))
+        val state1 = SimEngine.run(scripts = listOf(script1), globalVarDefs = emptyList())
+        assertEquals("Touch must be disabled", false, state1.objects["btn"]?.touchEnabled)
+
+        val enable = SerializedBlock(type = "sim_touch_enable", params = mapOf("name" to "btn"))
+        val script2 = Script(id = "s_t2", name = "T2", event = ScriptEvent.ON_START, blocks = listOf(create, disable, enable))
+        val state2 = SimEngine.run(scripts = listOf(script2), globalVarDefs = emptyList())
+        assertEquals("Touch must be re-enabled", true, state2.objects["btn"]?.touchEnabled)
+    }
+
+    @Test
+    fun testBlockReorderingIndexCalculation() {
+        // [B0, B1, B2, B3, B4] (total = 5)
+        fun calcNewIndex(currentIndex: Int, targetNum: Int, mode: String, totalBlocks: Int): Int {
+            val target0 = targetNum - 1
+            val newIndex = if (mode == "above") {
+                if (currentIndex > target0) target0 else target0 - 1
+            } else {
+                if (currentIndex > target0) target0 + 1 else target0
+            }
+            return newIndex.coerceIn(0, totalBlocks - 1)
+        }
+
+        // Переместить блок 4 (index 3) НАД блоком 1 (index 0) -> target = 0
+        assertEquals(0, calcNewIndex(currentIndex = 3, targetNum = 1, mode = "above", totalBlocks = 5))
+
+        // Переместить блок 1 (index 0) ПОД блок 5 (index 4) -> target = 4
+        assertEquals(4, calcNewIndex(currentIndex = 0, targetNum = 5, mode = "below", totalBlocks = 5))
+
+        // Переместить блок 4 (index 3) ПОД блок 2 (index 1) -> target = 2
+        assertEquals(2, calcNewIndex(currentIndex = 3, targetNum = 2, mode = "below", totalBlocks = 5))
+
+        // Переместить блок 2 (index 1) НАД блоком 4 (index 3) -> target = 2
+        assertEquals(2, calcNewIndex(currentIndex = 1, targetNum = 4, mode = "above", totalBlocks = 5))
+    }
 }

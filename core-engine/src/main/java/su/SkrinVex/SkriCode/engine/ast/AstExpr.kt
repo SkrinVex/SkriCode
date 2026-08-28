@@ -143,6 +143,36 @@ data class BuiltinFunc(val name: String, val args: List<AstExpr>) : AstExpr {
 
     override fun evalDouble(vars: Map<String, String>, scope: ExprScope): Double? {
         return when (name) {
+            "add" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                a + b
+            }
+            "sub" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                a - b
+            }
+            "mul" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                a * b
+            }
+            "div" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                if (b == 0.0) 0.0 else a / b
+            }
+            "mod" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                if (b == 0.0) 0.0 else a % b
+            }
+            "pow" -> {
+                val a = args.getOrNull(0)?.evalDouble(vars, scope) ?: return null
+                val b = args.getOrNull(1)?.evalDouble(vars, scope) ?: return null
+                Math.pow(a, b)
+            }
             "rand" -> {
                 val a = args.getOrNull(0)?.evalDouble(vars, scope)?.toInt() ?: 0
                 val b = args.getOrNull(1)?.evalDouble(vars, scope)?.toInt() ?: 100

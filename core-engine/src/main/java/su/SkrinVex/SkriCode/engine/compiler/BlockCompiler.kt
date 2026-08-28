@@ -10,7 +10,27 @@ object BlockCompiler {
     fun compile(blocks: List<BlockDef>): List<CompiledBlock> {
         val result = mutableListOf<CompiledBlock>()
         val controlStack = java.util.ArrayDeque<ControlFrame>()
+        compileInternal(blocks, result, controlStack)
 
+        // Закрываем незакрытые кадры если были синтаксические ошибки
+        while (controlStack.isNotEmpty()) {
+            when (val frame = controlStack.pop()) {
+                is ControlFrame.IfFrame -> (result[frame.jumpIfFalsePc] as? CompiledBlock.JumpIfFalse)?.targetPc = result.size
+                is ControlFrame.ElseFrame -> (result[frame.jumpToEndPc] as? CompiledBlock.Jump)?.targetPc = result.size
+                is ControlFrame.ForFrame -> (result[frame.startPc] as? CompiledBlock.ForLoopStart)?.endPc = result.size
+                is ControlFrame.WhileFrame -> (result[frame.startPc] as? CompiledBlock.WhileLoopStart)?.endPc = result.size
+                is ControlFrame.WaitLoopFrame -> (result[frame.startPc] as? CompiledBlock.WaitLoopStart)?.endPc = result.size
+            }
+        }
+
+        return result
+    }
+
+    private fun compileInternal(
+        blocks: List<BlockDef>,
+        result: MutableList<CompiledBlock>,
+        controlStack: java.util.ArrayDeque<ControlFrame>
+    ) {
         var i = 0
         while (i < blocks.size) {
             val b = blocks[i]
@@ -99,31 +119,73 @@ object BlockCompiler {
                         yExpr = expr("y", "\$screenBottom + 300"),
                         baseRadius = p("baseRadius", "100").toFloatOrNull() ?: 100f,
                         knobRadius = p("knobRadius", "40").toFloatOrNull() ?: 40f,
-                        baseColor = parseColorSafe(p("baseColor"), Color(0xFF334466)),
-                        knobColor = parseColorSafe(p("knobColor"), Color(0xFF4F8EF7)),
+                        baseColor = parseColorSafe(p("baseColor"), Color(0x55000000)),
+                        knobColor = parseColorSafe(p("knobColor"), Color(0xAAFFFFFF)),
                         target = p("target"),
-                        speed = p("speed", "8").toFloatOrNull() ?: 8f,
+                        speed = p("speed", "200").toFloatOrNull() ?: 200f,
                         directional = p("directional") == "true"
                     )
                 }
 
                 "sim_modify" -> {
-                    val childProps = b.children["props"].orEmpty().mapNotNull { propBlock ->
-                        val propKey = propBlock.params["prop"]?.value?.trim() ?: return@mapNotNull null
-                        val propVal = propBlock.params["value"]?.value ?: ""
-                        if (propKey.isNotBlank()) propKey to ExprCompiler.compile(propVal) else null
+                    val targetExpr = expr("name", altKey = "target")
+                    val props = mutableListOf<Pair<String, su.SkrinVex.SkriCode.engine.ast.AstExpr>>()
+                    val propList = b.children["props"].orEmpty()
+                    for (pb in propList) {
+                        val propName = pb.params["prop"]?.value ?: continue
+                        val propExpr = ExprCompiler.compile(pb.params["value"]?.value ?: "")
+                        props += Pair(propName, propExpr)
                     }
-                    result += CompiledBlock.SimModify(expr("name"), childProps)
+                    result += CompiledBlock.SimModify(targetExpr, props)
                 }
 
-                "sim_layer" -> result += CompiledBlock.SimLayer(expr("name"), expr("layer", "0"))
+                "sim_physics" -> result += CompiledBlock.SimPhysics(
+                    targetExpr = expr("name", altKey = "target"),
+                    isStatic = p("isStatic") == "true",
+                    gravityExpr = expr("gravity", "-9.8"),
+                    bouncinessExpr = expr("bounciness", "0.0"),
+                    massExpr = expr("mass", "1.0"),
+                    vxExpr = expr("vx", "0.0"),
+                    vyExpr = expr("vy", "0.0")
+                )
+
+                "physics_impulse" -> result += CompiledBlock.PhysicsImpulse(
+                    targetExpr = expr("name", altKey = "target"),
+                    vxExpr = expr("vx", "0.0"),
+                    vyExpr = expr("vy", "0.0")
+                )
+
+                "physics_move" -> result += CompiledBlock.PhysicsMove(
+                    targetExpr = expr("name", altKey = "target"),
+                    speedExpr = expr("speed", "0.0"),
+                    turnExpr = expr("turn", "0.0"),
+                    frictionExpr = expr("friction", "0.9")
+                )
+
+                "sim_hitbox" -> result += CompiledBlock.SimHitbox(
+                    targetExpr = expr("name", altKey = "target"),
+                    type = p("type", "auto"),
+                    pointsExpr = expr("points")
+                )
+
+                "sim_layer" -> result += CompiledBlock.SimLayer(
+                    targetExpr = expr("name", altKey = "target"),
+                    layerExpr = expr("layer", "0")
+                )
+
+                "sim_no_collision" -> result += CompiledBlock.SimNoCollision(
+                    targetExpr = expr("name", altKey = "target"),
+                    ignoreExpr = expr("ignore")
+                )
+
+                "physics_toggle" -> result += CompiledBlock.PhysicsToggle(expr("enabled", "true"))
 
                 "set_texture" -> result += CompiledBlock.SetTexture(
                     targetExpr = expr("name", altKey = "target"),
                     spriteExpr = expr("sprite"),
+                    alphaExpr = expr("alpha", "1.0"),
                     scaleXExpr = expr("scaleX", "1.0"),
                     scaleYExpr = expr("scaleY", "1.0"),
-                    alphaExpr = expr("alpha", "1.0"),
                     cropXExpr = expr("cropX", "0"),
                     cropYExpr = expr("cropY", "0"),
                     cropWExpr = expr("cropW", "0"),
@@ -164,7 +226,7 @@ object BlockCompiler {
                 )
 
                 "particle_emitter" -> result += CompiledBlock.ParticleEmitterCreate(
-                    name = p("name", "fire1"),
+                    name = p("name", "emitter1"),
                     targetExpr = expr("target"),
                     xExpr = expr("x", "0"),
                     yExpr = expr("y", "0"),
@@ -179,38 +241,17 @@ object BlockCompiler {
                     gravityExpr = expr("gravity", "50")
                 )
 
-                "particle_emitter_stop" -> result += CompiledBlock.ParticleEmitterStop(p("name", "fire1"))
+                "particle_emitter_stop" -> result += CompiledBlock.ParticleEmitterStop(p("name", "emitter1"))
 
-                "screen_shake" -> result += CompiledBlock.ScreenShake(expr("intensity", "15"), expr("duration", "0.3"))
-                "screen_flash" -> result += CompiledBlock.ScreenFlash(expr("color", "#FFFFFF"), expr("duration", "0.2"))
+                "screen_shake" -> result += CompiledBlock.ScreenShake(
+                    intensityExpr = expr("intensity", "10"),
+                    durationExpr = expr("duration", "0.3")
+                )
+                "screen_flash" -> result += CompiledBlock.ScreenFlash(
+                    colorExpr = expr("color", "#FFFFFF"),
+                    durationExpr = expr("duration", "0.2")
+                )
                 "camera_bounds" -> result += CompiledBlock.CameraBounds(expr("minX", "-1000"), expr("maxX", "1000"), expr("minY", "-1000"), expr("maxY", "1000"))
-
-                "sim_physics" -> result += CompiledBlock.SimPhysics(
-                    targetExpr = expr("name"),
-                    gravityExpr = expr("gravity", "-9.8"),
-                    isStatic = p("static") == "true",
-                    bouncinessExpr = expr("bounciness", "0"),
-                    massExpr = expr("mass", "1"),
-                    vxExpr = expr("vx", "0"),
-                    vyExpr = expr("vy", "0")
-                )
-
-                "physics_impulse" -> result += CompiledBlock.PhysicsImpulse(
-                    targetExpr = expr("name"),
-                    vxExpr = expr("vx", "0"),
-                    vyExpr = expr("vy", "500")
-                )
-
-                "physics_move" -> result += CompiledBlock.PhysicsMove(
-                    targetExpr = expr("name"),
-                    speedExpr = expr("speed", "0"),
-                    turnExpr = expr("turn", "0"),
-                    frictionExpr = expr("friction", "0.9")
-                )
-
-                "sim_hitbox" -> result += CompiledBlock.SimHitbox(expr("name"), p("type", "auto"), expr("points"))
-                "sim_no_collision" -> result += CompiledBlock.SimNoCollision(expr("name"), expr("ignore"))
-                "physics_toggle" -> result += CompiledBlock.PhysicsToggle(expr("enabled", "true"))
 
                 "sim_camera" -> result += CompiledBlock.SimCameraBlock(
                     name = p("name", "cam1"),
@@ -231,7 +272,7 @@ object BlockCompiler {
 
                 "sound_play" -> result += CompiledBlock.SoundPlay(expr("sound"), expr("volume", "1.0"), expr("loop", "false"), expr("rate", "1.0"))
                 "sound_stop" -> result += CompiledBlock.SoundStop(expr("sound"))
-                "music_play" -> result += CompiledBlock.MusicPlay(expr("sound"), expr("volume", "1.0"), expr("loop", "true"))
+                "music_play" -> result += CompiledBlock.MusicPlay(expr("music", altKey = "sound"), expr("volume", "1.0"), expr("loop", "true"))
                 "music_pause" -> result += CompiledBlock.MusicPause
                 "music_resume" -> result += CompiledBlock.MusicResume
                 "music_stop" -> result += CompiledBlock.MusicStop
@@ -311,23 +352,30 @@ object BlockCompiler {
                 }
 
                 "wait_open" -> {
-                    // Ищем парный wait_close и рекурсивно компилируем тело
-                    val subList = mutableListOf<BlockDef>()
-                    var depth = 1
-                    var k = i + 1
-                    while (k < blocks.size && depth > 0) {
-                        val cb = blocks[k]
-                        if (cb.type == "wait_open") depth++
-                        else if (cb.type == "wait_close") {
-                            depth--
-                            if (depth == 0) break
-                        }
-                        subList.add(cb)
-                        k++
+                    val countStr = p("count", "1").trim()
+                    val countNum = countStr.toDoubleOrNull()
+                    val isSingleDelay = countNum == 1.0 || (countStr.isEmpty() && b.params["count"] == null)
+                    val secExpr = expr("seconds", "1")
+                    val countExpr = expr("count", "1")
+
+                    if (isSingleDelay) {
+                        result += CompiledBlock.WaitDelay(secExpr)
+                    } else {
+                        val loopId = "wait_${result.size}"
+                        val start = CompiledBlock.WaitLoopStart(secExpr, countExpr, loopId, endPc = -1)
+                        val pc = result.size
+                        result += start
+                        controlStack.push(ControlFrame.WaitLoopFrame(startPc = pc, loopId = loopId))
                     }
-                    val compiledSub = compile(subList)
-                    result += CompiledBlock.WaitTimer(expr("seconds", "1"), expr("count", "1"), compiledSub)
-                    i = k // пропускаем обработанные блоки
+                }
+
+                "wait_close" -> {
+                    if (controlStack.isNotEmpty() && controlStack.peek() is ControlFrame.WaitLoopFrame) {
+                        val frame = controlStack.pop() as ControlFrame.WaitLoopFrame
+                        val end = CompiledBlock.WaitLoopEnd(frame.loopId, startPc = frame.startPc)
+                        result += end
+                        (result[frame.startPc] as? CompiledBlock.WaitLoopStart)?.endPc = result.size
+                    }
                 }
 
                 // Legacy-блоки с вложенными children
@@ -336,18 +384,16 @@ object BlockCompiler {
                     val thenBlocks = b.children["then"].orEmpty()
                     val elseBlocks = b.children["else"].orEmpty()
 
-                    val compiledThen = compile(thenBlocks)
-                    val compiledElse = compile(elseBlocks)
-
                     val jumpIfFalse = CompiledBlock.JumpIfFalse(cond, targetPc = -1)
                     result += jumpIfFalse
 
-                    result.addAll(compiledThen)
-                    if (compiledElse.isNotEmpty()) {
+                    compileInternal(thenBlocks, result, controlStack)
+
+                    if (elseBlocks.isNotEmpty()) {
                         val jumpToEnd = CompiledBlock.Jump(targetPc = -1)
                         result += jumpToEnd
                         jumpIfFalse.targetPc = result.size
-                        result.addAll(compiledElse)
+                        compileInternal(elseBlocks, result, controlStack)
                         jumpToEnd.targetPc = result.size
                     } else {
                         jumpIfFalse.targetPc = result.size
@@ -355,48 +401,34 @@ object BlockCompiler {
                 }
 
                 "for_loop" -> {
-                    val sub = compile(b.children["body"].orEmpty())
-                    val loopId = "for_leg_${result.size}"
+                    val loopId = "for_${result.size}"
+                    val startPc = result.size
                     val start = CompiledBlock.ForLoopStart(expr("count", "1"), loopId, endPc = -1)
-                    val pc = result.size
                     result += start
-                    result.addAll(sub)
-                    val end = CompiledBlock.ForLoopEnd(loopId, startPc = pc)
-                    result += end
+                    compileInternal(b.children["body"].orEmpty(), result, controlStack)
+                    result += CompiledBlock.ForLoopEnd(loopId, startPc = startPc)
                     start.endPc = result.size
                 }
 
                 "while_loop" -> {
-                    val sub = compile(b.children["body"].orEmpty())
                     val cond = ExprCompiler.compileCondition(p("left"), p("op", "<="), p("right", "10"))
+                    val startPc = result.size
                     val start = CompiledBlock.WhileLoopStart(cond, endPc = -1)
-                    val pc = result.size
                     result += start
-                    result.addAll(sub)
-                    val end = CompiledBlock.WhileLoopEnd(startPc = pc)
-                    result += end
+                    compileInternal(b.children["body"].orEmpty(), result, controlStack)
+                    result += CompiledBlock.WhileLoopEnd(startPc = startPc)
                     start.endPc = result.size
                 }
 
                 "wait" -> {
-                    val sub = compile(b.children["body"].orEmpty())
+                    val sub = mutableListOf<CompiledBlock>()
+                    val subStack = java.util.ArrayDeque<ControlFrame>()
+                    compileInternal(b.children["body"].orEmpty(), sub, subStack)
                     result += CompiledBlock.WaitTimer(expr("seconds", "1"), expr("count", "1"), sub)
                 }
             }
             i++
         }
-
-        // Закрываем незакрытые кадры если были синтаксические ошибки
-        while (controlStack.isNotEmpty()) {
-            when (val frame = controlStack.pop()) {
-                is ControlFrame.IfFrame -> (result[frame.jumpIfFalsePc] as? CompiledBlock.JumpIfFalse)?.targetPc = result.size
-                is ControlFrame.ElseFrame -> (result[frame.jumpToEndPc] as? CompiledBlock.Jump)?.targetPc = result.size
-                is ControlFrame.ForFrame -> (result[frame.startPc] as? CompiledBlock.ForLoopStart)?.endPc = result.size
-                is ControlFrame.WhileFrame -> (result[frame.startPc] as? CompiledBlock.WhileLoopStart)?.endPc = result.size
-            }
-        }
-
-        return result
     }
 
     private sealed interface ControlFrame {
@@ -404,5 +436,6 @@ object BlockCompiler {
         data class ElseFrame(val jumpToEndPc: Int) : ControlFrame
         data class ForFrame(val startPc: Int, val loopId: String) : ControlFrame
         data class WhileFrame(val startPc: Int) : ControlFrame
+        data class WaitLoopFrame(val startPc: Int, val loopId: String) : ControlFrame
     }
 }

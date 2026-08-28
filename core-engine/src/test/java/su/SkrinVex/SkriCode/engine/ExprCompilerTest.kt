@@ -66,5 +66,28 @@ class ExprCompilerTest {
         // Vlen
         val vlenAst = ExprCompiler.compile("\$vlen(6, 8)")
         assertEquals(10.0, vlenAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        // Add, Sub, Mul, Div, Mod, Pow
+        assertEquals(30.0, ExprCompiler.compile("\$add(10, 20)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+        assertEquals(15.0, ExprCompiler.compile("\$sub(25, 10)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+        assertEquals(50.0, ExprCompiler.compile("\$mul(5, 10)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+        assertEquals(4.0, ExprCompiler.compile("\$div(20, 5)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+        assertEquals(2.0, ExprCompiler.compile("\$mod(17, 5)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+        assertEquals(8.0, ExprCompiler.compile("\$pow(2, 3)").evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+    }
+
+    @Test
+    fun testScreenConstantsDivisionAndInterpolation() {
+        ExprEval.updateDeviceResolution(1080f, 2400f)
+        ExprEval.setOrientation(su.SkrinVex.SkriCode.data.ProjectOrientation.LANDSCAPE)
+
+        val heightDivAst = ExprCompiler.compile("\$screenHeight / 30")
+        assertEquals(36.0, heightDivAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        val widthAst = ExprCompiler.compile("\$screenWidth")
+        assertEquals(2400.0, widthAst.evalDouble(emptyMap(), ExprEval.fallbackScope)!!, 0.001)
+
+        val textAst = ExprCompiler.compile("Width is \$screenWidth and height is \$screenHeight")
+        assertEquals("Width is 2400 and height is 1080", textAst.evalString(emptyMap(), ExprEval.fallbackScope))
     }
 }

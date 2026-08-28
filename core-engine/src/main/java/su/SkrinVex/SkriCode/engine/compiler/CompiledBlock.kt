@@ -156,6 +156,9 @@ sealed interface CompiledBlock {
     data class WhileLoopStart(val condition: ConditionExpr, var endPc: Int) : CompiledBlock
     data class WhileLoopEnd(val startPc: Int) : CompiledBlock
     data class WaitTimer(val secondsExpr: AstExpr, val countExpr: AstExpr, val innerBlocks: List<CompiledBlock>) : CompiledBlock
+    data class WaitDelay(val secondsExpr: AstExpr) : CompiledBlock
+    data class WaitLoopStart(val secondsExpr: AstExpr, val countExpr: AstExpr, val loopId: String, var endPc: Int) : CompiledBlock
+    data class WaitLoopEnd(val loopId: String, val startPc: Int) : CompiledBlock
 
     data class SceneSwitch(val sceneExpr: AstExpr) : CompiledBlock
     object SimStop : CompiledBlock

@@ -525,6 +525,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val state = _state.value
         val errors = validate(state)
         if (errors.isNotEmpty()) { _state.update { it.copy(validationErrors = errors) }; return }
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(state.orientation)
         SimEngine.projectName = state.projectName
         SimEngine.soundManager = soundManager
         val initial = SimState(sprites = state.sprites, projectId = projectId)
@@ -898,6 +899,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         stopPhysics()
+        su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(s.orientation)
         isSimulationRunning = true
         val updatedGlobalVarDefs = s.globalVars.map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
