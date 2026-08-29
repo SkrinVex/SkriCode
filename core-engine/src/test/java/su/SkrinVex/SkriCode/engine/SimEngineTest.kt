@@ -4,7 +4,9 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import su.SkrinVex.SkriCode.data.ProjectVar
 import su.SkrinVex.SkriCode.data.Script
 import su.SkrinVex.SkriCode.data.ScriptEvent
 import su.SkrinVex.SkriCode.data.SerializedBlock
@@ -750,5 +752,89 @@ class SimEngineTest {
         val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
 
         assertEquals("3", state.globalVars["i"])
+    }
+
+    @Test
+    fun testTextInputVariableSyncOnTap() = runBlocking {
+        val inputObj = SimObject(
+            name = "input1",
+            x = 0f, y = 0f, width = 200f, height = 48f, radius = 8f,
+            color = Color.DarkGray,
+            label = "HelloWorld123",
+            isTextInput = true,
+            targetVar = "text"
+        )
+        val btnObj = SimObject(
+            name = "btn1",
+            x = 0f, y = -100f, width = 100f, height = 40f, radius = 8f,
+            color = Color.Blue,
+            tapScriptId = "tap_btn"
+        )
+        val textCreateBlock = SerializedBlock(
+            type = "sim_text",
+            params = mapOf(
+                "name" to "result_txt",
+                "text" to "{text}",
+                "x" to "0",
+                "y" to "100"
+            )
+        )
+        val tapScript = Script(
+            id = "tap_btn",
+            name = "TapScript",
+            event = ScriptEvent.ON_TAP,
+            eventTarget = "btn1",
+            blocks = listOf(textCreateBlock)
+        )
+        val initialState = SimState(
+            objects = mapOf("input1" to inputObj, "btn1" to btnObj),
+            globalVars = mapOf("text" to "0") // Default before typing
+        )
+
+        val afterTapState = SimEngine.runTap("tap_btn", listOf(tapScript), initialState)
+        val createdText = afterTapState.objects["result_txt"]
+        assertNotNull("result_txt must be created", createdText)
+        assertEquals("HelloWorld123", createdText!!.label)
+        assertEquals("HelloWorld123", afterTapState.globalVars["text"])
+    }
+
+    @Test
+    fun testSimClearFocusExecution() = runBlocking {
+        val clearFocusBlock = SerializedBlock(type = "sim_clear_focus")
+        val script = Script(
+            id = "s_focus",
+            name = "ClearFocusScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(clearFocusBlock)
+        )
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList<ProjectVar>())
+        assertTrue("clearFocusTrigger must be incremented", state.clearFocusTrigger > 0L)
+        assertTrue(state.log.any { it.contains("Снят фокус") })
+    }
+
+    @Test
+    fun testMultilineTextInputCreation() = runBlocking {
+        val inputBlock = SerializedBlock(
+            type = "sim_text_input",
+            params = mapOf(
+                "name" to "bio_input",
+                "text" to "Line 1\nLine 2",
+                "multiline" to "true",
+                "var" to "bio_var"
+            )
+        )
+        val script = Script(
+            id = "s_multi",
+            name = "MultiInputScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(inputBlock)
+        )
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList<ProjectVar>())
+        val obj = state.objects["bio_input"]
+        assertNotNull(obj)
+        assertEquals(true, obj!!.multiline)
+        assertEquals(true, obj.isTextInput)
+        assertEquals("button", obj.inputTrigger)
+        assertEquals("Line 1\nLine 2", state.globalVars["bio_var"])
     }
 }

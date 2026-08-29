@@ -119,7 +119,8 @@ class RuntimeActivity : ComponentActivity() {
                         onBack = { finishAffinity() },
                         onClearLogs = { vm.clearLogs() },
                         debugMode = false,
-                        showHitboxes = false
+                        showHitboxes = false,
+                        onTextInputSubmit = { objName, text -> vm.handleTextInputSubmit(objName, text) }
                     )
                 }
             }

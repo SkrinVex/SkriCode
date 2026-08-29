@@ -7,6 +7,7 @@ import su.SkrinVex.SkriCode.block.BlockDef
 import su.SkrinVex.SkriCode.block.BlockParam
 import su.SkrinVex.SkriCode.engine.compiler.BlockCompiler
 import su.SkrinVex.SkriCode.engine.compiler.CompiledBlock
+import su.SkrinVex.SkriCode.engine.ast.ExprCompiler
 
 class BlockCompilerTest {
 
@@ -113,5 +114,115 @@ class BlockCompilerTest {
 
         val bg = compiled[2] as CompiledBlock.SimBgColor
         assertEquals("#1E293B", bg.colorExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+    }
+
+    @Test
+    fun testCompileButtonAndTextInput() {
+        val blocks = listOf(
+            BlockDef("1", "sim_button", "Кнопка", params = mapOf(
+                "name" to BlockParam("btn_start", "name"),
+                "text" to BlockParam("Старт игры", "text"),
+                "x" to BlockParam("10", "x"),
+                "y" to BlockParam("20", "y"),
+                "width" to BlockParam("180", "width"),
+                "height" to BlockParam("60", "height"),
+                "radius" to BlockParam("12", "radius"),
+                "color" to BlockParam("#4F8EF7", "color"),
+                "textColor" to BlockParam("#FFFFFF", "textColor"),
+                "size" to BlockParam("18", "size"),
+                "bold" to BlockParam("true", "bold")
+            )),
+            BlockDef("2", "sim_text_input", "Поле ввода", params = mapOf(
+                "name" to BlockParam("input_name", "name"),
+                "placeholder" to BlockParam("Ваше имя", "placeholder"),
+                "text" to BlockParam("Player 1", "text"),
+                "var" to BlockParam("user_name", "var"),
+                "x" to BlockParam("0", "x"),
+                "y" to BlockParam("50", "y"),
+                "trigger" to BlockParam("button", "trigger"),
+                "button" to BlockParam("btn_start", "button")
+            ))
+        )
+
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(2, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SimButton)
+        assertTrue(compiled[1] is CompiledBlock.SimTextInput)
+
+        val btn = compiled[0] as CompiledBlock.SimButton
+        assertEquals("btn_start", btn.nameExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("Старт игры", btn.textExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertTrue(btn.bold)
+
+        val inp = compiled[1] as CompiledBlock.SimTextInput
+        assertEquals("input_name", inp.nameExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("Ваше имя", inp.placeholderExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("Player 1", inp.initialTextExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("user_name", inp.targetVar)
+        assertEquals(false, inp.multiline)
+        assertEquals("button", inp.trigger)
+        assertEquals("btn_start", inp.buttonTargetExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+    }
+
+    @Test
+    fun testFieldValExpression() {
+        val testObject = SimObject(
+            name = "my_field",
+            x = 0f, y = 0f, width = 100f, height = 40f, radius = 4f,
+            color = androidx.compose.ui.graphics.Color.Black,
+            label = "Entered Secret Text",
+            isTextInput = true
+        )
+        val scope = ExprScope(
+            objects = mapOf("my_field" to testObject)
+        )
+        val expr = ExprCompiler.compile("\$fieldVal(my_field)")
+        val evaluated = expr.evalString(emptyMap<String, String>(), scope)
+        assertEquals("Entered Secret Text", evaluated)
+    }
+
+    @Test
+    fun testVarRefStringInterpolation() {
+        val expr = ExprCompiler.compile("{text}")
+        // Missing variable should evaluate to empty string, not "0"
+        assertEquals("", expr.evalString(emptyMap(), ExprEval.fallbackScope))
+
+        // Existing string variable
+        val vars = mapOf("text" to "Привет")
+        assertEquals("Привет", expr.evalString(vars, ExprEval.fallbackScope))
+
+        // Template interpolation
+        val templateExpr = ExprCompiler.compile("Введено: {text}!")
+        assertEquals("Введено: Привет!", templateExpr.evalString(vars, ExprEval.fallbackScope))
+    }
+
+    @Test
+    fun testCompileClearFocus() {
+        val blocks = listOf(
+            BlockDef("cf1", "sim_clear_focus", "Снять фокус")
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertEquals(CompiledBlock.SimClearFocus, compiled[0])
+    }
+
+    @Test
+    fun testCompileMultilineTextInput() {
+        val blocks = listOf(
+            BlockDef("mt1", "sim_text_input", "Поле ввода", params = mapOf(
+                "name" to BlockParam("multi_inp", "name"),
+                "placeholder" to BlockParam("Длинный текст...", "placeholder"),
+                "multiline" to BlockParam("true", "multiline"),
+                "var" to BlockParam("user_bio", "var")
+            ))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SimTextInput)
+        val inp = compiled[0] as CompiledBlock.SimTextInput
+        assertEquals("multi_inp", inp.nameExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals(true, inp.multiline)
+        assertEquals("button", inp.trigger)
+        assertEquals(90f, inp.heightExpr.evalFloat(emptyMap(), ExprEval.fallbackScope, 0f))
     }
 }

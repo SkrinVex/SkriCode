@@ -81,6 +81,43 @@ object BlockCompiler {
                     alphaExpr = expr("alpha", "1.0")
                 )
 
+                "sim_button" -> result += CompiledBlock.SimButton(
+                    nameExpr = expr("name"),
+                    textExpr = expr("text"),
+                    xExpr = expr("x", "0"),
+                    yExpr = expr("y", "0"),
+                    widthExpr = expr("width", "160"),
+                    heightExpr = expr("height", "50"),
+                    radiusExpr = expr("radius", "8"),
+                    colorExpr = expr("color", "#4F8EF7"),
+                    textColorExpr = expr("textColor", "#FFFFFF"),
+                    sizeExpr = expr("size", "16"),
+                    bold = p("bold") == "true"
+                )
+
+                "sim_text_input" -> {
+                    val isMulti = p("multiline") == "true"
+                    result += CompiledBlock.SimTextInput(
+                        nameExpr = expr("name"),
+                        placeholderExpr = expr("placeholder", "Введите текст..."),
+                        initialTextExpr = expr("text", ""),
+                        targetVar = p("var", "user_text").removePrefix("{").removeSuffix("}").trim(),
+                        multiline = isMulti,
+                        xExpr = expr("x", "0"),
+                        yExpr = expr("y", "0"),
+                        widthExpr = expr("width", "260"),
+                        heightExpr = expr("height", if (isMulti) "90" else "52"),
+                        radiusExpr = expr("radius", "8"),
+                        colorExpr = expr("color", "#1E293B"),
+                        textColorExpr = expr("textColor", "#FFFFFF"),
+                        sizeExpr = expr("size", "15"),
+                        trigger = if (isMulti) "button" else p("trigger", "keyboard"),
+                        buttonTargetExpr = expr("button", "")
+                    )
+                }
+
+                "sim_clear_focus" -> result += CompiledBlock.SimClearFocus
+
                 "sim_move" -> result += CompiledBlock.SimMove(
                     targetExpr = expr("name"),
                     mode = p("mode", "instant"),

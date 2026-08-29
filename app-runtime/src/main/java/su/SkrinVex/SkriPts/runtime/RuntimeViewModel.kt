@@ -223,16 +223,50 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun handleTextInputSubmit(objectName: String, text: String) {
+        val sim = _simState.value ?: return
+        val obj = sim.objects[objectName] ?: return
+        val newObj = obj.copy(label = text)
+        var newGlobalVars = sim.globalVars
+        if (obj.isTextInput && obj.targetVar.isNotBlank()) {
+            newGlobalVars = newGlobalVars + (obj.targetVar to text)
+        }
+        _simState.value = sim.copy(
+            objects = sim.objects + (objectName to newObj),
+            globalVars = newGlobalVars
+        )
+    }
+
     fun handleTap(name: String) {
-        val obj = _simState.value?.objects?.get(name)
+        val cur = _simState.value ?: return
+        val obj = cur.objects[name]
         if (obj?.touchEnabled == false) return
+
+        // Синхронизируем все текстовые поля с их переменными перед запуском скрипта тапа
+        var updatedVars = cur.globalVars
+        val newLog = cur.log.toMutableList()
+        cur.objects.values.filter { it.isTextInput }.forEach { inputObj ->
+            val cleanVar = inputObj.targetVar.removePrefix("{").removeSuffix("}").trim()
+            if (cleanVar.isNotBlank()) {
+                updatedVars = updatedVars + (cleanVar to inputObj.label)
+                if (inputObj.inputTrigger == "button" && (
+                    inputObj.inputButton == name ||
+                    (inputObj.inputButton.startsWith("#") && inputObj.inputButton.substring(1) in (obj?.tags ?: emptySet()))
+                )) {
+                    newLog += "Ввод «${inputObj.name}»: \"${inputObj.label}\" -> {$cleanVar}"
+                }
+            }
+        }
+        val currentSimState = cur.copy(globalVars = updatedVars, log = newLog)
+        _simState.value = currentSimState
+
         val scriptId = obj?.tapScriptId ?: return
         _runningTapJobs[name]?.cancel()
         val job = viewModelScope.launch {
-            val cur = _simState.value ?: return@launch
-            val res = SimEngine.runTap(scriptId, _scripts, cur,
+            val liveSim = _simState.value ?: currentSimState
+            val res = SimEngine.runTap(scriptId, _scripts, liveSim,
                 onUpdate = { live -> _simState.value = live },
-                getLatestState = { _simState.value ?: cur }
+                getLatestState = { _simState.value ?: liveSim }
             )
             val next = res.pendingSceneSwitch
             if (next != null) { switchScene(next, res.globalVars); return@launch }

@@ -33,16 +33,16 @@ data class LiteralString(val value: String) : AstExpr {
 
 data class VarRef(val varName: String) : AstExpr {
     override fun evalFast(vars: Map<String, String>, scope: ExprScope): Any {
-        val v = vars[varName] ?: if (varName in ExprEval.SYSTEM_VARS) "" else "0"
+        val v = vars[varName] ?: ""
         return v.toDoubleOrNull() ?: v
     }
 
     override fun evalString(vars: Map<String, String>, scope: ExprScope): String {
-        return vars[varName] ?: if (varName in ExprEval.SYSTEM_VARS) "" else "0"
+        return vars[varName] ?: ""
     }
 
     override fun evalDouble(vars: Map<String, String>, scope: ExprScope): Double? {
-        val v = vars[varName] ?: if (varName in ExprEval.SYSTEM_VARS) "" else "0"
+        val v = vars[varName] ?: return null
         return v.toDoubleOrNull()
     }
 }
@@ -300,6 +300,11 @@ data class BuiltinFunc(val name: String, val args: List<AstExpr>) : AstExpr {
                 val ctx = ExprEval.appContext
                 val exists = if (ctx != null) SaveCrypto.hasKey(ctx, key) else false
                 exists.toString()
+            }
+            "fieldVal", "inputVal" -> {
+                val objName = args.firstOrNull()?.evalString(vars, scope)?.trim() ?: return ""
+                val obj = scope.objects[objName] ?: return ""
+                obj.label
             }
             else -> ""
         }

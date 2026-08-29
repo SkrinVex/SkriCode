@@ -244,6 +244,43 @@ fun PositionPickerScreen(
                         }
                     )
                 }
+                "sim_button" -> {
+                    // Кнопка: фон + текст
+                    drawRoundRect(color = objectColor, topLeft = Offset(left, top),
+                        size = Size(objectWidth, objectHeight), cornerRadius = cr)
+                    val textSize = (objectHeight * 0.38f).coerceIn(12f, 32f) * density
+                    drawContext.canvas.nativeCanvas.drawText(
+                        objectName,
+                        left + objectWidth / 2f,
+                        top + objectHeight / 2f + textSize / 3f,
+                        android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            this.textSize = textSize
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            isAntiAlias = true
+                            isFakeBoldText = true
+                        }
+                    )
+                }
+                "sim_text_input" -> {
+                    // Текстовое поле ввода: фон + рамка + подсказка
+                    drawRoundRect(color = objectColor, topLeft = Offset(left, top),
+                        size = Size(objectWidth, objectHeight), cornerRadius = cr)
+                    drawRoundRect(color = Color(0xFF818CF8).copy(alpha = 0.8f), topLeft = Offset(left, top),
+                        size = Size(objectWidth, objectHeight), cornerRadius = cr, style = Stroke(1.5f))
+                    val textSize = (objectHeight * 0.35f).coerceIn(11f, 28f) * density
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "✎ $objectName",
+                        left + objectWidth / 2f,
+                        top + objectHeight / 2f + textSize / 3f,
+                        android.graphics.Paint().apply {
+                            color = android.graphics.Color.argb(180, 255, 255, 255)
+                            this.textSize = textSize
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            isAntiAlias = true
+                        }
+                    )
+                }
                 else -> {
                     // Обычный прямоугольник
                     if (objBitmap != null) {

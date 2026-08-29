@@ -850,7 +850,7 @@ internal fun BlockParamContent(
         val param = block.params[key] ?: return@forEach
         when {
             block.type == "set_var" && key == "name" ->
-                VarNameChip(value = param.value, label = param.label,
+                VarNameChip(value = param.value, label = param.label, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             block.type == "set_tag" && key == "tag" ->
                 TagNameChip(value = param.value, label = param.label,
@@ -862,14 +862,35 @@ internal fun BlockParamContent(
                 TableNameChip(value = param.value, label = param.label,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             (block.type == "table_get") && key == "var" ->
-                VarNameChip(value = param.value, label = param.label,
+                VarNameChip(value = param.value, label = param.label, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             (block.type == "save_table" || block.type == "load_table") && key == "table" ->
                 TableNameChip(value = param.value, label = param.label,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             block.type == "load_var" && key == "var" ->
-                VarNameChip(value = param.value, label = param.label,
+                VarNameChip(value = param.value, label = param.label, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "sim_text_input" && key == "var" ->
+                VarNameChip(value = param.value, label = param.label, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "sim_text_input" && key == "multiline" ->
+                BoolToggle(param = param, onChange = { onParamChange(key, it) })
+            block.type == "sim_text_input" && key == "trigger" -> {
+                if (block.params["multiline"]?.value == "true") {
+                    return@forEach
+                }
+                TriggerToggle(value = param.value, onChange = { onParamChange(key, it) })
+            }
+            block.type == "sim_text_input" && key == "button" -> {
+                val isMulti = block.params["multiline"]?.value == "true"
+                val isButtonTrigger = block.params["trigger"]?.value == "button"
+                if (isMulti || isButtonTrigger) {
+                    ObjectNameChip(param = param, variables = variables,
+                        onClick = { onOpenExpr(key, param.label, param.value, false) })
+                } else {
+                    return@forEach
+                }
+            }
             block.type == "scene_switch" && key == "scene" ->
                 SceneChip(param = param, sceneNames = sceneNames,
                     onChange = { onParamChange(key, it) })
@@ -1508,6 +1529,32 @@ internal fun RotateModeToggle(value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
+internal fun TriggerToggle(value: String, onChange: (String) -> Unit) {
+    Column {
+        Text("Триггер сохранения", color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Surface3)
+        ) {
+            listOf("keyboard" to "Клавиатура (Enter)", "button" to "По кнопке на сцене").forEach { (v, label) ->
+                val active = value == v
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) Accent.copy(0.2f) else Color.Transparent)
+                        .border(if (active) 1.dp else 0.dp, if (active) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                        .clickable { onChange(v) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = if (active) Accent else TextSec, fontSize = 12.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun BoolToggle(param: BlockParam, onChange: (String) -> Unit) {
     val isTrue = param.value == "true"
     Column {
@@ -2033,22 +2080,25 @@ internal fun ExprChip(param: BlockParam, variables: List<ProjectVar>, onClick: (
 }
 
 @Composable
-internal fun VarNameChip(value: String, label: String, onClick: () -> Unit) {
+internal fun VarNameChip(value: String, label: String, variables: List<ProjectVar> = emptyList(), onClick: () -> Unit) {
+    val clean = value.removePrefix("{").removeSuffix("}").trim()
+    val isVar = variables.any { it.name == clean } || clean.isNotBlank()
+
     Column {
         Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                 .background(Surface3)
-                .border(1.dp, Accent.copy(0.4f), RoundedCornerShape(8.dp))
+                .border(1.dp, if (isVar) Warning.copy(0.5f) else Accent.copy(0.4f), RoundedCornerShape(8.dp))
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.DataObject, null, tint = Accent, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.DataObject, null, tint = Warning, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-                value.ifBlank { "Нажми чтобы выбрать переменную" },
-                color = if (value.isBlank()) TextSec else TextPrim,
+                clean.ifBlank { "Нажми чтобы выбрать переменную" },
+                color = if (clean.isBlank()) TextSec else TextPrim,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
             Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
@@ -2293,6 +2343,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.PHYSICS    -> Color(0xFF22D3EE)
     BlockCategory.CAMERA     -> Color(0xFF4ADE80)
     BlockCategory.AUDIO      -> Color(0xFFE879F9)
+    BlockCategory.WIDGET     -> Color(0xFF818CF8)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -2307,6 +2358,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.PHYSICS    -> Icons.Default.Science
     BlockCategory.CAMERA     -> Icons.Default.Videocam
     BlockCategory.AUDIO      -> Icons.Default.MusicNote
+    BlockCategory.WIDGET     -> Icons.Default.SmartButton
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {

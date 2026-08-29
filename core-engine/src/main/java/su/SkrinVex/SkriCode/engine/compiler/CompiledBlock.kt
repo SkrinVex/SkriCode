@@ -35,6 +35,25 @@ sealed interface CompiledBlock {
         val tags: Set<String> = emptySet(), val zOrder: Int = 0
     ) : CompiledBlock
 
+    data class SimButton(
+        val nameExpr: AstExpr, val textExpr: AstExpr, val xExpr: AstExpr, val yExpr: AstExpr,
+        val widthExpr: AstExpr, val heightExpr: AstExpr, val radiusExpr: AstExpr,
+        val colorExpr: AstExpr, val textColorExpr: AstExpr, val sizeExpr: AstExpr,
+        val bold: Boolean, val tags: Set<String> = emptySet(), val zOrder: Int = 0
+    ) : CompiledBlock
+
+    data class SimTextInput(
+        val nameExpr: AstExpr, val placeholderExpr: AstExpr, val initialTextExpr: AstExpr,
+        val targetVar: String, val multiline: Boolean = false,
+        val xExpr: AstExpr, val yExpr: AstExpr,
+        val widthExpr: AstExpr, val heightExpr: AstExpr, val radiusExpr: AstExpr,
+        val colorExpr: AstExpr, val textColorExpr: AstExpr, val sizeExpr: AstExpr,
+        val trigger: String, val buttonTargetExpr: AstExpr,
+        val tags: Set<String> = emptySet(), val zOrder: Int = 0
+    ) : CompiledBlock
+
+    data object SimClearFocus : CompiledBlock
+
     data class SimMove(val targetExpr: AstExpr, val mode: String, val xExpr: AstExpr, val yExpr: AstExpr) : CompiledBlock
     data class SimResize(val targetExpr: AstExpr, val widthExpr: AstExpr, val heightExpr: AstExpr) : CompiledBlock
     data class SimColor(val targetExpr: AstExpr, val colorExpr: AstExpr) : CompiledBlock

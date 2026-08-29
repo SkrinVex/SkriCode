@@ -96,7 +96,8 @@ class MainActivity : ComponentActivity() {
                         onBack = { editorVm.stopPhysics(); landscapeActive = false; screen = "editor" },
                         onClearLogs = { editorVm.clearSimLogs() },
                         debugMode = ThemeManager.debugMode,
-                        showHitboxes = ThemeManager.showHitboxes
+                        showHitboxes = ThemeManager.showHitboxes,
+                        onTextInputSubmit = { objName, text -> editorVm.handleTextInputSubmit(objName, text) }
                     )
                     "editor" -> {
                         BackHandler { screen = "resources" }

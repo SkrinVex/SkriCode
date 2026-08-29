@@ -41,7 +41,7 @@ import su.SkrinVex.SkriCode.ui.theme.*
 import java.util.UUID
 import kotlin.math.roundToInt
 
-private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text", "sim_sprite")
+private val LOCATION_BLOCK_TYPES = listOf("sim_create", "sim_text", "sim_button", "sim_text_input", "sim_sprite")
 
 /**
  * Редактор локации — бесконечный холст с зумом.
@@ -758,6 +758,67 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlock(
                     paint
                 )
             }
+            if (isSelected) drawRoundRect(color = Color(0xFF00E5FF), topLeft = Offset(tl.x - 3f, tl.y - 3f), size = Size(bw + 6f, bh + 6f), cornerRadius = CornerRadius(br + 3f, br + 3f), style = Stroke(2.5f))
+        }
+        "sim_button" -> {
+            val bw = (b.params["width"]?.value?.toFloatOrNull() ?: 160f) * zoom
+            val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 50f) * zoom
+            val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f) * zoom
+            val tl = Offset(screenX - bw / 2f, screenY - bh / 2f)
+            drawRoundRect(color = bc.copy(alpha = alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+            val textColor = b.params["textColor"]?.value?.let { hex ->
+                runCatching { Color(0xFF000000 or hex.trim().trimStart('#').toLong(16)) }.getOrNull()
+            } ?: Color.White
+            val ts = ((b.params["size"]?.value?.toFloatOrNull() ?: 16f) * zoom).coerceIn(8f, 60f) * density
+            val rawText = b.params["text"]?.value ?: ""
+            val lines = rawText.replace("\\n", "\n").split("\n")
+            val lineSpacing = ts * 1.25f
+            val totalTextHeight = lines.size * lineSpacing
+            val startY = tl.y + (bh - totalTextHeight) / 2f + ts * 0.85f
+            val paint = android.graphics.Paint().apply {
+                color = android.graphics.Color.argb(
+                    (textColor.alpha * alpha * 255).toInt().coerceIn(0, 255),
+                    (textColor.red * 255).toInt(),
+                    (textColor.green * 255).toInt(),
+                    (textColor.blue * 255).toInt()
+                )
+                textSize = ts
+                textAlign = android.graphics.Paint.Align.CENTER
+                isAntiAlias = true
+                isFakeBoldText = b.params["bold"]?.value == "true"
+            }
+            lines.forEachIndexed { idx, line ->
+                drawContext.canvas.nativeCanvas.drawText(line, screenX, startY + idx * lineSpacing, paint)
+            }
+            if (isSelected) drawRoundRect(color = Color(0xFF00E5FF), topLeft = Offset(tl.x - 3f, tl.y - 3f), size = Size(bw + 6f, bh + 6f), cornerRadius = CornerRadius(br + 3f, br + 3f), style = Stroke(2.5f))
+        }
+        "sim_text_input" -> {
+            val bw = (b.params["width"]?.value?.toFloatOrNull() ?: 220f) * zoom
+            val bh = (b.params["height"]?.value?.toFloatOrNull() ?: 48f) * zoom
+            val br = (b.params["radius"]?.value?.toFloatOrNull() ?: 8f) * zoom
+            val tl = Offset(screenX - bw / 2f, screenY - bh / 2f)
+            drawRoundRect(color = bc.copy(alpha = alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br))
+            drawRoundRect(color = Color(0xFF818CF8).copy(alpha = 0.8f * alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1.5f))
+            val ts = ((b.params["size"]?.value?.toFloatOrNull() ?: 15f) * zoom).coerceIn(8f, 50f) * density
+            val rawText = b.params["text"]?.value?.ifBlank { null } ?: b.params["placeholder"]?.value ?: ""
+            val isPl = b.params["text"]?.value.isNullOrBlank()
+            val textColor = b.params["textColor"]?.value?.let { hex ->
+                runCatching { Color(0xFF000000 or hex.trim().trimStart('#').toLong(16)) }.getOrNull()
+            } ?: Color.White
+            val alphaMult = if (isPl) 0.5f else 1.0f
+            val startY = tl.y + bh / 2f + ts * 0.35f
+            val paint = android.graphics.Paint().apply {
+                color = android.graphics.Color.argb(
+                    (textColor.alpha * alpha * alphaMult * 255).toInt().coerceIn(0, 255),
+                    (textColor.red * 255).toInt(),
+                    (textColor.green * 255).toInt(),
+                    (textColor.blue * 255).toInt()
+                )
+                textSize = ts
+                textAlign = android.graphics.Paint.Align.CENTER
+                isAntiAlias = true
+            }
+            drawContext.canvas.nativeCanvas.drawText(rawText, screenX, startY, paint)
             if (isSelected) drawRoundRect(color = Color(0xFF00E5FF), topLeft = Offset(tl.x - 3f, tl.y - 3f), size = Size(bw + 6f, bh + 6f), cornerRadius = CornerRadius(br + 3f, br + 3f), style = Stroke(2.5f))
         }
         else -> {

@@ -490,6 +490,9 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         // Сохранения
         BuiltinFn("\$saveExists(ключ)", "Есть сохранение?", "true если сохранение с таким ключом существует", Icons.Default.Save, Color(0xFF22C55E)),
 
+        // Виджеты и поля ввода
+        BuiltinFn("\$fieldVal(input1)", "Текст поля ввода", "Возвращает текущий текст из текстового поля ввода input1", Icons.Default.EditNote, Color(0xFF818CF8)),
+
         // Коллизия
         BuiltinFn("{collision_self}",          "Я (инициатор)",            "Имя объекта которому принадлежит этот скрипт",   Icons.Default.Bolt, Color(0xFFFF6B6B)),
         BuiltinFn("{collision_other}",         "Другой объект",            "Имя объекта с которым произошло столкновение",   Icons.Default.Bolt, Color(0xFFFF6B6B)),

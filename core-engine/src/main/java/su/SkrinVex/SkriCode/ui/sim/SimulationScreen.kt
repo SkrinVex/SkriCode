@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,10 +31,24 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsCompat
@@ -62,9 +77,20 @@ fun SimulationScreen(
     onBack: () -> Unit,
     onClearLogs: () -> Unit = {},
     debugMode: Boolean = true,
-    showHitboxes: Boolean = false
+    showHitboxes: Boolean = false,
+    onTextInputSubmit: ((objectName: String, text: String) -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
+
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(state.clearFocusTrigger) {
+        if (state.clearFocusTrigger > 0L) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
+    }
 
     // Если симуляция остановлена и debug выключен — сразу выходим
     LaunchedEffect(state.isStopped) {
@@ -153,7 +179,7 @@ fun SimulationScreen(
                                             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
                                             val uiTags = cam?.uiTags ?: emptySet()
                                             val hit = currentState.objects.values
-                                                .filter { it.visible && it.touchEnabled }
+                                                .filter { it.visible && it.touchEnabled && !it.isTextInput }
                                                 .sortedWith(compareBy({ it.tags.any { tag -> tag in uiTags } }, { it.zOrder }))
                                                 .lastOrNull { obj ->
                                                     val isUi = obj.tags.any { it in uiTags }
@@ -351,6 +377,97 @@ fun SimulationScreen(
                 Text("Добавь блоки «Симуляция» в редакторе", color = Color(0x55FFFFFF), fontSize = 13.sp)
             }
         }
+
+        // Нативные инлайн-поля ввода прямо на холсте симуляции
+        if (canvasSize.first > 0f && canvasSize.second > 0f) {
+            val cx = canvasSize.first / 2f + state.screenShake.currentOffsetX
+            val cy = canvasSize.second / 2f + state.screenShake.currentOffsetY
+            val cam = state.camera
+            val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
+            val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+            val uiTags = cam?.uiTags ?: emptySet()
+            val density = LocalDensity.current
+
+            state.objects.values.filter { it.visible && it.isTextInput }.forEach { obj ->
+                val isUi = obj.tags.any { it in uiTags }
+                val ox = if (isUi) cx else cx + camOx
+                val oy = if (isUi) cy else cy + camOy
+                val leftPx = ox + obj.x - obj.width / 2f
+                val topPx = oy - obj.y - obj.height / 2f
+
+                val isMulti = obj.multiline
+                val align = if (isMulti) Alignment.TopStart else Alignment.CenterStart
+                val vertPad = if (isMulti) 8.dp else 4.dp
+
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
+                        .size(with(density) { obj.width.toDp() }, with(density) { obj.height.toDp() })
+                        .rotate(obj.rotation)
+                        .clip(RoundedCornerShape(with(density) { obj.radius.toDp() }))
+                        .background(obj.color)
+                        .border(
+                            width = 1.5.dp,
+                            color = Color(0xFF4F8EF7).copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(with(density) { obj.radius.toDp() })
+                        )
+                        .padding(horizontal = 10.dp, vertical = vertPad),
+                    contentAlignment = align
+                ) {
+                    var textValue by remember(obj.name) { mutableStateOf(obj.label) }
+                    LaunchedEffect(obj.label) {
+                        if (textValue != obj.label) {
+                            textValue = obj.label
+                        }
+                    }
+
+                    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+                    BasicTextField(
+                        value = textValue,
+                        onValueChange = { newText ->
+                            textValue = newText
+                            onTextInputSubmit?.invoke(obj.name, newText)
+                        },
+                        textStyle = TextStyle(
+                            color = obj.textColor ?: Color.White,
+                            fontSize = obj.fontSize.sp,
+                            fontWeight = if (obj.bold) FontWeight.Bold else FontWeight.Normal,
+                            fontFamily = FontFamily.Default
+                        ),
+                        cursorBrush = SolidColor(obj.textColor ?: Color.White),
+                        singleLine = !isMulti,
+                        maxLines = if (isMulti) 8 else 1,
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = if (!isMulti && obj.inputTrigger == "keyboard") ImeAction.Done else ImeAction.Default
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                onTextInputSubmit?.invoke(obj.name, textValue)
+                                focusManager.clearFocus()
+                            }
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = align
+                            ) {
+                                if (textValue.isEmpty() && obj.placeholder.isNotEmpty()) {
+                                    Text(
+                                        text = obj.placeholder,
+                                        color = (obj.textColor ?: Color.White).copy(alpha = 0.45f),
+                                        fontSize = obj.fontSize.sp,
+                                        fontWeight = if (obj.bold) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -514,6 +631,7 @@ private fun DrawScope.drawSimObject(
     state: SimState? = null,
     ctx: android.content.Context? = null
 ) {
+    if (obj.isTextInput) return
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
     val cr = CornerRadius(obj.radius, obj.radius)
@@ -578,9 +696,10 @@ private fun DrawScope.drawSimObject(
         }
 
         // Обводка
-        val isTextOnly = obj.color == Color.Transparent && obj.spriteName == null
+        val isTextOnly = obj.color == Color.Transparent && obj.spriteName == null && !obj.isTextInput
         val strokeColor = when {
             highlighted -> Color.Yellow
+            obj.isTextInput -> Color(0xFF818CF8).copy(alpha = 0.8f)
             isTextOnly -> Color.Transparent
             obj.tapScriptId != null && debugMode -> Color.White.copy(alpha = 0.7f)
             obj.spriteName != null -> Color.Transparent
@@ -592,14 +711,16 @@ private fun DrawScope.drawSimObject(
                 topLeft = Offset(left - 1f, top - 1f),
                 size = Size(obj.width + 2f, obj.height + 2f),
                 cornerRadius = CornerRadius(obj.radius + 1f, obj.radius + 1f),
-                style = Stroke(width = if (highlighted) 3f else if (obj.tapScriptId != null) 2f else 1f)
+                style = Stroke(width = if (highlighted) 3f else if (obj.isTextInput) 1.5f else if (obj.tapScriptId != null) 2f else 1f)
             )
         }
 
-        // Текст — только если label задан явно
-        if (obj.label.isNotBlank()) {
+        // Текст — если label задан явно или если это текстовое поле с placeholder
+        val displayText = if (obj.label.isNotBlank()) obj.label else if (obj.isTextInput) obj.placeholder else ""
+        if (displayText.isNotBlank()) {
             val textSize = obj.fontSize * density
-            val tc = obj.textColor ?: Color.White
+            val isPlaceholder = obj.label.isBlank() && obj.isTextInput
+            val tc = if (isPlaceholder) (obj.textColor ?: Color.White).copy(alpha = 0.45f) else (obj.textColor ?: Color.White)
             textPaint.color = android.graphics.Color.argb(
                 (tc.alpha * 255).toInt(), (tc.red * 255).toInt(),
                 (tc.green * 255).toInt(), (tc.blue * 255).toInt()

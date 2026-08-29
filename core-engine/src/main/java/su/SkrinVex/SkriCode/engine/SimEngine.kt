@@ -114,6 +114,46 @@ object SimEngine {
                         tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
                     )
                 }
+                "sim_button" -> objects[name] = SimObject(
+                    name = name,
+                    x = ExprCompiler.compile(p("x").ifBlank { "0" }).evalFloat(emptyMap(), ExprEval.fallbackScope),
+                    y = ExprCompiler.compile(p("y").ifBlank { "0" }).evalFloat(emptyMap(), ExprEval.fallbackScope),
+                    width = pf("width", 160f).coerceAtLeast(1f),
+                    height = pf("height", 50f).coerceAtLeast(1f),
+                    radius = pf("radius", 8f).coerceAtLeast(0f),
+                    color = parseColor(p("color").ifBlank { "#4F8EF7" }),
+                    textColor = parseColor(p("textColor").ifBlank { "#FFFFFF" }),
+                    label = p("text"),
+                    fontSize = pf("size", 16f),
+                    bold = p("bold") == "true",
+                    tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
+                )
+                "sim_text_input" -> {
+                    val isMulti = p("multiline") == "true"
+                    val defaultH = if (isMulti) 90f else 52f
+                    val targetV = p("var").removePrefix("{").removeSuffix("}").ifBlank { "user_text" }
+                    val trigger = if (isMulti) "button" else p("trigger").ifBlank { "keyboard" }
+                    objects[name] = SimObject(
+                        name = name,
+                        x = ExprCompiler.compile(p("x").ifBlank { "0" }).evalFloat(emptyMap(), ExprEval.fallbackScope),
+                        y = ExprCompiler.compile(p("y").ifBlank { "0" }).evalFloat(emptyMap(), ExprEval.fallbackScope),
+                        width = pf("width", 260f).coerceAtLeast(1f),
+                        height = pf("height", defaultH).coerceAtLeast(1f),
+                        radius = pf("radius", 8f).coerceAtLeast(0f),
+                        color = parseColor(p("color").ifBlank { "#1E293B" }),
+                        textColor = parseColor(p("textColor").ifBlank { "#FFFFFF" }),
+                        label = p("text"),
+                        placeholder = p("placeholder").ifBlank { "Введите текст..." },
+                        targetVar = targetV,
+                        inputTrigger = trigger,
+                        inputButton = p("button"),
+                        isTextInput = true,
+                        multiline = isMulti,
+                        fontSize = pf("size", 15f),
+                        bold = false,
+                        tags = tags, physicsBody = physicsBody, hitbox = hitbox, zOrder = zOrder
+                    )
+                }
             }
             // Выполняем setup-блоки объекта
             val setupBlocks = block.children["setup"] ?: emptyList()
@@ -128,6 +168,7 @@ object SimEngine {
         val cameraRef: Array<SimCamera?> = arrayOf(null)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
         val backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A))
+        val clearFocusRef: LongArray = longArrayOf(0L)
         val particles = mutableListOf<Particle>()
         val particleEmitters = mutableMapOf<String, ParticleEmitterState>()
         val screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState())
@@ -147,8 +188,8 @@ object SimEngine {
                     cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
                     particles = particles, particleEmitters = particleEmitters,
                     screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
-                    backgroundColorRef = backgroundColorRef,
-                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0], sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) })
+                    backgroundColorRef = backgroundColorRef, clearFocusRef = clearFocusRef,
+                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0], sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) })
                 vars.filterKeys { it !in localVars }.forEach { (k, v) -> globalVars[k] = v }
                 allTables.filterKeys { it !in localTables }.forEach { (k, v) -> globalTables[k] = v }
             }
@@ -169,7 +210,8 @@ object SimEngine {
             physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0],
             sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0],
             particles = particles.toList(), particleEmitters = particleEmitters.toMap(),
-            screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])
+            screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0],
+            clearFocusTrigger = clearFocusRef[0])
     }
 
     fun bindEventScripts(
@@ -292,6 +334,12 @@ object SimEngine {
         val globalVars = currentState.globalVars.toMutableMap()
         val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
         val vars = (globalVars + localVars).toMutableMap()
+        currentState.objects.values.filter { it.isTextInput }.forEach { inputObj ->
+            val cleanVar = inputObj.targetVar.removePrefix("{").removeSuffix("}").trim()
+            if (cleanVar.isNotBlank() && (cleanVar !in vars || vars[cleanVar].isNullOrEmpty() || vars[cleanVar] == "0")) {
+                vars[cleanVar] = inputObj.label
+            }
+        }
         if (currentState.sprites.isNotEmpty()) ExprEval.sprites = currentState.sprites
 
         if (collisionTarget.isNotBlank()) {
@@ -322,6 +370,7 @@ object SimEngine {
         val screenShakeRef: Array<ScreenShakeState> = arrayOf(currentState.screenShake)
         val screenFlashRef: Array<ScreenFlashState> = arrayOf(currentState.screenFlash)
         val backgroundColorRef: Array<Color> = arrayOf(currentState.backgroundColor)
+        val clearFocusRef: LongArray = longArrayOf(currentState.clearFocusTrigger)
 
         val deletedObjects = mutableSetOf<String>()
         val deletedJoysticks = mutableSetOf<String>()
@@ -333,12 +382,12 @@ object SimEngine {
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
             particles = particles, particleEmitters = particleEmitters,
             screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
-            backgroundColorRef = backgroundColorRef,
+            backgroundColorRef = backgroundColorRef, clearFocusRef = clearFocusRef,
             getLatestState = getLatestState,
             deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
             modifiedFields = modifiedFields,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) }
             } else null
         )
         vars.filterKeys { it !in localTables.keys && it !in script.localVars.orEmpty().map { lv -> lv.name } }.forEach { (k, v) -> globalVars[k] = v }
@@ -395,7 +444,13 @@ object SimEngine {
                         x = if ("x" in fields) scriptObj.x else liveObj.x,
                         y = if ("y" in fields) scriptObj.y else liveObj.y,
                         physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) scriptObj.physicsBody else liveObj.physicsBody,
-                        hitbox = if ("hitbox" in fields) scriptObj.hitbox else liveObj.hitbox
+                        hitbox = if ("hitbox" in fields) scriptObj.hitbox else liveObj.hitbox,
+                        isTextInput = if ("isTextInput" in fields) scriptObj.isTextInput else liveObj.isTextInput,
+                        multiline = if ("multiline" in fields) scriptObj.multiline else liveObj.multiline,
+                        placeholder = if ("placeholder" in fields) scriptObj.placeholder else liveObj.placeholder,
+                        targetVar = if ("targetVar" in fields) scriptObj.targetVar else liveObj.targetVar,
+                        inputTrigger = if ("inputTrigger" in fields) scriptObj.inputTrigger else liveObj.inputTrigger,
+                        inputButton = if ("inputButton" in fields) scriptObj.inputButton else liveObj.inputButton
                     )
                 }
             } else if (name !in currentState.objects) {
@@ -416,10 +471,17 @@ object SimEngine {
 
         bindEventScripts(scripts, mergedObjects, errors, warnMissing = false)
 
+        val updatedGlobalVars = baseState.globalVars.toMutableMap()
+        vars.forEach { (k, v) ->
+            if (k !in localVars.keys && !k.startsWith("collision_")) {
+                updatedGlobalVars[k] = v
+            }
+        }
+
         return baseState.copy(
             objects = mergedObjects,
             joysticks = mergedJoysticks,
-            globalVars = globalVars,
+            globalVars = updatedGlobalVars,
             tables = allTables.mapValues { it.value.toMap() },
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
             camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
@@ -428,7 +490,8 @@ object SimEngine {
             particles = particles.toList(),
             particleEmitters = particleEmitters.toMap(),
             screenShake = if (screenShakeRef[0] != currentState.screenShake) screenShakeRef[0] else baseState.screenShake,
-            screenFlash = if (screenFlashRef[0] != currentState.screenFlash) screenFlashRef[0] else baseState.screenFlash
+            screenFlash = if (screenFlashRef[0] != currentState.screenFlash) screenFlashRef[0] else baseState.screenFlash,
+            clearFocusTrigger = clearFocusRef[0]
         )
     }
 
@@ -450,6 +513,7 @@ object SimEngine {
         screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
+        clearFocusRef: LongArray = LongArray(1),
         getLatestState: (() -> SimState)? = null,
         deletedObjects: MutableSet<String> = mutableSetOf(),
         deletedJoysticks: MutableSet<String> = mutableSetOf(),
@@ -462,7 +526,7 @@ object SimEngine {
         return executeCompiled(
             compiled, vars, objects, joysticks, tables, log, errors,
             allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
-            particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef,
+            particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
             getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
         )
     }
@@ -485,6 +549,7 @@ object SimEngine {
         screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
+        clearFocusRef: LongArray = LongArray(1),
         getLatestState: (() -> SimState)?,
         deletedObjects: MutableSet<String>,
         deletedJoysticks: MutableSet<String>,
@@ -655,6 +720,99 @@ object SimEngine {
                     } else {
                         recordError("Блок sim_sprite: не указано имя спрайт-объекта")
                     }
+                    pc++
+                }
+
+                is CompiledBlock.SimButton -> {
+                    val name = inst.nameExpr.evalString(vars, evalScope).trim()
+                    if (name.isNotBlank()) {
+                        val existing = objects[name]
+                        val text = inst.textExpr.evalString(vars, evalScope)
+                        val x = inst.xExpr.evalFloat(vars, evalScope, 0f)
+                        val y = inst.yExpr.evalFloat(vars, evalScope, 0f)
+                        val w = inst.widthExpr.evalFloat(vars, evalScope, 160f).coerceAtLeast(1f)
+                        val h = inst.heightExpr.evalFloat(vars, evalScope, 50f).coerceAtLeast(1f)
+                        val rad = inst.radiusExpr.evalFloat(vars, evalScope, 8f).coerceAtLeast(0f)
+                        val size = inst.sizeExpr.evalFloat(vars, evalScope, 16f).coerceAtLeast(6f)
+                        val col = parseColor(inst.colorExpr.evalString(vars, evalScope).ifBlank { "#4F8EF7" })
+                        val textCol = parseColor(inst.textColorExpr.evalString(vars, evalScope).ifBlank { "#FFFFFF" })
+
+                        objects[name] = SimObject(
+                            name = name, x = x, y = y, width = w, height = h, radius = rad,
+                            color = col, textColor = textCol, label = text, fontSize = size, bold = inst.bold,
+                            tags = inst.tags, zOrder = inst.zOrder,
+                            tapScriptId = existing?.tapScriptId,
+                            holdScriptId = existing?.holdScriptId,
+                            collisionScriptId = existing?.collisionScriptId,
+                            collisionEndScriptId = existing?.collisionEndScriptId,
+                            physicsBody = existing?.physicsBody,
+                            hitbox = existing?.hitbox ?: Hitbox()
+                        )
+                        deletedObjects.remove(name)
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "radius", "label", "fontSize", "bold", "color", "textColor", "hitbox"))
+                        log += "  Кнопка «$name»: \"$text\" ($x, $y)"
+                        onUpdate?.invoke()
+                    } else {
+                        recordError("Блок sim_button: не указано имя кнопки")
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.SimTextInput -> {
+                    val name = inst.nameExpr.evalString(vars, evalScope).trim()
+                    if (name.isNotBlank()) {
+                        val existing = objects[name]
+                        val placeholder = inst.placeholderExpr.evalString(vars, evalScope)
+                        val text = inst.initialTextExpr.evalString(vars, evalScope)
+                        val x = inst.xExpr.evalFloat(vars, evalScope, 0f)
+                        val y = inst.yExpr.evalFloat(vars, evalScope, 0f)
+                        val defH = if (inst.multiline) 90f else 52f
+                        val w = inst.widthExpr.evalFloat(vars, evalScope, 260f).coerceAtLeast(1f)
+                        val h = inst.heightExpr.evalFloat(vars, evalScope, defH).coerceAtLeast(1f)
+                        val rad = inst.radiusExpr.evalFloat(vars, evalScope, 8f).coerceAtLeast(0f)
+                        val size = inst.sizeExpr.evalFloat(vars, evalScope, 15f).coerceAtLeast(6f)
+                        val col = parseColor(inst.colorExpr.evalString(vars, evalScope).ifBlank { "#1E293B" })
+                        val textCol = parseColor(inst.textColorExpr.evalString(vars, evalScope).ifBlank { "#FFFFFF" })
+                        val btnTarget = inst.buttonTargetExpr.evalString(vars, evalScope).trim()
+                        val trigger = if (inst.multiline) "button" else inst.trigger
+
+                        if (inst.targetVar.isBlank()) {
+                            recordError("Блок sim_text_input «$name»: не указана переменная для сохранения значения")
+                        }
+                        if (trigger == "button" && btnTarget.isBlank()) {
+                            recordError("Блок sim_text_input «$name»: выбран триггер по клику, но не указан объект-кнопка")
+                        }
+                        if (inst.targetVar.isNotBlank() && inst.targetVar !in vars) {
+                            vars[inst.targetVar] = text
+                        }
+
+                        objects[name] = SimObject(
+                            name = name, x = x, y = y, width = w, height = h, radius = rad,
+                            color = col, textColor = textCol, label = text, fontSize = size, bold = false,
+                            isTextInput = true, multiline = inst.multiline, placeholder = placeholder, targetVar = inst.targetVar,
+                            inputTrigger = trigger, inputButton = btnTarget,
+                            tags = inst.tags, zOrder = inst.zOrder,
+                            tapScriptId = existing?.tapScriptId,
+                            holdScriptId = existing?.holdScriptId,
+                            collisionScriptId = existing?.collisionScriptId,
+                            collisionEndScriptId = existing?.collisionEndScriptId,
+                            physicsBody = existing?.physicsBody,
+                            hitbox = existing?.hitbox ?: Hitbox()
+                        )
+                        deletedObjects.remove(name)
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "radius", "label", "fontSize", "color", "textColor", "isTextInput", "multiline", "placeholder", "targetVar", "inputTrigger", "inputButton", "hitbox"))
+                        log += "  Поле ввода «$name» [переменная: {${inst.targetVar.ifBlank { "не указана" }}}]: \"$text\""
+                        onUpdate?.invoke()
+                    } else {
+                        recordError("Блок sim_text_input: не указано имя поля ввода")
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.SimClearFocus -> {
+                    clearFocusRef[0]++
+                    log += "  Снят фокус с поля ввода"
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1489,7 +1647,7 @@ object SimEngine {
                                 val ok = executeCompiled(
                                     inst.innerBlocks, vars, objects, joysticks, tables, log, errors,
                                     allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
-                                    particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef,
+                                    particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
                                     getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
                                 )
                                 if (!ok) return false

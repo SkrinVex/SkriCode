@@ -71,7 +71,14 @@ data class SimObject(
     val animSpacingX: Int = 0,
     val animSpacingY: Int = 0,
     val animFrameWidth: Int = 0,
-    val animFrameHeight: Int = 0
+    val animFrameHeight: Int = 0,
+    // Текстовое поле ввода (виджет)
+    val isTextInput: Boolean = false,
+    val multiline: Boolean = false,
+    val placeholder: String = "",
+    val targetVar: String = "",
+    val inputTrigger: String = "keyboard", // "keyboard" | "button"
+    val inputButton: String = ""           // имя или #тег объекта для подтверждения
 )
 
 data class JoystickState(
@@ -180,7 +187,8 @@ data class SimState(
     val particles: List<Particle> = emptyList(),
     val particleEmitters: Map<String, ParticleEmitterState> = emptyMap(),
     val screenShake: ScreenShakeState = ScreenShakeState(),
-    val screenFlash: ScreenFlashState = ScreenFlashState()
+    val screenFlash: ScreenFlashState = ScreenFlashState(),
+    val clearFocusTrigger: Long = 0L
 )
 
 /**

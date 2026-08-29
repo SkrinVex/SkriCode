@@ -74,6 +74,38 @@ object BlockFactory {
             "bold"      to p("false", "Жирный", "true или false"),
             "textColor" to p("#FFFFFF", "Цвет текста", "#RRGGBB")))
 
+        "sim_button" -> build("sim_button", "Кнопка", "Создаёт кнопку или плашку с текстом на сцене", BlockCategory.SIMULATION, listOf(
+            "name"      to p("btn1", "Имя кнопки", "Уникальное имя"),
+            "text"      to p("Кнопка", "Текст кнопки", "Поддерживает {переменные} и перенос строк (\\n)"),
+            "x"         to p("0", "X (от центра)", "Вправо = +, влево = −", ParamType.NUMBER),
+            "y"         to p("0", "Y (от центра)", "Вверх = +, вниз = −", ParamType.NUMBER),
+            "width"     to p("160", "Ширина", "В пикселях", ParamType.NUMBER),
+            "height"    to p("50", "Высота", "В пикселях", ParamType.NUMBER),
+            "radius"    to p("8", "Скругление", "Радиус углов", ParamType.NUMBER),
+            "color"     to p("#4F8EF7", "Цвет фона", "#RRGGBB"),
+            "textColor" to p("#FFFFFF", "Цвет текста", "#RRGGBB"),
+            "size"      to p("16", "Размер шрифта", "В пикселях", ParamType.NUMBER),
+            "bold"      to p("false", "Жирный", "true или false")))
+
+        "sim_text_input" -> build("sim_text_input", "Поле ввода текста", "Создаёт интерактивное поле текстового ввода", BlockCategory.WIDGET, listOf(
+            "name"        to p("input1", "Имя поля", "Уникальное имя виджета"),
+            "placeholder" to p("Введите текст...", "Подсказка", "Текст когда поле пустое"),
+            "text"        to p("", "Начальный текст", "Начальное значение"),
+            "var"         to p("user_text", "Переменная", "Куда сохранять введённый текст"),
+            "multiline"   to p("false", "Многострочный", "true или false", ParamType.SELECT),
+            "x"           to p("0", "X (от центра)", "Вправо = +, влево = −", ParamType.NUMBER),
+            "y"           to p("0", "Y (от центра)", "Вверх = +, вниз = −", ParamType.NUMBER),
+            "width"       to p("260", "Ширина", "В пикселях", ParamType.NUMBER),
+            "height"      to p("52", "Высота", "В пикселях", ParamType.NUMBER),
+            "radius"      to p("8", "Скругление", "Радиус углов", ParamType.NUMBER),
+            "color"       to p("#1E293B", "Цвет фона", "#RRGGBB"),
+            "textColor"   to p("#FFFFFF", "Цвет текста", "#RRGGBB"),
+            "size"        to p("15", "Размер шрифта", "В пикселях", ParamType.NUMBER),
+            "trigger"     to p("keyboard", "Триггер ввода", "keyboard = по клавиатуре, button = по нажатию на объект", ParamType.SELECT),
+            "button"      to p("", "Имя объекта-кнопки", "Имя или #тег объекта для подтверждения")))
+
+        "sim_clear_focus" -> build("sim_clear_focus", "Снять фокус с поля ввода", "Снимает фокус с активного поля ввода и скрывает клавиатуру", BlockCategory.WIDGET, emptyList())
+
         "if_block" -> build("if_block", "Условие (если)", "Выполняет блоки если условие истинно", BlockCategory.CONTROL, listOf(
             "left"  to p("", "Левое значение", "Переменная или число, напр. {score}"),
             "op"    to p("==", "Оператор", "== != > < >= <=", ParamType.SELECT),
