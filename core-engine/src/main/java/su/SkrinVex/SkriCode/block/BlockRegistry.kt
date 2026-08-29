@@ -22,6 +22,7 @@ object BlockRegistry {
         "particle_burst", "particle_emitter", "particle_emitter_stop",
         "sim_camera", "camera_toggle", "camera_bounds", "screen_shake", "screen_flash",
         "sound_play", "sound_stop", "music_play", "music_pause", "music_resume", "music_stop", "music_volume",
+        "call_func", "return_val",
         "scene_switch"
     )
 

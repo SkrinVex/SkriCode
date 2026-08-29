@@ -15,6 +15,7 @@ enum class BlockCategory(val label: String) {
     CAMERA("Камера"),
     AUDIO("Звук"),
     WIDGET("Виджеты"),
+    FUNCTION("Функции"),
 }
 
 enum class ParamType { TEXT, NUMBER, SELECT }

@@ -225,4 +225,29 @@ class BlockCompilerTest {
         assertEquals("button", inp.trigger)
         assertEquals(90f, inp.heightExpr.evalFloat(emptyMap(), ExprEval.fallbackScope, 0f))
     }
+
+    @Test
+    fun testCompileCallFuncAndReturnVal() {
+        val blocks = listOf(
+            BlockDef("cf1", "call_func", "Вызвать функцию", params = mapOf(
+                "name" to BlockParam("calculateBonus", "name"),
+                "args" to BlockParam("10, {multiplier}", "args"),
+                "return_var" to BlockParam("{bonus}", "return_var")
+            )),
+            BlockDef("ret1", "return_val", "Вернуть значение", params = mapOf(
+                "value" to BlockParam("{a} + {b}", "value")
+            ))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(2, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.CallFunc)
+        val call = compiled[0] as CompiledBlock.CallFunc
+        assertEquals("calculateBonus", call.funcNameExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals(2, call.argsExpr.size)
+        assertEquals("bonus", call.returnVar)
+
+        assertTrue(compiled[1] is CompiledBlock.ReturnVal)
+        val ret = compiled[1] as CompiledBlock.ReturnVal
+        assertEquals("15", ret.valueExpr.evalString(mapOf("a" to "10", "b" to "5"), ExprEval.fallbackScope))
+    }
 }

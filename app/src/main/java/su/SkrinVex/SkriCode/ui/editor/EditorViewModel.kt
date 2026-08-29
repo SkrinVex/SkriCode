@@ -49,12 +49,26 @@ data class EditorState(
     val activeScript: Script get() = scripts.find { it.id == activeScriptId } ?: scripts.firstOrNull() ?: Script(UUID.randomUUID().toString(), "Скрипт 1")
     val activeBlocks: List<BlockDef> get() = activeScript.blocks.mapNotNull { it.deserialize() }
     val allScriptBlocks: List<BlockDef> get() = scripts.flatMap { it.blocks.mapNotNull { b -> b.deserialize() } }
-    val visibleVars: List<ProjectVar> get() = globalVars + (activeScript.localVars ?: emptyList())
+    val activeFunctionParams: List<String> get() = if (activeScript.event == su.SkrinVex.SkriCode.data.ScriptEvent.FUNCTION) {
+        activeScript.functionParams?.takeIf { it.isNotEmpty() }
+            ?: activeScript.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    } else emptyList()
+    val visibleVars: List<ProjectVar> get() {
+        val funcParamVars = activeFunctionParams.map { ProjectVar(it, su.SkrinVex.SkriCode.data.VarScope.LOCAL, "0") }
+        return globalVars + (activeScript.localVars ?: emptyList()) + funcParamVars
+    }
     val visibleTags: List<ProjectTag> get() = globalTags + (activeScript.localTags ?: emptyList())
     val visibleTables: List<ProjectTable> get() = globalTables + (activeScript.localTables ?: emptyList())
     val sceneNames: List<String> get() = scenes.map { it.name }
     val spriteNames: List<String> get() = sprites.map { it.name }
     val soundNames: List<String> get() = sounds.map { it.name }
+    val customFunctions: List<Script> get() {
+        val sceneFuncs = scenes.flatMap { it.scripts }.filter { it.event == su.SkrinVex.SkriCode.data.ScriptEvent.FUNCTION }
+        val currentFuncs = scripts.filter { it.event == su.SkrinVex.SkriCode.data.ScriptEvent.FUNCTION }
+        val map = (sceneFuncs + currentFuncs).associateBy { it.name }
+        return map.values.toList()
+    }
+    val functionNames: List<String> get() = customFunctions.map { it.name }
 }
 
 @OptIn(FlowPreview::class)
@@ -923,6 +937,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         )}
     }
 
+    fun moveScene(fromIndex: Int, toIndex: Int) {
+        val s = _state.value
+        if (fromIndex !in s.scenes.indices || toIndex !in s.scenes.indices || fromIndex == toIndex) return
+        val updatedScenes = s.scenes.map { scene ->
+            if (scene.id == s.activeSceneId) scene.copy(scripts = s.scripts, locationBlocks = s.locationBlocks)
+            else scene
+        }.toMutableList()
+        val item = updatedScenes.removeAt(fromIndex)
+        updatedScenes.add(toIndex, item)
+        _state.update { it.copy(scenes = updatedScenes) }
+    }
+
     /** Переключение сцены во время симуляции — сохраняем globalVars и запускаем новую сцену */
     private fun switchScene(sceneName: String, globalVars: Map<String, String>) {
         val s = _state.value
@@ -1106,10 +1132,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
         state.scripts.forEach { script ->
             val localNames = script.localVars.orEmpty().map { it.name }.toSet()
-            val allVisible = globalNames + localNames
+            val funcParams = if (script.event == ScriptEvent.FUNCTION) {
+                (script.functionParams?.takeIf { it.isNotEmpty() }
+                    ?: script.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }).toSet()
+            } else emptySet()
+            val allVisible = globalNames + localNames + funcParams
             val simNames = mutableSetOf<String>()
 
-            script.blocks.mapNotNull { it.deserialize() }.forEachIndexed { idx, block ->
+            fun checkBlock(block: BlockDef, idx: Int) {
                 val num = idx + 1
                 val prefix = "Скрипт «${script.name}», блок $num «${block.displayName}»"
 
@@ -1148,7 +1178,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         errors += "$prefix [${param.label}]: незакрытая скобка [ в «$v»"
                     Regex("\\{([^}]+)\\}").findAll(v).forEach { m ->
                         val ref = m.groupValues[1].trim()
-                        if (ref !in allVisible && ref !in su.SkrinVex.SkriCode.engine.ExprEval.SYSTEM_VARS)
+                        if (ref !in allVisible && ref !in su.SkrinVex.SkriCode.engine.ExprEval.SYSTEM_VARS && !ref.startsWith("collision_"))
                             errors += "$prefix [${param.label}]: переменная «$ref» не объявлена"
                     }
                     Regex("\\[([^\\]]+)\\]").findAll(v).forEach { m ->
@@ -1158,6 +1188,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             errors += "$prefix [${param.label}]: таблица «$tableName» не объявлена"
                     }
                 }
+
+                block.children.values.flatten().forEachIndexed { cIdx, child ->
+                    checkBlock(child, cIdx)
+                }
+            }
+
+            script.blocks.mapNotNull { it.deserialize() }.forEachIndexed { idx, block ->
+                checkBlock(block, idx)
             }
         }
         return errors

@@ -174,6 +174,7 @@ object SimEngine {
         val screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState())
         val screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState())
         val onStartScripts = scripts.filter { it.event == ScriptEvent.ON_START }
+        val funcMap = scripts.filter { it.event == ScriptEvent.FUNCTION }.associateBy { it.name }
 
         fun launchScript(scope: kotlinx.coroutines.CoroutineScope, script: Script) {
             scope.launch {
@@ -183,12 +184,14 @@ object SimEngine {
                 val vars = (globalVars + localVars).toMutableMap()
                 val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
                 val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
+                val evalScope = ExprScope(objects, joysticks, allTables, functions = funcMap)
                 runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors,
                     allowDelay = true, physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
                     cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
                     particles = particles, particleEmitters = particleEmitters,
                     screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
                     backgroundColorRef = backgroundColorRef, clearFocusRef = clearFocusRef,
+                    evalScopeIn = evalScope,
                     onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0], sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) })
                 vars.filterKeys { it !in localVars }.forEach { (k, v) -> globalVars[k] = v }
                 allTables.filterKeys { it !in localTables }.forEach { (k, v) -> globalTables[k] = v }
@@ -318,7 +321,7 @@ object SimEngine {
         return state.copy(camera = newCam)
     }
 
-    private suspend fun runScriptOnState(
+    suspend fun runScriptOnState(
         script: Script,
         scripts: List<Script>,
         currentState: SimState,
@@ -371,6 +374,8 @@ object SimEngine {
         val screenFlashRef: Array<ScreenFlashState> = arrayOf(currentState.screenFlash)
         val backgroundColorRef: Array<Color> = arrayOf(currentState.backgroundColor)
         val clearFocusRef: LongArray = longArrayOf(currentState.clearFocusTrigger)
+        val funcMap = scripts.filter { it.event == ScriptEvent.FUNCTION }.associateBy { it.name }
+        val evalScope = ExprScope(objects, joysticks, allTables, functions = funcMap)
 
         val deletedObjects = mutableSetOf<String>()
         val deletedJoysticks = mutableSetOf<String>()
@@ -386,6 +391,7 @@ object SimEngine {
             getLatestState = getLatestState,
             deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
             modifiedFields = modifiedFields,
+            evalScopeIn = evalScope,
             onUpdate = if (onUpdate != null) {
                 { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) }
             } else null
@@ -514,6 +520,8 @@ object SimEngine {
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
         clearFocusRef: LongArray = LongArray(1),
+        returnValRef: Array<String?> = arrayOf(null),
+        callDepth: Int = 0,
         getLatestState: (() -> SimState)? = null,
         deletedObjects: MutableSet<String> = mutableSetOf(),
         deletedJoysticks: MutableSet<String> = mutableSetOf(),
@@ -527,6 +535,7 @@ object SimEngine {
             compiled, vars, objects, joysticks, tables, log, errors,
             allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
             particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
+            returnValRef, callDepth,
             getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
         )
     }
@@ -550,6 +559,8 @@ object SimEngine {
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
         backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
         clearFocusRef: LongArray = LongArray(1),
+        returnValRef: Array<String?> = arrayOf(null),
+        callDepth: Int = 0,
         getLatestState: (() -> SimState)?,
         deletedObjects: MutableSet<String>,
         deletedJoysticks: MutableSet<String>,
@@ -561,6 +572,45 @@ object SimEngine {
             if (msg.isNotBlank() && msg !in errors && errors.size < 50) {
                 errors += msg
             }
+        }
+
+        evalScope.customFuncEvaluator = { name, args, scope ->
+            val funcScript = scope.functions[name]
+            if (funcScript != null) {
+                if (callDepth >= 50) {
+                    recordError("Превышен лимит рекурсии вызова функции «$name» (макс. 50)")
+                    ""
+                } else {
+                    val paramNames = if (!funcScript.functionParams.isNullOrEmpty()) {
+                        funcScript.functionParams
+                    } else {
+                        funcScript.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    }
+                    val funcLocalVars = funcScript.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
+                    val funcVars = (vars + funcLocalVars).toMutableMap()
+                    paramNames.forEachIndexed { i, pName ->
+                        if (i < args.size) funcVars[pName] = args[i]
+                    }
+                    val funcRetRef = arrayOf<String?>(null)
+                    val compiledFunc = BlockCompiler.compile(funcScript.blocks.mapNotNull { it.deserialize() })
+                    kotlinx.coroutines.runBlocking {
+                        executeCompiled(
+                            compiledFunc, funcVars, objects, joysticks, tables, log, errors,
+                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                            particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
+                            returnValRef = funcRetRef, callDepth = callDepth + 1,
+                            getLatestState = getLatestState, deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
+                            modifiedFields = modifiedFields, evalScope = scope, onUpdate = null
+                        )
+                    }
+                    funcVars.forEach { (k, v) ->
+                        if (k !in funcLocalVars.keys && k !in paramNames && !k.startsWith("collision_")) {
+                            vars[k] = v
+                        }
+                    }
+                    funcRetRef[0] ?: "0"
+                }
+            } else ""
         }
 
         fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
@@ -1648,6 +1698,7 @@ object SimEngine {
                                     inst.innerBlocks, vars, objects, joysticks, tables, log, errors,
                                     allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
                                     particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
+                                    returnValRef, callDepth,
                                     getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
                                 )
                                 if (!ok) return false
@@ -1656,6 +1707,60 @@ object SimEngine {
                         }
                     }
                     pc++
+                }
+
+                is CompiledBlock.ReturnVal -> {
+                    val ret = inst.valueExpr.evalString(vars, evalScope)
+                    returnValRef[0] = ret
+                    log += "  Возврат: \"$ret\""
+                    onUpdate?.invoke()
+                    return true
+                }
+
+                is CompiledBlock.CallFunc -> {
+                    val funcName = inst.funcNameExpr.evalString(vars, evalScope).trim()
+                    val funcScript = evalScope.functions[funcName]
+                    if (funcScript == null) {
+                        recordError("Функция «$funcName» не найдена в проекте")
+                        pc++
+                    } else if (callDepth >= 50) {
+                        recordError("Превышен лимит рекурсии вызова функции «$funcName» (макс. 50)")
+                        pc++
+                    } else {
+                        val argVals = inst.argsExpr.map { it.evalString(vars, evalScope) }
+                        val paramNames = if (!funcScript.functionParams.isNullOrEmpty()) {
+                            funcScript.functionParams
+                        } else {
+                            funcScript.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        }
+                        val funcLocalVars = funcScript.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
+                        val funcVars = (vars + funcLocalVars).toMutableMap()
+                        paramNames.forEachIndexed { i, pName ->
+                            if (i < argVals.size) {
+                                funcVars[pName] = argVals[i]
+                            }
+                        }
+                        log += "  Вызов «$funcName»(${argVals.joinToString(", ")})"
+                        val funcRetRef = arrayOf<String?>(null)
+                        runScript(
+                            funcScript.blocks.mapNotNull { it.deserialize() }, funcVars, objects, joysticks, tables, log, errors,
+                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                            particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
+                            returnValRef = funcRetRef, callDepth = callDepth + 1,
+                            getLatestState = getLatestState, deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
+                            modifiedFields = modifiedFields, evalScopeIn = evalScope, onUpdate = onUpdate
+                        )
+                        funcVars.forEach { (k, v) ->
+                            if (k !in funcLocalVars.keys && k !in paramNames && !k.startsWith("collision_")) {
+                                vars[k] = v
+                            }
+                        }
+                        val resultVal = funcRetRef[0] ?: "0"
+                        if (inst.returnVar.isNotBlank()) {
+                            vars[inst.returnVar] = resultVal
+                        }
+                        pc++
+                    }
                 }
             }
         }

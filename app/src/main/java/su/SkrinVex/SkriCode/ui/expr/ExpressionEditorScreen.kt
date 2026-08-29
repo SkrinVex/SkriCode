@@ -46,10 +46,12 @@ private data class BuiltinFn(
 @Composable
 fun ExpressionEditorScreen(
     initialValue: String,
-    paramLabel: String,
+    paramLabel: String = "",
     variables: List<ProjectVar>,
     tags: List<ProjectTag> = emptyList(),
     tables: List<ProjectTable> = emptyList(),
+    functions: List<su.SkrinVex.SkriCode.data.Script> = emptyList(),
+    functionParams: List<String> = emptyList(),
     isIdentifier: Boolean = false,
     onConfirm: (String) -> Unit,
     onCreateVar: (name: String, scope: VarScope) -> Unit,
@@ -75,54 +77,52 @@ fun ExpressionEditorScreen(
     var hasChanges by remember { mutableStateOf(false) }
     var validationWarning by remember { mutableStateOf<String?>(null) }
 
-    val knownVarNames = remember(variables) { variables.map { it.name }.toSet() }
+    val knownVarNames = remember(variables, functionParams) { (variables.map { it.name } + functionParams).toSet() }
 
     fun validateAndConfirm() {
-        if (isIdentifier) { onConfirm(tfv.text); return }
-        val unknown = Regex("\\{([^}]+)\\}").findAll(tfv.text.trim())
-            .map { it.groupValues[1].trim() }
-            .filter { it.isNotBlank() && it !in knownVarNames && it !in su.SkrinVex.SkriCode.engine.ExprEval.SYSTEM_VARS }
-            .toSet()
-        if (unknown.isNotEmpty()) {
-            validationWarning = unknown.joinToString(", ") { "{$it}" }
-        } else {
-            onConfirm(tfv.text)
+        if (!isIdentifier) {
+            val invalidVars = Regex("""\{([a-zA-Z0-9_]+)\}""").findAll(tfv.text)
+                .map { it.groupValues[1] }
+                .filter { it !in knownVarNames && !it.startsWith("collision_") }
+                .toList()
+            if (invalidVars.isNotEmpty()) {
+                validationWarning = invalidVars.joinToString(", ") { "{$it}" }
+                return
+            }
+        }
+        onConfirm(tfv.text)
+    }
+
+    fun push(text: String) {
+        if (history.isEmpty() || history.last() != text) {
+            history.add(text)
+            if (history.size > 50) history.removeFirst()
         }
     }
 
-    fun push(v: String) { if (history.lastOrNull() != v) history.add(v) }
-
-    fun insertAt(insert: String) {
-        val cur = tfv.text
+    fun insertAt(str: String) {
+        val current = tfv.text
         val sel = tfv.selection
-        val pos = if (sel.collapsed) sel.start else sel.end
-        push(cur)
-        val newText = cur.substring(0, pos) + insert + cur.substring(pos)
-        tfv = TextFieldValue(newText, TextRange(pos + insert.length))
+        val newText = current.substring(0, sel.start) + str + current.substring(sel.end)
+        val newCursor = sel.start + str.length
+        push(current)
+        tfv = TextFieldValue(newText, TextRange(newCursor))
         hasChanges = true
     }
 
-    fun insertVar(name: String) {
-        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(name, TextRange(name.length)); hasChanges = true }
-        else insertAt("{$name}")
+    fun insertVar(name: String)   = insertAt("{$name}")
+    fun insertTag(name: String)   = insertAt("#$name")
+    fun insertTable(tableName: String, key: String? = null) {
+        insertAt(if (key != null) "[$tableName.$key]" else "[$tableName]")
     }
-    fun insertTag(name: String) {
-        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(name, TextRange(name.length)); hasChanges = true }
-        else insertAt("#$name")
-    }
-    fun insertTable(tableName: String, key: String) {
-        if (isIdentifier) { push(tfv.text); tfv = TextFieldValue(tableName, TextRange(tableName.length)); hasChanges = true }
-        else insertAt("[$tableName.$key]")
-    }
-    fun insertFn(insert: String) { insertAt(insert) }
-    
+    fun insertFn(str: String)     = insertAt(str)
+
     BackHandler {
-        onBack()
+        if (hasChanges) onBack() else onBack()
     }
 
     // Редактор таблицы — полноэкранный
     editingTable?.let { tbl ->
-        // Берём актуальную версию таблицы из списка (данные могут меняться)
         val current = tables.find { it.name == tbl.name && it.scope == tbl.scope } ?: tbl
         TableEditorScreen(
             table = current,
@@ -133,18 +133,28 @@ fun ExpressionEditorScreen(
         return
     }
 
-    Box(Modifier.fillMaxSize().background(Navy900)) {
+    Box(Modifier.fillMaxSize().background(Surface1)) {
         Column(Modifier.fillMaxSize()) {
-            Surface(color = Surface1, shadowElevation = 4.dp) {
-                Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                color = Surface1,
+                shadowElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = TextPrim)
                     }
-                    Column(Modifier.weight(1f)) {
-                        Text("Редактор выражений", color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Text(paramLabel, color = TextSec, fontSize = 12.sp)
-                    }
+                    Text(
+                        paramLabel.ifBlank { if (isIdentifier) "Имя" else "Выражение" },
+                        color = TextPrim, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f).padding(start = 4.dp)
+                    )
                     IconButton(
                         onClick = {
                             if (history.size > 1) {
@@ -179,7 +189,7 @@ fun ExpressionEditorScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(if (isIdentifier) "Имя" else "Выражение / Текст") },
-                    placeholder = { Text(if (isIdentifier) "имя" else "100, {x} + 50, \$screenWidth, Привет!\nНовая строка", color = TextSec) },
+                    placeholder = { Text(if (isIdentifier) "имя" else "100, {x} + 50, \$screenWidth, \$calc(10), Привет!", color = TextSec) },
                     singleLine = isIdentifier,
                     minLines = if (isIdentifier) 1 else 3,
                     maxLines = if (isIdentifier) 1 else 8,
@@ -194,79 +204,91 @@ fun ExpressionEditorScreen(
                     textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontFamily = FontFamily.Monospace)
                 )
                 Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Surface2)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
-                            append(" — перем.  ")
-                            withStyle(SpanStyle(color = Color(0xFF34D399), fontFamily = FontFamily.Monospace)) { append("[табл.ключ]") }
-                            append("  ")
-                            withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$встр.") }
-                        },
-                        color = TextSec, fontSize = 11.sp
-                    )
-                    if (!isIdentifier) {
-                        Surface(
-                            onClick = { insertAt("\n") },
-                            shape = RoundedCornerShape(6.dp),
-                            color = Surface2,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Surface3)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(Icons.Default.KeyboardReturn, null, tint = Accent, modifier = Modifier.size(13.dp))
-                                Text("+ Новая строка (\\n)", color = TextPrim, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                            }
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
+                                append(" — перем.  ")
+                                withStyle(SpanStyle(color = Color(0xFFA855F7), fontFamily = FontFamily.Monospace)) { append("{параметр}") }
+                                append("  ")
+                                withStyle(SpanStyle(color = Color(0xFF34D399), fontFamily = FontFamily.Monospace)) { append("[табл.ключ]") }
+                                append("  ")
+                                withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$встр.") }
+                            },
+                            color = TextSec, fontSize = 11.sp
+                        )
                     }
+                    Text(
+                        "Текст с пробелом: Привет, {имя}! или \"Привет, \" + {имя}",
+                        color = Accent.copy(alpha = 0.85f), fontSize = 11.sp
+                    )
                 }
             }
 
-            TabRow(selectedTabIndex = selectedTab, containerColor = Surface1, contentColor = Accent) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                edgePadding = 8.dp,
+                containerColor = Surface1,
+                contentColor = Accent,
+                divider = { HorizontalDivider(color = Surface3) }
+            ) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.DataObject, null, modifier = Modifier.size(14.dp))
-                        Text("Переменные (${variables.size})", fontSize = 13.sp)
+                        val totalVars = variables.size + functionParams.size
+                        Text("Переменные ($totalVars)", fontSize = 13.sp)
                     }
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Tag, null, modifier = Modifier.size(14.dp))
                         Text("Теги (${tags.size})", fontSize = 13.sp)
                     }
                 }
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
-                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.TableChart, null, modifier = Modifier.size(14.dp))
                         Text("Таблицы (${tables.size})", fontSize = 13.sp)
                     }
                 }
                 Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) {
-                    Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Functions, null, modifier = Modifier.size(14.dp))
-                        Text("Функции", fontSize = 13.sp)
+                        Icon(Icons.Default.Tune, null, modifier = Modifier.size(14.dp))
+                        Text("Методы", fontSize = 13.sp)
+                    }
+                }
+                Tab(selected = selectedTab == 4, onClick = { selectedTab = 4 }) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Functions, null, tint = if (selectedTab == 4) Color(0xFFA855F7) else TextSec, modifier = Modifier.size(14.dp))
+                        Text("Функции (${functions.size})", fontSize = 13.sp, color = if (selectedTab == 4) Color(0xFFA855F7) else TextSec)
                     }
                 }
             }
 
             when (selectedTab) {
-                0 -> VarsTab(variables, onInsert = { insertVar(it) }, onDelete = { showDeleteVar = it })
+                0 -> VarsTab(variables, functionParams = functionParams, onInsert = { insertVar(it) }, onDelete = { showDeleteVar = it })
                 1 -> TagsTab(tags, onInsert = { insertTag(it) }, onDelete = if (onDeleteTag != null) { { showDeleteTag = it } } else null)
                 2 -> TablesTab(tables, onInsert = { t, k -> insertTable(t, k) },
                     onDelete = if (onDeleteTable != null) { { showDeleteTable = it } } else null,
                     onEdit = { editingTable = it })
-                3 -> FunctionsTab(onInsert = { insertFn(it) })
+                3 -> MethodsTab(onInsert = { insertFn(it) })
+                4 -> CustomFunctionsTab(functions, onInsert = { insertFn(it) })
             }
         }
 
@@ -432,7 +454,8 @@ fun ExpressionEditorScreen(
 }
 
 @Composable
-private fun FunctionsTab(onInsert: (String) -> Unit) {
+private fun MethodsTab(onInsert: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
     val screenColor = Color(0xFF60A5FA)
     val randColor   = Color(0xFFA78BFA)
     val mathColor   = Color(0xFF34D399)
@@ -465,7 +488,8 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("\$not(true)",        "Логическое НЕ",    "Инвертирует логическое значение",    Icons.Default.NotInterested, logicColor),
         
         // Строковые функции
-        BuiltinFn("\$concat(\"a\", \"b\")", "Соединить",    "Объединяет два текста",              Icons.Default.Link,         stringColor),
+        BuiltinFn("\"Текст: \" + {var}",    "Склеить (+)",      "Склеивание с пробелом внутри кавычек", Icons.Default.Add,         stringColor),
+        BuiltinFn("\$concat(\"Текст: \", {var})", "Соединить (concat)", "Объединяет текст с переменной", Icons.Default.Link,        stringColor),
         BuiltinFn("\$length(\"text\")",     "Длина текста", "Количество символов в тексте",       Icons.Default.Straighten,   stringColor),
         BuiltinFn("\$upper(\"text\")",      "В верхний регистр", "Преобразует в заглавные буквы", Icons.Default.KeyboardArrowUp, stringColor),
         BuiltinFn("\$lower(\"TEXT\")",      "В нижний регистр",  "Преобразует в строчные буквы",  Icons.Default.KeyboardArrowDown, stringColor),
@@ -508,36 +532,154 @@ private fun FunctionsTab(onInsert: (String) -> Unit) {
         BuiltinFn("{collision_self_rotation}", "Поворот моего объекта",    "Угол поворота объекта-инициатора",               Icons.Default.Bolt, Color(0xFFFF6B6B)),
     )
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        items(fns) { fn ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
-                    .clickable { onInsert(fn.insert) }.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(fn.color.copy(0.15f)),
-                    contentAlignment = Alignment.Center
+    val filtered = remember(query, fns) {
+        if (query.isBlank()) fns
+        else fns.filter {
+            it.label.contains(query, ignoreCase = true) ||
+            it.insert.contains(query, ignoreCase = true) ||
+            it.description.contains(query, ignoreCase = true)
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Поиск метода или константы...", color = TextSec, fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec, modifier = Modifier.size(16.dp)) },
+            trailingIcon = if (query.isNotEmpty()) {
+                { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Clear, null, tint = TextSec, modifier = Modifier.size(16.dp)) } }
+            } else null,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
+                focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = Accent
+            )
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(filtered) { fn ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
+                        .clickable { onInsert(fn.insert) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(fn.icon, null, tint = fn.color, modifier = Modifier.size(16.dp))
+                    Box(
+                        Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(fn.color.copy(0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(fn.icon, null, tint = fn.color, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(color = fn.color, fontFamily = FontFamily.Monospace)) {
+                                    append(fn.insert)
+                                }
+                            },
+                            fontSize = 13.sp, fontWeight = FontWeight.Medium
+                        )
+                        Text(fn.description, color = TextSec, fontSize = 11.sp)
+                    }
+                    Icon(Icons.Default.AddCircleOutline, null, tint = fn.color.copy(0.7f), modifier = Modifier.size(18.dp))
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomFunctionsTab(
+    functions: List<su.SkrinVex.SkriCode.data.Script>,
+    onInsert: (String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val funcColor = Color(0xFFA855F7)
+
+    val filtered = remember(query, functions) {
+        if (query.isBlank()) functions
+        else functions.filter {
+            it.name.contains(query, ignoreCase = true) ||
+            it.eventTarget.contains(query, ignoreCase = true) ||
+            (it.functionParams?.any { p -> p.contains(query, ignoreCase = true) } == true)
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Поиск функции...", color = TextSec, fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec, modifier = Modifier.size(16.dp)) },
+            trailingIcon = if (query.isNotEmpty()) {
+                { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Clear, null, tint = TextSec, modifier = Modifier.size(16.dp)) } }
+            } else null,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = funcColor, unfocusedBorderColor = Surface3,
+                focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = funcColor
+            )
+        )
+
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Functions, null, tint = TextSec.copy(0.4f), modifier = Modifier.size(48.dp))
                     Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(color = fn.color, fontFamily = FontFamily.Monospace)) {
-                                append(fn.insert)
-                            }
-                        },
-                        fontSize = 13.sp, fontWeight = FontWeight.Medium
+                        if (functions.isEmpty()) "В проекте пока нет пользовательских функций.\nСоздай функцию через добавление скрипта с типом «Функция»."
+                        else "Функция по запросу «$query» не найдена.",
+                        color = TextSec, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Text(fn.description, color = TextSec, fontSize = 11.sp)
                 }
-                Icon(Icons.Default.AddCircleOutline, null, tint = fn.color.copy(0.7f), modifier = Modifier.size(18.dp))
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(filtered) { func ->
+                    val paramList: List<String> = func.functionParams?.takeIf { it.isNotEmpty() }
+                        ?: func.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    val signature = "\$${func.name}(${paramList.joinToString(", ")})"
+                    val insertText = "\$${func.name}(${paramList.joinToString(", ") { "0" }})"
+
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2)
+                            .clickable { onInsert(insertText) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(funcColor.copy(0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Functions, null, tint = funcColor, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                buildAnnotatedString {
+                                    withStyle(SpanStyle(color = funcColor, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)) {
+                                        append(signature)
+                                    }
+                                },
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                if (paramList.isNotEmpty()) "Параметры: ${paramList.joinToString(", ")}" else "Без параметров",
+                                color = TextSec, fontSize = 11.sp
+                            )
+                        }
+                        Icon(Icons.Default.AddCircleOutline, null, tint = funcColor.copy(0.7f), modifier = Modifier.size(18.dp))
+                    }
+                }
             }
         }
     }
@@ -657,12 +799,17 @@ private fun CreateVarDialog(
 }
 
 @Composable
-private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onDelete: (ProjectVar) -> Unit) {
+private fun VarsTab(
+    variables: List<ProjectVar>,
+    functionParams: List<String> = emptyList(),
+    onInsert: (String) -> Unit,
+    onDelete: (ProjectVar) -> Unit
+) {
     val globalVars = variables.filter { it.scope == VarScope.GLOBAL }
-    val localVars = variables.filter { it.scope == VarScope.LOCAL }
+    val localVars = variables.filter { it.scope == VarScope.LOCAL && it.name !in functionParams }
     
     Column(Modifier.fillMaxHeight()) {
-        if (variables.isEmpty()) {
+        if (variables.isEmpty() && functionParams.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
                 Text("Нет переменных. Нажми + чтобы создать.", color = TextSec, fontSize = 14.sp)
             }
@@ -671,9 +818,21 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (globalVars.isNotEmpty()) {
+                if (functionParams.isNotEmpty()) {
                     item {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Icon(Icons.Default.Functions, null, tint = Color(0xFFA855F7), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Параметры функции (${functionParams.size})", color = Color(0xFFA855F7), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    items(functionParams, key = { "param_$it" }) { paramName ->
+                        ParamRow(name = paramName, onClick = { onInsert(paramName) })
+                    }
+                }
+                if (globalVars.isNotEmpty()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).padding(top = if (functionParams.isNotEmpty()) 8.dp else 0.dp)) {
                             Icon(Icons.Default.Public, null, tint = Accent, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Глобальные", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -685,7 +844,7 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
                 }
                 if (localVars.isNotEmpty()) {
                     item {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).padding(top = if (globalVars.isNotEmpty()) 8.dp else 0.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).padding(top = if (globalVars.isNotEmpty() || functionParams.isNotEmpty()) 8.dp else 0.dp)) {
                             Icon(Icons.Default.Lock, null, tint = Warning, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Локальные", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -697,6 +856,40 @@ private fun VarsTab(variables: List<ProjectVar>, onInsert: (String) -> Unit, onD
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ParamRow(name: String, onClick: () -> Unit) {
+    val funcColor = Color(0xFFA855F7)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Surface2)
+            .border(1.dp, funcColor.copy(0.25f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)).background(funcColor.copy(0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Functions, null, tint = funcColor, modifier = Modifier.size(14.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "{$name}",
+                color = funcColor,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp
+            )
+            Text("Параметр текущей функции", color = TextSec, fontSize = 11.sp)
+        }
+        Icon(Icons.Default.AddCircleOutline, null, tint = funcColor.copy(0.7f), modifier = Modifier.size(18.dp))
     }
 }
 

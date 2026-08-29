@@ -306,7 +306,12 @@ data class BuiltinFunc(val name: String, val args: List<AstExpr>) : AstExpr {
                 val obj = scope.objects[objName] ?: return ""
                 obj.label
             }
-            else -> ""
+            else -> {
+                if (scope.functions.containsKey(name) || scope.customFuncEvaluator != null) {
+                    val evaluatedArgs = args.map { it.evalString(vars, scope) }
+                    scope.customFuncEvaluator?.invoke(name, evaluatedArgs, scope) ?: ""
+                } else ""
+            }
         }
     }
 }

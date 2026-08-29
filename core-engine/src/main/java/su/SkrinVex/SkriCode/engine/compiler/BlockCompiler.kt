@@ -326,6 +326,21 @@ object BlockCompiler {
                 "scene_switch" -> result += CompiledBlock.SceneSwitch(expr("scene"))
                 "sim_stop" -> result += CompiledBlock.SimStop
 
+                "call_func" -> {
+                    val rawArgs = p("args").trim()
+                    val argsList = if (rawArgs.isBlank()) emptyList() else {
+                        rawArgs.split(",").map { ExprCompiler.compile(it.trim()) }
+                    }
+                    val retVar = p("return_var").removePrefix("{").removeSuffix("}").trim()
+                    result += CompiledBlock.CallFunc(
+                        funcNameExpr = expr("name", "myFunc"),
+                        argsExpr = argsList,
+                        returnVar = retVar
+                    )
+                }
+
+                "return_val" -> result += CompiledBlock.ReturnVal(expr("value", "0"))
+
                 // ── Управляющие конструкции (Open / Close) ────────────────────
                 "if_open" -> {
                     val cond = ExprCompiler.compileCondition(p("left"), p("op", "=="), p("right", "0"))

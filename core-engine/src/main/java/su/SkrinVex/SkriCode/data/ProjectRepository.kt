@@ -33,6 +33,7 @@ enum class ScriptEvent(val label: String) {
     ON_HOLD("Пока зажат объект"),
     ON_COLLISION("При столкновении"),
     ON_COLLISION_END("При окончании столкновения"),
+    FUNCTION("Функция")
 }
 
 data class Script(
@@ -44,7 +45,8 @@ data class Script(
     val localVars: List<ProjectVar>? = emptyList(),
     val localTags: List<ProjectTag>? = emptyList(),
     val localTables: List<ProjectTable>? = emptyList(),
-    val collapsedBlockIds: Set<String>? = emptySet()  // сохранённые свёрнутые блоки
+    val collapsedBlockIds: Set<String>? = emptySet(),  // сохранённые свёрнутые блоки
+    val functionParams: List<String>? = emptyList()     // имена входных параметров функции, e.g. ["a", "b"]
 )
 
 /** Объект на локации (не привязан к скрипту, только визуальное позиционирование) */

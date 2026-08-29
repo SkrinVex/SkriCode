@@ -10,6 +10,7 @@ import su.SkrinVex.SkriCode.data.ProjectVar
 import su.SkrinVex.SkriCode.data.Script
 import su.SkrinVex.SkriCode.data.ScriptEvent
 import su.SkrinVex.SkriCode.data.SerializedBlock
+import su.SkrinVex.SkriCode.data.VarScope
 
 class SimEngineTest {
 
@@ -836,5 +837,83 @@ class SimEngineTest {
         assertEquals(true, obj.isTextInput)
         assertEquals("button", obj.inputTrigger)
         assertEquals("Line 1\nLine 2", state.globalVars["bio_var"])
+    }
+
+    @Test
+    fun testCustomFunctionExecution() = runBlocking {
+        // Создаем функцию "multiply" с параметрами x, y и блоком return_val {x} * {y}
+        val returnBlock = SerializedBlock(
+            type = "return_val",
+            params = mapOf("value" to "{x} * {y}")
+        )
+        val funcScript = Script(
+            id = "f_mult",
+            name = "multiply",
+            event = ScriptEvent.FUNCTION,
+            functionParams = listOf("x", "y"),
+            blocks = listOf(returnBlock)
+        )
+
+        // Главный скрипт: вызывает multiply(6, 7) и сохраняет в ans
+        val callBlock = SerializedBlock(
+            type = "call_func",
+            params = mapOf(
+                "name" to "multiply",
+                "args" to "6, 7",
+                "return_var" to "ans"
+            )
+        )
+        val mainScript = Script(
+            id = "s_main",
+            name = "Main",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(callBlock)
+        )
+
+        val state = SimEngine.run(
+            scripts = listOf(funcScript, mainScript),
+            globalVarDefs = listOf(ProjectVar("ans", VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("42", state.globalVars["ans"])
+        assertTrue(state.log.any { it.contains("Вызов «multiply»") })
+    }
+
+    @Test
+    fun testCustomFunctionInExpression() = runBlocking {
+        // Функция "addFive" с параметром val и блоком return_val {val} + 5
+        val returnBlock = SerializedBlock(
+            type = "return_val",
+            params = mapOf("value" to "{val} + 5")
+        )
+        val funcScript = Script(
+            id = "f_add5",
+            name = "addFive",
+            event = ScriptEvent.FUNCTION,
+            functionParams = listOf("val"),
+            blocks = listOf(returnBlock)
+        )
+
+        // Главный скрипт: присваивает переменной res значение вызова $addFive(20)
+        val setVarBlock = SerializedBlock(
+            type = "set_var",
+            params = mapOf(
+                "name" to "res",
+                "value" to "\$addFive(20)"
+            )
+        )
+        val mainScript = Script(
+            id = "s_main2",
+            name = "Main2",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(setVarBlock)
+        )
+
+        val state = SimEngine.run(
+            scripts = listOf(funcScript, mainScript),
+            globalVarDefs = listOf(ProjectVar("res", VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("25", state.globalVars["res"])
     }
 }

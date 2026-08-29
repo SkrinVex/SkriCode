@@ -181,6 +181,10 @@ sealed interface CompiledBlock {
     data class WaitLoopStart(val secondsExpr: AstExpr, val countExpr: AstExpr, val loopId: String, var endPc: Int) : CompiledBlock
     data class WaitLoopEnd(val loopId: String, val startPc: Int) : CompiledBlock
 
+    // ── Пользовательские функции ─────────────────────────────────────────────
+    data class CallFunc(val funcNameExpr: AstExpr, val argsExpr: List<AstExpr>, val returnVar: String) : CompiledBlock
+    data class ReturnVal(val valueExpr: AstExpr) : CompiledBlock
+
     data class SceneSwitch(val sceneExpr: AstExpr) : CompiledBlock
     object SimStop : CompiledBlock
 }

@@ -198,6 +198,8 @@ data class ExprScope(
     var objects: Map<String, SimObject> = emptyMap(),
     var joysticks: Map<String, JoystickState> = emptyMap(),
     var tables: Map<String, Map<String, String>> = emptyMap(),
+    var functions: Map<String, su.SkrinVex.SkriCode.data.Script> = emptyMap(),
+    var customFuncEvaluator: ((name: String, args: List<String>, scope: ExprScope) -> String)? = null
 )
 
 data class EvalResult(val value: String, val error: String? = null)

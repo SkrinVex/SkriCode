@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -207,6 +208,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
             variables = state.visibleVars,
             tags = state.visibleTags,
             tables = state.visibleTables,
+            functions = state.customFunctions,
+            functionParams = state.activeFunctionParams,
             isIdentifier = target.isIdentifier,
             onConfirm = { value ->
                 if (target.branch != null && target.childIndex >= 0) {
@@ -361,7 +364,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onSelect = vm::selectScene,
                         onAdd = { vm.addScene("Сцена ${state.scenes.size + 1}") },
                         onRename = { id, name -> vm.renameScene(id, name) },
-                        onDelete = { id -> vm.deleteScene(id) }
+                        onDelete = { id -> vm.deleteScene(id) },
+                        onMove = { from, to -> vm.moveScene(from, to) }
                     )
                     // Панель скриптов
                     ScriptTabsRow(
@@ -499,6 +503,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         total = activeBlocks.size,
                         variables = state.visibleVars,
                         allBlocks = state.allScriptBlocks,
+                        customFunctions = state.customFunctions,
                         sceneNames = state.sceneNames,
                         spriteNames = state.spriteNames,
                         soundNames = state.soundNames,
@@ -631,11 +636,12 @@ private fun ScriptTabsRow(
     ) {
         scripts.forEach { script ->
             val isActive = script.id == activeId
+            val itemColor = if (script.event == ScriptEvent.FUNCTION) Color(0xFFA855F7) else Accent
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (isActive) Accent.copy(alpha = 0.2f) else Surface3)
-                    .border(1.dp, if (isActive) Accent else Color.Transparent, RoundedCornerShape(8.dp))
+                    .background(if (isActive) itemColor.copy(alpha = 0.2f) else Surface3)
+                    .border(1.dp, if (isActive) itemColor else Color.Transparent, RoundedCornerShape(8.dp))
                     .combinedClickable(
                         onClick = { onSelect(script.id) },
                         onLongClick = { onLongPress(script.id) }
@@ -645,10 +651,10 @@ private fun ScriptTabsRow(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Icon(
                         eventIcon(script.event), null,
-                        tint = if (isActive) Accent else TextSec,
+                        tint = if (isActive) itemColor else TextSec,
                         modifier = Modifier.size(12.dp)
                     )
-                    Text(script.name, color = if (isActive) Accent else TextSec,
+                    Text(script.name, color = if (isActive) itemColor else TextSec,
                         fontSize = 13.sp, fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
@@ -669,11 +675,19 @@ private fun ScriptEventHeader(script: Script, variables: List<ProjectVar>, tags:
             .clickable { showDialog = true }.padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(eventIcon(script.event), null, tint = Accent, modifier = Modifier.size(16.dp))
+        Icon(eventIcon(script.event), null, tint = if (script.event == ScriptEvent.FUNCTION) Color(0xFFA855F7) else Accent, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text(script.event.label, color = Accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            if (script.event != ScriptEvent.ON_START && script.eventTarget.isNotBlank()) {
+            val titleColor = if (script.event == ScriptEvent.FUNCTION) Color(0xFFA855F7) else Accent
+            val titleText = if (script.event == ScriptEvent.FUNCTION) "Функция: ${script.name}" else script.event.label
+            Text(titleText, color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            if (script.event == ScriptEvent.FUNCTION) {
+                val paramsStr = script.functionParams?.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: script.eventTarget
+                Text(
+                    if (paramsStr.isNotBlank()) "Параметры: ($paramsStr)" else "Без параметров (нажми для настройки)",
+                    color = TextSec, fontSize = 11.sp
+                )
+            } else if (script.event != ScriptEvent.ON_START && script.eventTarget.isNotBlank()) {
                 Text(
                     if (script.eventTarget.startsWith("#")) "Тег: ${script.eventTarget}"
                     else "Объект: ${script.eventTarget}",
@@ -711,23 +725,40 @@ private fun EventPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
-        title = { Text("Событие скрипта", color = TextPrim) },
+        title = { Text("Событие / тип скрипта", color = TextPrim) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ScriptEvent.entries.forEach { event ->
+                    val isFunc = event == ScriptEvent.FUNCTION
+                    val activeColor = if (isFunc) Color(0xFFA855F7) else Accent
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                            .background(if (selected == event) Accent.copy(0.15f) else Surface3)
+                            .background(if (selected == event) activeColor.copy(0.15f) else Surface3)
                             .clickable { selected = event }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(eventIcon(event), null, tint = if (selected == event) Accent else TextSec,
+                        Icon(eventIcon(event), null, tint = if (selected == event) activeColor else TextSec,
                             modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
-                        Text(event.label, color = if (selected == event) Accent else TextPrim, fontSize = 14.sp)
+                        Text(event.label, color = if (selected == event) activeColor else TextPrim, fontSize = 14.sp)
                     }
                 }
-                if (selected != ScriptEvent.ON_START) {
+                if (selected == ScriptEvent.FUNCTION) {
+                    HorizontalDivider(color = Surface3)
+                    OutlinedTextField(
+                        value = target,
+                        onValueChange = { target = it },
+                        label = { Text("Параметры функции") },
+                        placeholder = { Text("a, b или target, amount", color = TextSec) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFA855F7), focusedLabelColor = Color(0xFFA855F7),
+                            cursorColor = Color(0xFFA855F7), focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                        )
+                    )
+                    Text("Параметры (через запятую) будут доступны внутри функции как переменные", color = TextSec, fontSize = 11.sp)
+                } else if (selected != ScriptEvent.ON_START) {
                     HorizontalDivider(color = Surface3)
                     // Поле ввода имени объекта
                     OutlinedTextField(
@@ -840,6 +871,7 @@ private fun EmptyState() {
 internal fun BlockParamContent(
     block: BlockDef,
     variables: List<ProjectVar>,
+    customFunctions: List<Script> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
     soundNames: List<String> = emptyList(),
@@ -871,6 +903,12 @@ internal fun BlockParamContent(
                 VarNameChip(value = param.value, label = param.label, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             block.type == "sim_text_input" && key == "var" ->
+                VarNameChip(value = param.value, label = param.label, variables = variables,
+                    onClick = { onOpenExpr(key, param.label, param.value, true) })
+            block.type == "call_func" && key == "name" ->
+                FunctionChip(param = param, customFunctions = customFunctions,
+                    onChange = { onParamChange(key, it) })
+            block.type == "call_func" && key == "return_var" ->
                 VarNameChip(value = param.value, label = param.label, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, true) })
             block.type == "sim_text_input" && key == "multiline" ->
@@ -1060,6 +1098,7 @@ internal fun BlockCard(
     block: BlockDef, index: Int, total: Int,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
+    customFunctions: List<Script> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
     soundNames: List<String> = emptyList(),
@@ -1105,6 +1144,7 @@ internal fun BlockCard(
             index = index,
             total = total,
             variables = variables,
+            customFunctions = customFunctions,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             collapsed = collapsed,
@@ -1170,7 +1210,9 @@ internal fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             IfBlockContent(
                                 block = block, variables = variables,
-                                allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
+                                allBlocks = allBlocks,
+                                customFunctions = customFunctions,
+                                sceneNames = sceneNames, spriteNames = spriteNames,
                                 soundNames = soundNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
@@ -1189,7 +1231,9 @@ internal fun BlockCard(
                             Spacer(Modifier.height(10.dp))
                             LoopBlockContent(
                                 block = block, variables = variables,
-                                allBlocks = allBlocks, sceneNames = sceneNames, spriteNames = spriteNames,
+                                allBlocks = allBlocks,
+                                customFunctions = customFunctions,
+                                sceneNames = sceneNames, spriteNames = spriteNames,
                                 soundNames = soundNames,
                                 scriptId = scriptId,
                                 onToggleChildCollapsed = onToggleChildCollapsed,
@@ -1277,6 +1321,7 @@ internal fun BlockCard(
                                 Spacer(Modifier.height(10.dp))
                                 BlockParamContent(
                                     block = block, variables = variables,
+                                    customFunctions = customFunctions,
                                     sceneNames = sceneNames, spriteNames = spriteNames,
                                     soundNames = soundNames,
                                     onParamChange = onParamChange, onOpenExpr = onOpenExpr
@@ -1363,6 +1408,7 @@ internal fun OpenCloseBlockCard(
     index: Int,
     total: Int = 1,
     variables: List<ProjectVar>,
+    customFunctions: List<Script> = emptyList(),
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     collapsed: Boolean = false,
@@ -1389,20 +1435,21 @@ internal fun OpenCloseBlockCard(
     var showMoveDialog by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth()
-            .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+        modifier = Modifier.fillMaxWidth().animateContentSize()
+            .padding(start = indentStart)
+            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = { showContextMenu = true }
                 )
             },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2)
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(3.dp).background(accent))
+            Box(Modifier.fillMaxWidth().height(2.dp).background(accent))
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(bracketSymbol, color = accent, fontSize = 22.sp,
@@ -1413,8 +1460,9 @@ internal fun OpenCloseBlockCard(
                         Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(14.dp))
                         Text(block.displayName, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     }
-                    if (!isClose && !isElse)
+                    if (!isClose && !isElse) {
                         Text(block.description, color = TextSec, fontSize = 11.sp)
+                    }
                 }
                 SmallBtn(Icons.Default.KeyboardArrowUp, enabled = canMoveUp, onClick = onMoveUp)
                 SmallBtn(Icons.Default.KeyboardArrowDown, enabled = canMoveDown, onClick = onMoveDown)
@@ -1431,6 +1479,7 @@ internal fun OpenCloseBlockCard(
                 HorizontalDivider(color = Surface3, modifier = Modifier.padding(horizontal = 12.dp))
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     BlockParamContent(block = block, variables = variables,
+                        customFunctions = customFunctions,
                         onParamChange = onParamChange, onOpenExpr = onOpenExpr)
                 }
             }
@@ -1711,6 +1760,7 @@ internal fun IfBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
+    customFunctions: List<Script> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
     soundNames: List<String> = emptyList(),
@@ -1779,6 +1829,7 @@ internal fun IfBlockContent(
         branch = "then",
         blocks = block.children["then"] ?: emptyList(),
         variables = variables,
+        customFunctions = customFunctions,
         scriptId = scriptId,
         onToggleChildCollapsed = onToggleChildCollapsed,
         isChildCollapsed = isChildCollapsed,
@@ -1796,6 +1847,7 @@ internal fun IfBlockContent(
         branch = "else",
         blocks = block.children["else"] ?: emptyList(),
         variables = variables,
+        customFunctions = customFunctions,
         scriptId = scriptId,
         onToggleChildCollapsed = onToggleChildCollapsed,
         isChildCollapsed = isChildCollapsed,
@@ -1816,6 +1868,7 @@ internal fun IfBranchSection(
     branch: String,
     blocks: List<BlockDef>,
     variables: List<ProjectVar>,
+    customFunctions: List<Script> = emptyList(),
     scriptId: String = "",
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
@@ -1858,6 +1911,7 @@ internal fun IfBranchSection(
                     block = child, childIndex = ci, branch = branch,
                     variables = variables,
                     allBlocks = allBlocks,
+                    customFunctions = customFunctions,
                     sceneNames = sceneNames,
                     spriteNames = spriteNames,
                     soundNames = soundNames,
@@ -1914,6 +1968,7 @@ internal fun ChildBlockRow(
     block: BlockDef, childIndex: Int, branch: String,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
+    customFunctions: List<Script> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
     soundNames: List<String> = emptyList(),
@@ -1962,6 +2017,7 @@ internal fun ChildBlockRow(
                 } else {
                     BlockParamContent(
                         block = block, variables = variables,
+                        customFunctions = customFunctions,
                         sceneNames = sceneNames, spriteNames = spriteNames,
                         soundNames = soundNames,
                         onParamChange = onParamChange, onOpenExpr = onOpenExpr
@@ -2344,6 +2400,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.CAMERA     -> Color(0xFF4ADE80)
     BlockCategory.AUDIO      -> Color(0xFFE879F9)
     BlockCategory.WIDGET     -> Color(0xFF818CF8)
+    BlockCategory.FUNCTION   -> Color(0xFFA855F7)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -2359,6 +2416,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.CAMERA     -> Icons.Default.Videocam
     BlockCategory.AUDIO      -> Icons.Default.MusicNote
     BlockCategory.WIDGET     -> Icons.Default.SmartButton
+    BlockCategory.FUNCTION   -> Icons.Default.Functions
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
@@ -2367,6 +2425,7 @@ fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
     ScriptEvent.ON_HOLD          -> Icons.Default.PanTool
     ScriptEvent.ON_COLLISION     -> Icons.Default.Bolt
     ScriptEvent.ON_COLLISION_END -> Icons.Default.CallMissed
+    ScriptEvent.FUNCTION         -> Icons.Default.Functions
 }
 
 @Composable
@@ -2374,6 +2433,7 @@ internal fun LoopBlockContent(
     block: BlockDef,
     variables: List<ProjectVar>,
     allBlocks: List<BlockDef> = emptyList(),
+    customFunctions: List<Script> = emptyList(),
     sceneNames: List<String> = emptyList(),
     spriteNames: List<String> = emptyList(),
     soundNames: List<String> = emptyList(),
@@ -2407,6 +2467,7 @@ internal fun LoopBlockContent(
         branch = "body",
         blocks = bodyBlocks,
         variables = variables,
+        customFunctions = customFunctions,
         scriptId = scriptId,
         onToggleChildCollapsed = onToggleChildCollapsed,
         isChildCollapsed = isChildCollapsed,
@@ -2926,7 +2987,8 @@ private fun SceneTabsRow(
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
     onRename: (String, String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onMove: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> }
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -2939,8 +3001,9 @@ private fun SceneTabsRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(Icons.Default.Layers, null, tint = TextSec, modifier = Modifier.size(14.dp))
-        scenes.forEach { scene ->
+        scenes.forEachIndexed { idx, scene ->
             val isActive = scene.id == activeId
+            val isStart = idx == 0
             Box(
                 Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -2952,8 +3015,22 @@ private fun SceneTabsRow(
                     )
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
-                Text(scene.name, color = if (isActive) Accent else TextSec, fontSize = 12.sp,
-                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isStart) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Стартовая сцена",
+                            tint = if (isActive) Accent else Color(0xFF4ADE80),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    Text(
+                        scene.name,
+                        color = if (isActive) Accent else TextSec,
+                        fontSize = 12.sp,
+                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
             }
         }
         IconButton(onClick = onAdd, modifier = Modifier.size(24.dp)) {
@@ -2961,15 +3038,25 @@ private fun SceneTabsRow(
         }
     }
 
-    // Диалог переименования/удаления сцены
+    // Диалог настройки/перемещения/переименования/удаления сцены
     renamingId?.let { id ->
-        val scene = scenes.find { it.id == id } ?: return@let
+        val sceneIndex = scenes.indexOfFirst { it.id == id }
+        val scene = scenes.getOrNull(sceneIndex) ?: return@let
+        val canMoveLeft = sceneIndex > 0
+        val canMoveRight = sceneIndex != -1 && sceneIndex < scenes.size - 1
+        val isStartScene = sceneIndex == 0
+
         AlertDialog(
             onDismissRequest = { renamingId = null },
             containerColor = Surface2,
-            title = { Text("Сцена «${scene.name}»", color = TextPrim) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Layers, null, tint = Accent, modifier = Modifier.size(18.dp))
+                    Text("Сцена «${scene.name}»", color = TextPrim, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = renameText, onValueChange = { renameText = it },
                         label = { Text("Название") }, singleLine = true,
@@ -2979,17 +3066,95 @@ private fun SceneTabsRow(
                             focusedLabelColor = Accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = Accent
                         )
                     )
+
+                    if (isStartScene) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF4ADE80).copy(0.12f))
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(14.dp))
+                            Text("Стартовая сцена (запускается первой)", color = Color(0xFF4ADE80), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
                     if (scenes.size > 1) {
+                        Text("Порядок сцен:", color = TextSec, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (canMoveLeft) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onMove(sceneIndex, sceneIndex - 1)
+                                        renamingId = null
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrim)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Влево", fontSize = 12.sp)
+                                }
+                            }
+                            if (canMoveRight) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onMove(sceneIndex, sceneIndex + 1)
+                                        renamingId = null
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrim)
+                                ) {
+                                    Text("Вправо", fontSize = 12.sp)
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+
+                        if (!isStartScene) {
+                            OutlinedButton(
+                                onClick = {
+                                    onMove(sceneIndex, 0)
+                                    renamingId = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF4ADE80))
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Сделать стартовой (первой)", fontSize = 12.sp, color = Color(0xFF4ADE80))
+                            }
+                        }
+
+                        Spacer(Modifier.height(2.dp))
                         TextButton(
                             onClick = { onDelete(id); renamingId = null },
-                            colors = ButtonDefaults.textButtonColors(contentColor = Danger)
-                        ) { Text("Удалить сцену") }
+                            colors = ButtonDefaults.textButtonColors(contentColor = Danger),
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, null, tint = Danger, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Удалить сцену", fontSize = 12.sp)
+                        }
                     }
                 }
             },
             confirmButton = {
-                Button(onClick = { onRename(id, renameText.trim().ifBlank { scene.name }); renamingId = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text("OK", color = Color.Black) }
+                Button(
+                    onClick = { onRename(id, renameText.trim().ifBlank { scene.name }); renamingId = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                ) { Text("Сохранить", color = Color.Black) }
             },
             dismissButton = { TextButton(onClick = { renamingId = null }) { Text("Отмена", color = TextSec) } }
         )
@@ -3107,6 +3272,68 @@ internal fun SceneChip(param: BlockParam, sceneNames: List<String>, onChange: (S
                 if (sceneNames.isEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Нет сцен", color = TextSec, fontSize = 13.sp) },
+                        onClick = { expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun FunctionChip(
+    param: BlockParam,
+    customFunctions: List<Script>,
+    onChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val funcColor = Color(0xFFA855F7)
+    Column {
+        Text(param.label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Box {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3)
+                    .border(1.dp, funcColor.copy(0.4f), RoundedCornerShape(8.dp))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Functions, null, tint = funcColor, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    param.value.ifBlank { "Выбрать функцию..." },
+                    color = if (param.value.isBlank()) TextSec else TextPrim,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+                Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Surface2)
+            ) {
+                customFunctions.forEach { func ->
+                    val paramNames = func.functionParams?.takeIf { it.isNotEmpty() }
+                        ?: func.eventTarget.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    val sig = if (paramNames.isNotEmpty()) "(${paramNames.joinToString(", ")})" else "()"
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(func.name, color = if (func.name == param.value) funcColor else TextPrim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(sig, color = TextSec, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Functions, null, tint = if (func.name == param.value) funcColor else TextSec, modifier = Modifier.size(16.dp)) },
+                        onClick = { onChange(func.name); expanded = false }
+                    )
+                }
+                if (customFunctions.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Нет созданных функций (создай скрипт-функцию)", color = TextSec, fontSize = 12.sp) },
                         onClick = { expanded = false }
                     )
                 }
