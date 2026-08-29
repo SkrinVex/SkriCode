@@ -178,29 +178,55 @@ fun ExpressionEditorScreen(
                         hasChanges = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Выражение") },
-                    placeholder = { Text("100, {x} + 50, \$screenWidth - 100", color = TextSec) },
+                    label = { Text(if (isIdentifier) "Имя" else "Выражение / Текст") },
+                    placeholder = { Text(if (isIdentifier) "имя" else "100, {x} + 50, \$screenWidth, Привет!\nНовая строка", color = TextSec) },
                     singleLine = isIdentifier,
-                    maxLines = if (isIdentifier) 1 else 6,
+                    minLines = if (isIdentifier) 1 else 3,
+                    maxLines = if (isIdentifier) 1 else 8,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = if (isIdentifier) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default
+                    ),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
                         focusedLabelColor = Accent, unfocusedLabelColor = TextSec,
                         focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = Accent
                     ),
-                    textStyle = LocalTextStyle.current.copy(fontSize = 18.sp, fontFamily = FontFamily.Monospace)
+                    textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontFamily = FontFamily.Monospace)
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
-                        append(" — переменная  ")
-                        withStyle(SpanStyle(color = Color(0xFF34D399), fontFamily = FontFamily.Monospace)) { append("[таблица.ключ]") }
-                        append(" — таблица  ")
-                        withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$константа") }
-                        append(" — встроенная")
-                    },
-                    color = TextSec, fontSize = 11.sp
-                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(color = Warning, fontFamily = FontFamily.Monospace)) { append("{имя}") }
+                            append(" — перем.  ")
+                            withStyle(SpanStyle(color = Color(0xFF34D399), fontFamily = FontFamily.Monospace)) { append("[табл.ключ]") }
+                            append("  ")
+                            withStyle(SpanStyle(color = Color(0xFF60A5FA), fontFamily = FontFamily.Monospace)) { append("\$встр.") }
+                        },
+                        color = TextSec, fontSize = 11.sp
+                    )
+                    if (!isIdentifier) {
+                        Surface(
+                            onClick = { insertAt("\n") },
+                            shape = RoundedCornerShape(6.dp),
+                            color = Surface2,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Surface3)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardReturn, null, tint = Accent, modifier = Modifier.size(13.dp))
+                                Text("+ Новая строка (\\n)", color = TextPrim, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
             }
 
             TabRow(selectedTabIndex = selectedTab, containerColor = Surface1, contentColor = Accent) {

@@ -86,7 +86,8 @@ object SimEngine {
                     width = pf("width", 200f).coerceAtLeast(1f),
                     height = pf("height", 40f).coerceAtLeast(1f),
                     radius = 0f,
-                    color = parseColor(p("textColor").ifBlank { "#FFFFFF" }),
+                    color = Color.Transparent,
+                    textColor = parseColor(p("textColor").ifBlank { "#FFFFFF" }),
                     label = p("text"),
                     fontSize = pf("size", 16f),
                     bold = p("bold") == "true",
@@ -602,7 +603,7 @@ object SimEngine {
 
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w, height = h, radius = 0f,
-                            color = col, label = text, fontSize = size, bold = inst.bold,
+                            color = Color.Transparent, textColor = col, label = text, fontSize = size, bold = inst.bold,
                             tags = inst.tags, zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
@@ -612,7 +613,7 @@ object SimEngine {
                             hitbox = existing?.hitbox ?: Hitbox()
                         )
                         deletedObjects.remove(name)
-                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "label", "fontSize", "bold", "color", "hitbox"))
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.addAll(setOf("x", "y", "width", "height", "label", "fontSize", "bold", "color", "textColor", "hitbox"))
                         log += "  Текст «$name»: \"$text\""
                         onUpdate?.invoke()
                     } else {

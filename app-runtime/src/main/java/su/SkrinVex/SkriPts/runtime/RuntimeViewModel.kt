@@ -149,7 +149,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, onUpdate = { _simState.value = it }, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
                                 val next = res.pendingSceneSwitch
                                 if (next != null) { switchScene(next, res.globalVars); return@launch }
@@ -161,7 +161,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, onUpdate = { _simState.value = it }, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
                                 val next = res.pendingSceneSwitch
                                 if (next != null) { switchScene(next, res.globalVars); return@launch }
@@ -177,7 +177,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, getLatestState = { _simState.value ?: sim2 })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = b, selfName = a, onUpdate = { _simState.value = it }, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
                                 val next = res.pendingSceneSwitch
                                 if (next != null) { switchScene(next, res.globalVars); return@launch }
@@ -189,7 +189,7 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                         if (sid !in runningCollision) {
                             runningCollision += sid
                             launch {
-                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, getLatestState = { _simState.value ?: sim2 })
+                                val res = SimEngine.runCollision(sid, _scripts, _simState.value ?: return@launch, otherName = a, selfName = b, onUpdate = { _simState.value = it }, getLatestState = { _simState.value ?: sim2 })
                                 runningCollision -= sid
                                 val next = res.pendingSceneSwitch
                                 if (next != null) { switchScene(next, res.globalVars); return@launch }

@@ -211,8 +211,9 @@ fun SimulationScreen(
                 if (!isUi) {
                     val ox = cx + camOx + obj.x
                     val oy = cy + camOy - obj.y
-                    val hw = obj.width / 2f; val hh = obj.height / 2f
-                    if (ox + hw < 0 || ox - hw > size.width || oy + hh < 0 || oy - hh > size.height) return@forEach
+                    val maxRadius = kotlin.math.hypot(obj.width, obj.height) / 2f
+                    if (ox + maxRadius < -150f || ox - maxRadius > size.width + 150f ||
+                        oy + maxRadius < -150f || oy - maxRadius > size.height + 150f) return@forEach
                     drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode, state, ctx)
                 }
             }
