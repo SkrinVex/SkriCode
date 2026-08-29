@@ -678,4 +678,77 @@ class SimEngineTest {
         // Переместить блок 2 (index 1) НАД блоком 4 (index 3) -> target = 2
         assertEquals(2, calcNewIndex(currentIndex = 1, targetNum = 4, mode = "above", totalBlocks = 5))
     }
+
+    @Test
+    fun testStaticPhysicsBodyCannotBeMovedByImpulseOrMove() = runBlocking {
+        val create = SerializedBlock(type = "sim_create", params = mapOf("name" to "wall", "x" to "0", "y" to "0"))
+        val physics = SerializedBlock(type = "sim_physics", params = mapOf("name" to "wall", "static" to "true"))
+        val impulse = SerializedBlock(type = "physics_impulse", params = mapOf("name" to "wall", "vx" to "100", "vy" to "50"))
+        val move = SerializedBlock(type = "physics_move", params = mapOf("name" to "wall", "speed" to "200"))
+
+        val script = Script(id = "s_static", name = "StaticTest", event = ScriptEvent.ON_START, blocks = listOf(create, physics, impulse, move))
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        val wall = state.objects["wall"]
+        assertNotNull("wall must exist", wall)
+        assertNotNull("physicsBody must exist", wall!!.physicsBody)
+        assertEquals("wall must be static", true, wall.physicsBody!!.isStatic)
+        assertEquals("velocityX must remain 0", 0f, wall.physicsBody!!.velocityX, 0.001f)
+        assertEquals("velocityY must remain 0", 0f, wall.physicsBody!!.velocityY, 0.001f)
+    }
+
+    @Test
+    fun testSimBgColorBlockSetsBackgroundColor() = runBlocking {
+        val bgBlock = SerializedBlock(type = "sim_bg_color", params = mapOf("color" to "#38BDF8"))
+        val script = Script(id = "s_bg", name = "BgTest", event = ScriptEvent.ON_START, blocks = listOf(bgBlock))
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        assertEquals(Color(0xFF38BDF8), state.backgroundColor)
+    }
+
+    @Test
+    fun testManualHitboxPointsWithNegativeCoords() = runBlocking {
+        val create = SerializedBlock(type = "sim_create", params = mapOf("name" to "hero", "x" to "0", "y" to "0"))
+        val hitboxBlock = SerializedBlock(
+            type = "sim_hitbox",
+            params = mapOf(
+                "name" to "hero",
+                "type" to "manual",
+                "points" to "-50.0,30.0;50.0,30.0;0.0,-30.0"
+            )
+        )
+        val script = Script(id = "s_hb", name = "HbTest", event = ScriptEvent.ON_START, blocks = listOf(create, hitboxBlock))
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        val hero = state.objects["hero"]
+        assertNotNull("hero must exist", hero)
+        assertEquals(HitboxType.MANUAL, hero!!.hitbox.type)
+        assertEquals(3, hero.hitbox.points.size)
+        assertEquals(-50f, hero.hitbox.points[0].first, 0.001f)
+        assertEquals(30f, hero.hitbox.points[0].second, 0.001f)
+        assertEquals(50f, hero.hitbox.points[1].first, 0.001f)
+        assertEquals(30f, hero.hitbox.points[1].second, 0.001f)
+        assertEquals(0f, hero.hitbox.points[2].first, 0.001f)
+        assertEquals(-30f, hero.hitbox.points[2].second, 0.001f)
+    }
+
+    @Test
+    fun testInfiniteForLoopStart() = runBlocking {
+        // Count = 0 should execute as infinite loop until broken
+        val loopStart = SerializedBlock(type = "for_loop_open", params = mapOf("count" to "0"))
+        val ifOpen = SerializedBlock(type = "if_open", params = mapOf("left" to "{i}", "op" to ">=", "right" to "3"))
+        val stop = SerializedBlock(type = "sim_stop")
+        val ifClose = SerializedBlock(type = "if_close")
+        val loopClose = SerializedBlock(type = "for_loop_close")
+
+        val script = Script(
+            id = "s_inf",
+            name = "InfLoopTest",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(loopStart, ifOpen, stop, ifClose, loopClose)
+        )
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        assertEquals("3", state.globalVars["i"])
+    }
 }

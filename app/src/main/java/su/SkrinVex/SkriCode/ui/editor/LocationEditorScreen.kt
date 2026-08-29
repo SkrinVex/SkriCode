@@ -733,15 +733,31 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlock(
             } ?: Color.White
             drawRoundRect(color = textColor.copy(alpha = 0.5f * alpha), topLeft = tl, size = Size(bw, bh), cornerRadius = CornerRadius(br, br), style = Stroke(1f))
             val ts = ((b.params["size"]?.value?.toFloatOrNull() ?: 16f) * zoom).coerceIn(8f, 60f) * density
-            drawContext.canvas.nativeCanvas.drawText(
-                b.params["text"]?.value ?: "",
-                screenX, screenY + ts / 3f,
-                android.graphics.Paint().apply {
-                    color = android.graphics.Color.WHITE; textSize = ts
-                    textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
-                    this.alpha = (alpha * 200).toInt()
-                }
-            )
+            val rawText = b.params["text"]?.value ?: ""
+            val lines = rawText.replace("\\n", "\n").split("\n")
+            val lineSpacing = ts * 1.25f
+            val totalTextHeight = lines.size * lineSpacing
+            val startY = tl.y + (bh - totalTextHeight) / 2f + ts * 0.85f
+            val paint = android.graphics.Paint().apply {
+                color = android.graphics.Color.argb(
+                    (textColor.alpha * alpha * 255).toInt().coerceIn(0, 255),
+                    (textColor.red * 255).toInt(),
+                    (textColor.green * 255).toInt(),
+                    (textColor.blue * 255).toInt()
+                )
+                textSize = ts
+                textAlign = android.graphics.Paint.Align.CENTER
+                isAntiAlias = true
+                isFakeBoldText = b.params["bold"]?.value == "true"
+            }
+            lines.forEachIndexed { idx, line ->
+                drawContext.canvas.nativeCanvas.drawText(
+                    line,
+                    screenX,
+                    startY + idx * lineSpacing,
+                    paint
+                )
+            }
             if (isSelected) drawRoundRect(color = Color(0xFF00E5FF), topLeft = Offset(tl.x - 3f, tl.y - 3f), size = Size(bw + 6f, bh + 6f), cornerRadius = CornerRadius(br + 3f, br + 3f), style = Stroke(2.5f))
         }
         else -> {

@@ -56,13 +56,16 @@ object BlockFactory {
             "name"  to p("rect1", "Имя объекта", "Какой объект"),
             "color" to p("#EF4444", "Цвет", "#RRGGBB")))
 
+        "sim_bg_color" -> build("sim_bg_color", "Цвет фона", "Устанавливает цвет фона экрана/сцены", BlockCategory.SIMULATION, listOf(
+            "color" to p("#0F172A", "Цвет фона", "Цвет фона сцены (#RRGGBB)")))
+
         "sim_update_text" -> build("sim_update_text", "Обновить текст", "Меняет текст любого объекта (sim_text или sim_create)", BlockCategory.SIMULATION, listOf(
             "name" to p("text1", "Имя объекта", "Любой объект с текстом"),
-            "text" to p("", "Новый текст", "Поддерживает {переменные}")))
+            "text" to p("", "Новый текст", "Поддерживает {переменные} и перенос строк (\\n)")))
 
         "sim_text" -> build("sim_text", "Текстовый объект", "Создаёт текст на сцене", BlockCategory.SIMULATION, listOf(
             "name"      to p("text1", "Имя объекта", "Уникальное имя"),
-            "text"      to p("Привет!", "Текст", "Поддерживает {переменные}"),
+            "text"      to p("Привет!", "Текст", "Поддерживает {переменные} и перенос строк (\\n)"),
             "x"         to p("0", "X", "Позиция X", ParamType.NUMBER),
             "y"         to p("0", "Y", "Позиция Y", ParamType.NUMBER),
             "width"     to p("200", "Ширина", "Ширина области", ParamType.NUMBER),
@@ -79,8 +82,8 @@ object BlockFactory {
         "sim_stop" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
 
         // Циклы (legacy — только для обратной совместимости, не показываются в пикере)
-        "for_loop" -> build("for_loop", "Цикл (повторить)", "Повторяет блоки указанное количество раз", BlockCategory.CONTROL, listOf(
-            "count" to p("5", "Количество", "Сколько раз повторить", ParamType.NUMBER))).copy(
+        "for_loop" -> build("for_loop", "Цикл (повторить)", "Повторяет блоки указанное количество раз (0 или true = бесконечно)", BlockCategory.CONTROL, listOf(
+            "count" to p("5", "Количество", "Сколько раз повторить (0 или true = бесконечно)", ParamType.NUMBER))).copy(
             children = mapOf("body" to emptyList()))
 
         "while_loop" -> build("while_loop", "Цикл (пока)", "Повторяет блоки пока условие истинно", BlockCategory.CONTROL, listOf(
@@ -104,8 +107,8 @@ object BlockFactory {
 
         "if_close" -> build("if_close", "Конец условия", "Конец блока условия", BlockCategory.CONTROL, emptyList())
 
-        "for_loop_open" -> build("for_loop_open", "Цикл (повторить)", "Повторяет блоки до конца цикла", BlockCategory.CONTROL, listOf(
-            "count" to p("5", "Количество", "Сколько раз повторить", ParamType.NUMBER)))
+        "for_loop_open" -> build("for_loop_open", "Цикл (повторить)", "Повторяет блоки до конца цикла (0 или true = бесконечно)", BlockCategory.CONTROL, listOf(
+            "count" to p("5", "Количество", "Сколько раз повторить (0 или true = бесконечно)", ParamType.NUMBER)))
 
         "for_loop_close" -> build("for_loop_close", "Конец цикла", "Конец цикла (повторить)", BlockCategory.CONTROL, emptyList())
 

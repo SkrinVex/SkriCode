@@ -55,6 +55,8 @@ sealed interface CompiledBlock {
         val target: String, val speed: Float, val directional: Boolean
     ) : CompiledBlock
 
+    data class SimBgColor(val colorExpr: AstExpr) : CompiledBlock
+
     data class SetTexture(
         val targetExpr: AstExpr, val spriteExpr: AstExpr,
         val scaleXExpr: AstExpr, val scaleYExpr: AstExpr, val alphaExpr: AstExpr,

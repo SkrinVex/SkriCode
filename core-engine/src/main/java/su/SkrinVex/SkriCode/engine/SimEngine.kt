@@ -58,15 +58,15 @@ object SimEngine {
             val physicsBody = if (hasPhysics) PhysicsBody(
                 enabled = true,
                 gravity = pf("_gravity", -9.8f),
-                isStatic = p("_static") == "true",
+                isStatic = p("_static") == "true" || p("isStatic") == "true" || p("static") == "true",
                 bounciness = pf("_bounciness", 0f).coerceIn(0f, 1f),
                 mass = pf("_mass", 1f).coerceAtLeast(0.01f),
                 velocityX = pf("_vx", 0f),
                 velocityY = pf("_vy", 0f)
             ) else null
-            val hitboxType = if (p("_hitbox_type") == "manual") HitboxType.MANUAL else HitboxType.AUTO
-            val hitboxPts = if (hitboxType == HitboxType.MANUAL) parseHitboxPoints(p("_hitbox_points")) else emptyList()
-            val hitbox = Hitbox(type = hitboxType, points = hitboxPts)
+            val hitboxType = if (p("_hitbox_type") == "manual" || p("type") == "manual") HitboxType.MANUAL else HitboxType.AUTO
+            val hitboxPts = if (hitboxType == HitboxType.MANUAL) parseHitboxPoints(p("_hitbox_points").ifBlank { p("points") }) else emptyList()
+            val hitbox = Hitbox(type = if (hitboxPts.isNotEmpty()) HitboxType.MANUAL else hitboxType, points = hitboxPts)
 
             when (block.type) {
                 "sim_create" -> objects[name] = SimObject(
@@ -126,6 +126,7 @@ object SimEngine {
         }
         val cameraRef: Array<SimCamera?> = arrayOf(null)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
+        val backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A))
         val particles = mutableListOf<Particle>()
         val particleEmitters = mutableMapOf<String, ParticleEmitterState>()
         val screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState())
@@ -145,9 +146,10 @@ object SimEngine {
                     cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
                     particles = particles, particleEmitters = particleEmitters,
                     screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
-                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = sprites, projectId = projectId, particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) })
-                globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
-                globalTables.keys.forEach { k -> allTables[k]?.let { globalTables[k] = it } }
+                    backgroundColorRef = backgroundColorRef,
+                    onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0], sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) })
+                vars.filterKeys { it !in localVars }.forEach { (k, v) -> globalVars[k] = v }
+                allTables.filterKeys { it !in localTables }.forEach { (k, v) -> globalTables[k] = v }
             }
         }
 
@@ -164,7 +166,7 @@ object SimEngine {
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
             physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0],
-            sprites = sprites, projectId = projectId,
+            sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0],
             particles = particles.toList(), particleEmitters = particleEmitters.toMap(),
             screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])
     }
@@ -318,6 +320,7 @@ object SimEngine {
         val particleEmitters = currentState.particleEmitters.toMutableMap()
         val screenShakeRef: Array<ScreenShakeState> = arrayOf(currentState.screenShake)
         val screenFlashRef: Array<ScreenFlashState> = arrayOf(currentState.screenFlash)
+        val backgroundColorRef: Array<Color> = arrayOf(currentState.backgroundColor)
 
         val deletedObjects = mutableSetOf<String>()
         val deletedJoysticks = mutableSetOf<String>()
@@ -329,14 +332,15 @@ object SimEngine {
             cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
             particles = particles, particleEmitters = particleEmitters,
             screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
+            backgroundColorRef = backgroundColorRef,
             getLatestState = getLatestState,
             deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
             modifiedFields = modifiedFields,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) }
+                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0])) }
             } else null
         )
-        globalVars.keys.forEach { k -> vars[k]?.let { globalVars[k] = it } }
+        vars.filterKeys { it !in localTables.keys && it !in script.localVars.orEmpty().map { lv -> lv.name } }.forEach { (k, v) -> globalVars[k] = v }
 
         bindEventScripts(scripts, objects, errors, warnMissing = false)
 
@@ -419,6 +423,7 @@ object SimEngine {
             log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
             camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
             pendingSceneSwitch = sceneSwitchRef[0],
+            backgroundColor = backgroundColorRef[0],
             particles = particles.toList(),
             particleEmitters = particleEmitters.toMap(),
             screenShake = if (screenShakeRef[0] != currentState.screenShake) screenShakeRef[0] else baseState.screenShake,
@@ -443,6 +448,7 @@ object SimEngine {
         particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
         screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
+        backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
         getLatestState: (() -> SimState)? = null,
         deletedObjects: MutableSet<String> = mutableSetOf(),
         deletedJoysticks: MutableSet<String> = mutableSetOf(),
@@ -455,7 +461,7 @@ object SimEngine {
         return executeCompiled(
             compiled, vars, objects, joysticks, tables, log, errors,
             allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
-            particles, particleEmitters, screenShakeRef, screenFlashRef,
+            particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef,
             getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
         )
     }
@@ -477,6 +483,7 @@ object SimEngine {
         particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
         screenShakeRef: Array<ScreenShakeState> = arrayOf(ScreenShakeState()),
         screenFlashRef: Array<ScreenFlashState> = arrayOf(ScreenFlashState()),
+        backgroundColorRef: Array<Color> = arrayOf(Color(0xFF0F172A)),
         getLatestState: (() -> SimState)?,
         deletedObjects: MutableSet<String>,
         deletedJoysticks: MutableSet<String>,
@@ -799,6 +806,38 @@ object SimEngine {
                                 "fontSize" -> modified.copy(fontSize = propExpr.evalFloat(vars, evalScope, modified.fontSize).coerceAtLeast(6f))
                                 "bold" -> modified.copy(bold = resolved == "true")
                                 "textColor" -> modified.copy(textColor = if (resolved.isNotBlank()) parseColor(resolved) else null)
+                                "sprite" -> modified.copy(spriteName = resolved.ifBlank { null })
+                                "spriteAlpha" -> modified.copy(spriteAlpha = propExpr.evalFloat(vars, evalScope, 1f).coerceIn(0f, 1f))
+                                "spriteScaleX" -> modified.copy(spriteScaleX = propExpr.evalFloat(vars, evalScope, 1f))
+                                "spriteScaleY" -> modified.copy(spriteScaleY = propExpr.evalFloat(vars, evalScope, 1f))
+                                "physics_enabled" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(enabled = resolved == "true"))
+                                }
+                                "physics_static" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(isStatic = resolved == "true"))
+                                }
+                                "physics_gravity" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(gravity = propExpr.evalFloat(vars, evalScope, -9.8f)))
+                                }
+                                "physics_bounciness" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(bounciness = propExpr.evalFloat(vars, evalScope, 0f).coerceIn(0f, 1f)))
+                                }
+                                "physics_mass" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(mass = propExpr.evalFloat(vars, evalScope, 1f).coerceAtLeast(0.01f)))
+                                }
+                                "physics_vx" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(velocityX = propExpr.evalFloat(vars, evalScope, 0f)))
+                                }
+                                "physics_vy" -> {
+                                    val body = modified.physicsBody ?: PhysicsBody()
+                                    modified.copy(physicsBody = body.copy(velocityY = propExpr.evalFloat(vars, evalScope, 0f)))
+                                }
                                 else -> modified
                             }
                         }
@@ -832,6 +871,7 @@ object SimEngine {
                     val dvy = inst.vyExpr.evalFloat(vars, evalScope, 0f)
                     targets.forEach { (name, obj) ->
                         val body = obj.physicsBody ?: return@forEach
+                        if (body.isStatic) return@forEach
                         objects[name] = obj.copy(physicsBody = body.copy(
                             velocityX = body.velocityX + dvx,
                             velocityY = body.velocityY + dvy
@@ -849,6 +889,7 @@ object SimEngine {
                     val friction = inst.frictionExpr.evalFloat(vars, evalScope, 0.9f).coerceIn(0f, 1f)
                     targets.forEach { (name, obj) ->
                         val body = obj.physicsBody ?: return@forEach
+                        if (body.isStatic) return@forEach
                         val newRot = (obj.rotation + turn) % 360f
                         val rad = Math.toRadians(newRot.toDouble())
                         val dirX = kotlin.math.sin(rad).toFloat()
@@ -868,12 +909,20 @@ object SimEngine {
                     val target = inst.targetExpr.evalString(vars, evalScope)
                     val targets = getObjectsOrReport(target, "sim_hitbox")
                     val ptsStr = inst.pointsExpr.evalString(vars, evalScope)
-                    val hbType = if (inst.type == "manual" && ptsStr.isNotBlank()) HitboxType.MANUAL else HitboxType.AUTO
-                    val pts = if (hbType == HitboxType.MANUAL) parseHitboxPoints(ptsStr) else emptyList()
+                    val pts = parseHitboxPoints(ptsStr)
+                    val hbType = if (inst.type.equals("manual", ignoreCase = true) || pts.isNotEmpty()) HitboxType.MANUAL else HitboxType.AUTO
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(hitbox = Hitbox(type = hbType, points = pts))
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("hitbox")
                     }
+                    pc++
+                }
+
+                is CompiledBlock.SimBgColor -> {
+                    val colStr = inst.colorExpr.evalString(vars, evalScope)
+                    val col = parseColor(colStr.ifBlank { "#0F172A" })
+                    backgroundColorRef[0] = col
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1271,7 +1320,10 @@ object SimEngine {
                 }
 
                 is CompiledBlock.ForLoopStart -> {
-                    val count = inst.countExpr.evalDouble(vars, evalScope)?.toInt() ?: 1
+                    val strVal = inst.countExpr.evalString(vars, evalScope).trim().lowercase()
+                    val numVal = inst.countExpr.evalDouble(vars, evalScope)
+                    val isInfinite = strVal == "true" || strVal == "infinity" || strVal == "бесконечно" || (numVal != null && numVal <= 0.0)
+                    val count = if (isInfinite) Int.MAX_VALUE else (numVal?.toInt() ?: 1)
                     val current = loopCounters.getOrPut(inst.loopId) { 0 }
                     if (current >= count) {
                         loopCounters.remove(inst.loopId)
@@ -1436,7 +1488,7 @@ object SimEngine {
                                 val ok = executeCompiled(
                                     inst.innerBlocks, vars, objects, joysticks, tables, log, errors,
                                     allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
-                                    particles, particleEmitters, screenShakeRef, screenFlashRef,
+                                    particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef,
                                     getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
                                 )
                                 if (!ok) return false

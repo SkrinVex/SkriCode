@@ -194,6 +194,7 @@ fun SimulationScreen(
             val cy = size.height / 2f + shakeOy
             // Читаем версию кэша чтобы Canvas перерисовывался после загрузки bitmap
             @Suppress("UNUSED_EXPRESSION") bitmapCacheVersion
+            drawRect(state.backgroundColor)
             if (debugMode) drawGrid(cx, cy)
 
             val cam = state.camera
@@ -466,12 +467,12 @@ private fun DrawScope.drawJoystick(joy: JoystickState, cx: Float, cy: Float) {
 }
 
 private fun DrawScope.drawHitbox(obj: SimObject, cx: Float, cy: Float) {
-    val body = obj.physicsBody ?: return
+    val body = obj.physicsBody
     val left = cx + obj.x - obj.width / 2f
     val top  = cy - obj.y - obj.height / 2f
     val centerX = left + obj.width / 2f
     val centerY = top + obj.height / 2f
-    val hitboxColor = if (body.isStatic) Color(0xFF00FF88) else Color(0xFFFF4444)
+    val hitboxColor = if (body == null) Color(0xFF00E5FF) else if (body.isStatic) Color(0xFF00FF88) else Color(0xFFFF4444)
 
     rotate(obj.rotation, Offset(centerX, centerY)) {
         if (obj.hitbox.type == HitboxType.MANUAL && obj.hitbox.points.size >= 2) {
@@ -604,12 +605,21 @@ private fun DrawScope.drawSimObject(
             )
             textPaint.textSize = textSize
             textPaint.isFakeBoldText = obj.bold
-            drawContext.canvas.nativeCanvas.drawText(
-                obj.label,
-                left + obj.width / 2f,
-                top + obj.height / 2f + textSize / 3f,
-                textPaint
-            )
+
+            val lines = obj.label.replace("\\n", "\n").split("\n")
+            val lineSpacing = textSize * 1.25f
+            val totalTextHeight = lines.size * lineSpacing
+            val startY = top + (obj.height - totalTextHeight) / 2f + textSize * 0.85f
+            val textCenterX = left + obj.width / 2f
+
+            lines.forEachIndexed { idx, line ->
+                drawContext.canvas.nativeCanvas.drawText(
+                    line,
+                    textCenterX,
+                    startY + idx * lineSpacing,
+                    textPaint
+                )
+            }
         }
     } // end rotate
 }

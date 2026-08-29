@@ -114,7 +114,7 @@ data class ScriptProject(
 
 data class SerializedBlock(
     val type: String,
-    val params: Map<String, String>,
+    val params: Map<String, String> = emptyMap(),
     val id: String = java.util.UUID.randomUUID().toString(),
     val children: Map<String, List<SerializedBlock>>? = null,
     val pairId: String? = null  // nullable для обратной совместимости со старыми сохранениями

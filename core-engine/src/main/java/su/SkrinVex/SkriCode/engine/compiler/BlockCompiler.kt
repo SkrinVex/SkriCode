@@ -141,7 +141,7 @@ object BlockCompiler {
 
                 "sim_physics" -> result += CompiledBlock.SimPhysics(
                     targetExpr = expr("name", altKey = "target"),
-                    isStatic = p("isStatic") == "true",
+                    isStatic = p("static", altKey = "isStatic") == "true",
                     gravityExpr = expr("gravity", "-9.8"),
                     bouncinessExpr = expr("bounciness", "0.0"),
                     massExpr = expr("mass", "1.0"),
@@ -162,10 +162,18 @@ object BlockCompiler {
                     frictionExpr = expr("friction", "0.9")
                 )
 
-                "sim_hitbox" -> result += CompiledBlock.SimHitbox(
-                    targetExpr = expr("name", altKey = "target"),
-                    type = p("type", "auto"),
-                    pointsExpr = expr("points")
+                "sim_hitbox" -> {
+                    val pointsRaw = p("points")
+                    val ptsExpr = if (pointsRaw.contains(';') || pointsRaw.contains(',')) LiteralString(pointsRaw) else expr("points")
+                    result += CompiledBlock.SimHitbox(
+                        targetExpr = expr("name", altKey = "target"),
+                        type = p("type", "auto"),
+                        pointsExpr = ptsExpr
+                    )
+                }
+
+                "sim_bg_color", "set_bg_color", "sim_background" -> result += CompiledBlock.SimBgColor(
+                    colorExpr = expr("color", "#0F172A")
                 )
 
                 "sim_layer" -> result += CompiledBlock.SimLayer(

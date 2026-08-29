@@ -83,4 +83,35 @@ class BlockCompilerTest {
         assertTrue(compiled[2] is CompiledBlock.ScreenShake)
         assertTrue(compiled[3] is CompiledBlock.CameraBounds)
     }
+
+    @Test
+    fun testCompilePhysicsAndHitboxAndBgColor() {
+        val blocks = listOf(
+            BlockDef("1", "sim_physics", "Физика", params = mapOf(
+                "name" to BlockParam("wall", "name"),
+                "static" to BlockParam("true", "static")
+            )),
+            BlockDef("2", "sim_hitbox", "Хитбокс", params = mapOf(
+                "name" to BlockParam("wall", "name"),
+                "type" to BlockParam("manual", "type"),
+                "points" to BlockParam("-20,10;20,10;0,-10", "points")
+            )),
+            BlockDef("3", "sim_bg_color", "Цвет фона", params = mapOf(
+                "color" to BlockParam("#1E293B", "color")
+            ))
+        )
+
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(3, compiled.size)
+
+        val phys = compiled[0] as CompiledBlock.SimPhysics
+        assertTrue("isStatic must be true when parameter static is true", phys.isStatic)
+
+        val hitbox = compiled[1] as CompiledBlock.SimHitbox
+        assertEquals("manual", hitbox.type)
+        assertEquals("-20,10;20,10;0,-10", hitbox.pointsExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+
+        val bg = compiled[2] as CompiledBlock.SimBgColor
+        assertEquals("#1E293B", bg.colorExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+    }
 }

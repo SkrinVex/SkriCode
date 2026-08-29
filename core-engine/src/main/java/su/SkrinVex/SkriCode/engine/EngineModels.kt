@@ -175,6 +175,7 @@ data class SimState(
     val pendingSceneSwitch: String? = null,  // имя сцены для перехода
     val sprites: List<SpriteAsset> = emptyList(),
     val projectId: String = "",
+    val backgroundColor: Color = Color(0xFF0F172A),
     // Новые системы
     val particles: List<Particle> = emptyList(),
     val particleEmitters: Map<String, ParticleEmitterState> = emptyMap(),

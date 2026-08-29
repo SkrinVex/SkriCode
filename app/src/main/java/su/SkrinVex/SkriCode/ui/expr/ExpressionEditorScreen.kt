@@ -180,7 +180,8 @@ fun ExpressionEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Выражение") },
                     placeholder = { Text("100, {x} + 50, \$screenWidth - 100", color = TextSec) },
-                    singleLine = true,
+                    singleLine = isIdentifier,
+                    maxLines = if (isIdentifier) 1 else 6,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
                         focusedLabelColor = Accent, unfocusedLabelColor = TextSec,

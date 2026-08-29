@@ -51,6 +51,11 @@ object ExprCompiler {
             "\$screenLeft" -> return ScreenConst(ScreenConstType.LEFT)
         }
 
+        // Точки хитбокса или списки со знаками «;» без выражений — сырая строка
+        if (expr.contains(';') && !expr.contains('{') && !expr.contains('$') && !expr.contains('[')) {
+            return LiteralString(expr)
+        }
+
         // Разбор арифметики (+ / -)
         val addSub = parseAddSub(expr)
         if (addSub != null) return addSub

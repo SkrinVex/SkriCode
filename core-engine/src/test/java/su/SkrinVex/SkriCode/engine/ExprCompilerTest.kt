@@ -90,4 +90,11 @@ class ExprCompilerTest {
         val textAst = ExprCompiler.compile("Width is \$screenWidth and height is \$screenHeight")
         assertEquals("Width is 2400 and height is 1080", textAst.evalString(emptyMap(), ExprEval.fallbackScope))
     }
+
+    @Test
+    fun testHitboxPointsNotMangledByExprCompiler() {
+        val pointsRaw = "-50.0,30.0;50.0,30.0;0.0,-30.0"
+        val ast = ExprCompiler.compile(pointsRaw)
+        assertEquals(pointsRaw, ast.evalString(emptyMap(), ExprEval.fallbackScope))
+    }
 }
