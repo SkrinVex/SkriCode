@@ -105,6 +105,9 @@ data class SimCamera(
     val targetName: String = "",   // имя объекта за которым следим
     val uiTags: Set<String> = emptySet(), // теги объектов-интерфейса (не двигаются с камерой)
     val smoothing: Float = 1f,     // 0..1: 1 = мгновенно, 0.05 = очень плавно
+    val zoom: Float = 1f,          // текущий масштаб (1 = 100%)
+    val targetZoom: Float = 1f,    // целевой масштаб
+    val zoomSmoothing: Float = 1f, // плавность изменения зума (1 = мгновенно, 0.05 = плавно)
     // runtime — текущее смещение камеры
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,

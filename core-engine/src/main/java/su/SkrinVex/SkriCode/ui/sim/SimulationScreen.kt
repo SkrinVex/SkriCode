@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -177,17 +179,26 @@ fun SimulationScreen(
                                             val cam = currentState.camera
                                             val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
                                             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+                                            val zoom = if (cam != null && cam.enabled) cam.zoom.coerceIn(0.05f, 20f) else 1f
                                             val uiTags = cam?.uiTags ?: emptySet()
                                             val hit = currentState.objects.values
                                                 .filter { it.visible && it.touchEnabled && !it.isTextInput }
-                                                .sortedWith(compareBy({ it.tags.any { tag -> tag in uiTags } }, { it.zOrder }))
+                                                .sortedWith(compareBy({ isUiObject(it, uiTags) }, { it.zOrder }))
                                                 .lastOrNull { obj ->
-                                                    val isUi = obj.tags.any { it in uiTags }
-                                                    val ox = if (isUi) cx else cx + camOx
-                                                    val oy = if (isUi) cy else cy + camOy
-                                                    val left = ox + obj.x - obj.width / 2f
-                                                    val top  = oy - obj.y - obj.height / 2f
-                                                    offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                                                    val isUi = isUiObject(obj, uiTags)
+                                                    if (isUi) {
+                                                        val left = cx + obj.x - obj.width / 2f
+                                                        val top  = cy - obj.y - obj.height / 2f
+                                                        offset.x in left..(left + obj.width) && offset.y in top..(top + obj.height)
+                                                    } else {
+                                                        val ox = cx + camOx
+                                                        val oy = cy + camOy
+                                                        val touchX = (offset.x - cx) / zoom + cx
+                                                        val touchY = (offset.y - cy) / zoom + cy
+                                                        val left = ox + obj.x - obj.width / 2f
+                                                        val top  = oy - obj.y - obj.height / 2f
+                                                        touchX in left..(left + obj.width) && touchY in top..(top + obj.height)
+                                                    }
                                                 }
                                             if (hit != null) {
                                                 onTap(hit.name)
@@ -226,61 +237,63 @@ fun SimulationScreen(
             val cam = state.camera
             val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+            val zoom = if (cam != null && cam.enabled) cam.zoom.coerceIn(0.05f, 20f) else 1f
             val uiTags = cam?.uiTags ?: emptySet()
 
             val sortedObjects = state.objects.values.sortedBy { it.zOrder }
 
-            // Мировые объекты — со смещением камеры, отсортированные по zOrder
-            sortedObjects.forEach { obj ->
-                if (!obj.visible) return@forEach
-                val isUi = obj.tags.any { it in uiTags }
-                if (!isUi) {
+            // Мировые объекты (со смещением и масштабом камеры)
+            withTransform({
+                if (zoom != 1f) {
+                    scale(scaleX = zoom, scaleY = zoom, pivot = Offset(cx, cy))
+                }
+            }) {
+                sortedObjects.forEach { obj ->
+                    if (!obj.visible || isUiObject(obj, uiTags)) return@forEach
                     val ox = cx + camOx + obj.x
                     val oy = cy + camOy - obj.y
                     val maxRadius = kotlin.math.hypot(obj.width, obj.height) / 2f
-                    if (ox + maxRadius < -150f || ox - maxRadius > size.width + 150f ||
-                        oy + maxRadius < -150f || oy - maxRadius > size.height + 150f) return@forEach
+                    if (ox + maxRadius < -300f || ox - maxRadius > size.width + 300f ||
+                        oy + maxRadius < -300f || oy - maxRadius > size.height + 300f) return@forEach
                     drawSimObject(obj, cx + camOx, cy + camOy, obj.name == highlightedObj, debugMode, state, ctx)
                 }
-            }
 
-            // Отрисовка частиц (мировые координаты)
-            if (state.particles.isNotEmpty()) {
-                state.particles.forEach { p ->
-                    val ox = cx + camOx + p.x
-                    val oy = cy + camOy - p.y
-                    if (ox >= -50f && ox <= size.width + 50f && oy >= -50f && oy <= size.height + 50f) {
-                        val progress = if (p.maxLife > 0f) (1f - (p.life / p.maxLife)).coerceIn(0f, 1f) else 1f
-                        val currentRadius = (p.sizeStart + (p.sizeEnd - p.sizeStart) * progress) / 2f
-                        val alpha = if (p.maxLife > 0f) (p.life / p.maxLife).coerceIn(0f, 1f) else 0f
-                        val r = p.colorStart.red + (p.colorEnd.red - p.colorStart.red) * progress
-                        val g = p.colorStart.green + (p.colorEnd.green - p.colorStart.green) * progress
-                        val b = p.colorStart.blue + (p.colorEnd.blue - p.colorStart.blue) * progress
-                        val col = Color(r, g, b, alpha)
-                        drawCircle(color = col, radius = currentRadius.coerceAtLeast(1f), center = Offset(ox, oy))
+                // Отрисовка частиц (мировые координаты)
+                if (state.particles.isNotEmpty()) {
+                    state.particles.forEach { p ->
+                        val ox = cx + camOx + p.x
+                        val oy = cy + camOy - p.y
+                        if (ox >= -100f && ox <= size.width + 100f && oy >= -100f && oy <= size.height + 100f) {
+                            val progress = if (p.maxLife > 0f) (1f - (p.life / p.maxLife)).coerceIn(0f, 1f) else 1f
+                            val currentRadius = (p.sizeStart + (p.sizeEnd - p.sizeStart) * progress) / 2f
+                            val alpha = if (p.maxLife > 0f) (p.life / p.maxLife).coerceIn(0f, 1f) else 0f
+                            val r = p.colorStart.red + (p.colorEnd.red - p.colorStart.red) * progress
+                            val g = p.colorStart.green + (p.colorEnd.green - p.colorStart.green) * progress
+                            val b = p.colorStart.blue + (p.colorEnd.blue - p.colorStart.blue) * progress
+                            val col = Color(r, g, b, alpha)
+                            drawCircle(color = col, radius = currentRadius.coerceAtLeast(1f), center = Offset(ox, oy))
+                        }
+                    }
+                }
+
+                if (showHitboxes) {
+                    sortedObjects.forEach { obj ->
+                        if (obj.visible && !isUiObject(obj, uiTags)) {
+                            drawHitbox(obj, cx + camOx, cy + camOy)
+                        }
                     }
                 }
             }
 
-            if (showHitboxes) {
-                sortedObjects.forEach { obj ->
-                    if (obj.visible) {
-                        val isUi = obj.tags.any { it in uiTags }
-                        if (!isUi) drawHitbox(obj, cx + camOx, cy + camOy)
-                    }
-                }
-            }
-            // UI объекты — без смещения (поверх), тоже по zOrder
+            // UI объекты — без смещения и без зума (поверх мировых), по zOrder
             sortedObjects.forEach { obj ->
-                if (!obj.visible) return@forEach
-                val isUi = obj.tags.any { it in uiTags }
-                if (isUi) drawSimObject(obj, cx, cy, obj.name == highlightedObj, debugMode, state, ctx)
+                if (!obj.visible || !isUiObject(obj, uiTags)) return@forEach
+                drawSimObject(obj, cx, cy, obj.name == highlightedObj, debugMode, state, ctx)
             }
             if (showHitboxes) {
                 sortedObjects.forEach { obj ->
-                    if (obj.visible) {
-                        val isUi = obj.tags.any { it in uiTags }
-                        if (isUi) drawHitbox(obj, cx, cy)
+                    if (obj.visible && isUiObject(obj, uiTags)) {
+                        drawHitbox(obj, cx, cy)
                     }
                 }
             }
@@ -385,15 +398,29 @@ fun SimulationScreen(
             val cam = state.camera
             val camOx = if (cam != null && cam.enabled) cam.offsetX else 0f
             val camOy = if (cam != null && cam.enabled) cam.offsetY else 0f
+            val zoom = if (cam != null && cam.enabled) cam.zoom.coerceIn(0.05f, 20f) else 1f
             val uiTags = cam?.uiTags ?: emptySet()
             val density = LocalDensity.current
 
             state.objects.values.filter { it.visible && it.isTextInput }.forEach { obj ->
-                val isUi = obj.tags.any { it in uiTags }
-                val ox = if (isUi) cx else cx + camOx
-                val oy = if (isUi) cy else cy + camOy
-                val leftPx = ox + obj.x - obj.width / 2f
-                val topPx = oy - obj.y - obj.height / 2f
+                val isUi = isUiObject(obj, uiTags)
+                val leftPx: Float
+                val topPx: Float
+                val objW: Float
+                val objH: Float
+                if (isUi) {
+                    leftPx = cx + obj.x - obj.width / 2f
+                    topPx = cy - obj.y - obj.height / 2f
+                    objW = obj.width
+                    objH = obj.height
+                } else {
+                    val ox = (cx + camOx + obj.x - cx) * zoom + cx
+                    val oy = (cy + camOy - obj.y - cy) * zoom + cy
+                    objW = obj.width * zoom
+                    objH = obj.height * zoom
+                    leftPx = ox - objW / 2f
+                    topPx = oy - objH / 2f
+                }
 
                 val isMulti = obj.multiline
                 val align = if (isMulti) Alignment.TopStart else Alignment.CenterStart
@@ -402,14 +429,14 @@ fun SimulationScreen(
                 Box(
                     modifier = Modifier
                         .offset { IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
-                        .size(with(density) { obj.width.toDp() }, with(density) { obj.height.toDp() })
+                        .size(with(density) { objW.toDp() }, with(density) { objH.toDp() })
                         .rotate(obj.rotation)
-                        .clip(RoundedCornerShape(with(density) { obj.radius.toDp() }))
+                        .clip(RoundedCornerShape(with(density) { (obj.radius * if (isUi) 1f else zoom).toDp() }))
                         .background(obj.color)
                         .border(
                             width = 1.5.dp,
                             color = Color(0xFF4F8EF7).copy(alpha = 0.85f),
-                            shape = RoundedCornerShape(with(density) { obj.radius.toDp() })
+                            shape = RoundedCornerShape(with(density) { (obj.radius * if (isUi) 1f else zoom).toDp() })
                         )
                         .padding(horizontal = 10.dp, vertical = vertPad),
                     contentAlignment = align
@@ -745,3 +772,11 @@ private fun DrawScope.drawSimObject(
         }
     } // end rotate
 }
+
+private fun isUiObject(obj: su.SkrinVex.SkriCode.engine.SimObject, uiTags: Set<String>): Boolean {
+    if (uiTags.isEmpty()) return false
+    val cleanUiTags = uiTags.map { it.trim().removePrefix("#").lowercase() }.filter { it.isNotBlank() }.toSet()
+    if (cleanUiTags.isEmpty()) return false
+    return obj.tags.any { tag -> tag.trim().removePrefix("#").lowercase() in cleanUiTags }
+}
+

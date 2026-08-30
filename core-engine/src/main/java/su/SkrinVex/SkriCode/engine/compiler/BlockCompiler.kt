@@ -297,12 +297,13 @@ object BlockCompiler {
                     durationExpr = expr("duration", "0.2")
                 )
                 "camera_bounds" -> result += CompiledBlock.CameraBounds(expr("minX", "-1000"), expr("maxX", "1000"), expr("minY", "-1000"), expr("maxY", "1000"))
+                "camera_zoom" -> result += CompiledBlock.CameraZoom(expr("zoom", "1.0"), expr("smoothing", "1.0"))
 
                 "sim_camera" -> result += CompiledBlock.SimCameraBlock(
                     name = p("name", "cam1"),
                     targetExpr = expr("target"),
                     smoothingExpr = expr("smoothing", "0.1"),
-                    uiTags = p("ui_tags").split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet(),
+                    uiTagsExpr = expr("ui_tags", ""),
                     enabled = p("enabled", "true") == "true"
                 )
 

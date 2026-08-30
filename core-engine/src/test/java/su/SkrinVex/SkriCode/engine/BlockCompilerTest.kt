@@ -250,4 +250,31 @@ class BlockCompilerTest {
         val ret = compiled[1] as CompiledBlock.ReturnVal
         assertEquals("15", ret.valueExpr.evalString(mapOf("a" to "10", "b" to "5"), ExprEval.fallbackScope))
     }
+
+    @Test
+    fun testCompileCameraZoomAndUiTags() {
+        val blocks = listOf(
+            BlockDef("c1", "sim_camera", "Создать камеру", params = mapOf(
+                "name" to BlockParam("cam1", "name"),
+                "target" to BlockParam("player", "target"),
+                "smoothing" to BlockParam("0.2", "smoothing"),
+                "ui_tags" to BlockParam("#UI, hud", "ui_tags")
+            )),
+            BlockDef("c2", "camera_zoom", "Масштаб камеры", params = mapOf(
+                "zoom" to BlockParam("2.0", "zoom"),
+                "smoothing" to BlockParam("0.5", "smoothing")
+            ))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(2, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SimCameraBlock)
+        val cam = compiled[0] as CompiledBlock.SimCameraBlock
+        assertEquals("cam1", cam.name)
+        assertEquals("player", cam.targetExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("#UI, hud", cam.uiTagsExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+
+        assertTrue(compiled[1] is CompiledBlock.CameraZoom)
+        val zoom = compiled[1] as CompiledBlock.CameraZoom
+        assertEquals(2.0f, zoom.zoomExpr.evalFloat(emptyMap(), ExprEval.fallbackScope), 0.001f)
+    }
 }

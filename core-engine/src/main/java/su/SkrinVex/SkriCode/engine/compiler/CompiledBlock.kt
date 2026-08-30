@@ -155,10 +155,11 @@ sealed interface CompiledBlock {
     // ── Камера ───────────────────────────────────────────────────────────────
     data class SimCameraBlock(
         val name: String, val targetExpr: AstExpr, val smoothingExpr: AstExpr,
-        val uiTags: Set<String>, val enabled: Boolean
+        val uiTagsExpr: AstExpr, val enabled: Boolean
     ) : CompiledBlock
 
     data class CameraToggle(val name: String, val enabledExpr: AstExpr) : CompiledBlock
+    data class CameraZoom(val zoomExpr: AstExpr, val smoothingExpr: AstExpr) : CompiledBlock
 
     // ── Звуки и музыка ───────────────────────────────────────────────────────
     data class SoundPlay(val soundExpr: AstExpr, val volumeExpr: AstExpr, val loopExpr: AstExpr, val rateExpr: AstExpr) : CompiledBlock

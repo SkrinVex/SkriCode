@@ -916,4 +916,61 @@ class SimEngineTest {
 
         assertEquals("25", state.globalVars["res"])
     }
+
+    @Test
+    fun testCameraFollowAndUiTags() = runBlocking {
+        val player = SerializedBlock(type = "sim_create", params = mapOf("name" to "player", "x" to "100", "y" to "50"))
+        val hpBar = SerializedBlock(type = "sim_create", params = mapOf("name" to "hp_bar", "x" to "0", "y" to "200"))
+        val tagHp = SerializedBlock(type = "set_tag", params = mapOf("object" to "hp_bar", "tag" to "#UI"))
+        val createCam = SerializedBlock(
+            type = "sim_camera",
+            params = mapOf(
+                "name" to "cam1",
+                "target" to "player",
+                "smoothing" to "1.0",
+                "ui_tags" to "#UI, hud"
+            )
+        )
+        val script = Script(
+            id = "s_cam",
+            name = "CamScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(player, hpBar, tagHp, createCam)
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val cam = state.camera
+        assertNotNull("Camera must be created", cam)
+        assertTrue("Camera must contain ui tag", cam!!.uiTags.contains("UI") || cam.uiTags.contains("ui"))
+
+        // Tick camera
+        val tickedState = SimEngine.tickCamera(state)
+        val tickedCam = tickedState.camera
+        assertNotNull("Ticked camera must exist", tickedCam)
+        assertEquals(-100f, tickedCam!!.offsetX, 0.001f)
+        assertEquals(50f, tickedCam.offsetY, 0.001f)
+    }
+
+    @Test
+    fun testCameraZoom() = runBlocking {
+        val createCam = SerializedBlock(
+            type = "sim_camera",
+            params = mapOf("name" to "cam1", "target" to "player", "smoothing" to "1.0")
+        )
+        val zoomBlock = SerializedBlock(
+            type = "camera_zoom",
+            params = mapOf("zoom" to "2.5", "smoothing" to "1.0")
+        )
+        val script = Script(
+            id = "s_zoom",
+            name = "ZoomScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(createCam, zoomBlock)
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        assertNotNull("Camera must exist", state.camera)
+        assertEquals(2.5f, state.camera!!.targetZoom, 0.001f)
+        assertEquals(2.5f, state.camera!!.zoom, 0.001f)
+    }
 }

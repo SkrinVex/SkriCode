@@ -378,6 +378,10 @@ object BlockFactory {
             "minY" to p("-1000", "Нижняя граница Y", "Минимум по Y", ParamType.NUMBER),
             "maxY" to p("1000", "Верхняя граница Y", "Максимум по Y", ParamType.NUMBER)))
 
+        "camera_zoom" -> build("camera_zoom", "Масштаб камеры", "Приближает или отдаляет камеру (1 = стандарт, 2 = приблизить 2x, 0.5 = отдалить 2x)", BlockCategory.CAMERA, listOf(
+            "zoom"      to p("1.0", "Масштаб", "1.0 = обычный, >1 = приблизить, <1 = отдалить (напр. 1.5 или 0.5)", ParamType.NUMBER),
+            "smoothing" to p("1.0", "Плавность", "1 = мгновенно, 0.05 = плавно", ParamType.NUMBER)))
+
         // ── Звуки и Музыка ────────────────────────────────────────────────────────
         "sound_play" -> build("sound_play", "Воспроизвести звук", "Короткий звуковой эффект через SoundPool", BlockCategory.AUDIO, listOf(
             "sound"  to p("", "Звук", "Имя звука из проекта"),

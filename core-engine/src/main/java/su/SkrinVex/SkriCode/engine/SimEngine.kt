@@ -52,7 +52,8 @@ object SimEngine {
             fun p(key: String) = block.params[key]?.value ?: ""
             fun pf(key: String, def: Float) = p(key).toFloatOrNull() ?: def
 
-            val tags = p("_tags").split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+            val rawTags = (p("_tags").ifBlank { p("tags") }).ifBlank { p("tag") }
+            val tags = rawTags.split(",").map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.toSet()
             val zOrder = p("_zOrder").toIntOrNull() ?: 0
             val hasPhysics = p("_physics") == "true"
             val physicsBody = if (hasPhysics) PhysicsBody(
@@ -293,14 +294,25 @@ object SimEngine {
 
     fun tickCamera(state: SimState): SimState {
         val cam = state.camera ?: return state
-        if (!cam.enabled || cam.targetName.isBlank()) return state
+        if (!cam.enabled) return state
+
+        // Плавное обновление масштаба камеры (зум)
+        val zs = cam.zoomSmoothing.coerceIn(0.01f, 1f)
+        val newZoom = if (cam.zoomSmoothing >= 1f) cam.targetZoom else (cam.zoom + (cam.targetZoom - cam.zoom) * zs)
+
+        if (cam.targetName.isBlank()) {
+            return if (newZoom != cam.zoom) state.copy(camera = cam.copy(zoom = newZoom)) else state
+        }
         val tName = cam.targetName.trim()
         val target = if (tName.startsWith("#")) {
-            val tag = tName.substring(1)
-            state.objects.values.firstOrNull { tag in it.tags }
+            val tag = tName.substring(1).trim().removePrefix("#").lowercase()
+            state.objects.values.firstOrNull { obj -> obj.tags.any { it.trim().removePrefix("#").lowercase() == tag } }
         } else {
-            state.objects[tName] ?: state.objects.entries.firstOrNull { it.key.trim() == tName }?.value
-        } ?: return state
+            state.objects[tName] ?: state.objects.entries.firstOrNull { it.key.trim().equals(tName, ignoreCase = true) }?.value
+        }
+        if (target == null) {
+            return if (newZoom != cam.zoom) state.copy(camera = cam.copy(zoom = newZoom)) else state
+        }
 
         var targetX = target.x
         var targetY = target.y
@@ -316,7 +328,8 @@ object SimEngine {
         val s = cam.smoothing.coerceIn(0.01f, 1f)
         val newCam = cam.copy(
             offsetX = cam.offsetX + (targetOffX - cam.offsetX) * s,
-            offsetY = cam.offsetY + (targetOffY - cam.offsetY) * s
+            offsetY = cam.offsetY + (targetOffY - cam.offsetY) * s,
+            zoom = newZoom
         )
         return state.copy(camera = newCam)
     }
@@ -686,7 +699,8 @@ object SimEngine {
 
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w, height = h, radius = r, color = col,
-                            tags = inst.tags, zOrder = inst.zOrder,
+                            tags = if (inst.tags.isNotEmpty()) inst.tags else (existing?.tags ?: emptySet()),
+                            zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
@@ -719,7 +733,8 @@ object SimEngine {
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w, height = h, radius = 0f,
                             color = Color.Transparent, textColor = col, label = text, fontSize = size, bold = inst.bold,
-                            tags = inst.tags, zOrder = inst.zOrder,
+                            tags = if (inst.tags.isNotEmpty()) inst.tags else (existing?.tags ?: emptySet()),
+                            zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
@@ -755,7 +770,9 @@ object SimEngine {
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w.coerceAtLeast(1f), height = h.coerceAtLeast(1f),
                             radius = 0f, color = Color.Transparent, spriteName = sprite.ifBlank { null },
-                            spriteAlpha = alpha, tags = inst.tags, zOrder = inst.zOrder,
+                            spriteAlpha = alpha,
+                            tags = if (inst.tags.isNotEmpty()) inst.tags else (existing?.tags ?: emptySet()),
+                            zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
@@ -790,7 +807,8 @@ object SimEngine {
                         objects[name] = SimObject(
                             name = name, x = x, y = y, width = w, height = h, radius = rad,
                             color = col, textColor = textCol, label = text, fontSize = size, bold = inst.bold,
-                            tags = inst.tags, zOrder = inst.zOrder,
+                            tags = if (inst.tags.isNotEmpty()) inst.tags else (existing?.tags ?: emptySet()),
+                            zOrder = inst.zOrder,
                             tapScriptId = existing?.tapScriptId,
                             holdScriptId = existing?.holdScriptId,
                             collisionScriptId = existing?.collisionScriptId,
@@ -1046,6 +1064,10 @@ object SimEngine {
                                 "physics_vy" -> {
                                     val body = modified.physicsBody ?: PhysicsBody()
                                     modified.copy(physicsBody = body.copy(velocityY = propExpr.evalFloat(vars, evalScope, 0f)))
+                                }
+                                "tag", "tags" -> {
+                                    val newTags = resolved.split(",").map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.toSet()
+                                    if (newTags.isNotEmpty()) modified.copy(tags = modified.tags + newTags) else modified
                                 }
                                 else -> modified
                             }
@@ -1362,11 +1384,31 @@ object SimEngine {
                     pc++
                 }
 
+                is CompiledBlock.CameraZoom -> {
+                    val targetZ = inst.zoomExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.05f, 20f)
+                    val sm = inst.smoothingExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.01f, 1f)
+                    val existing = cameraRef[0] ?: SimCamera(name = "cam1", enabled = true)
+                    cameraRef[0] = existing.copy(
+                        targetZoom = targetZ,
+                        zoomSmoothing = sm,
+                        zoom = if (sm >= 1f) targetZ else existing.zoom
+                    )
+                    pc++
+                }
+
                 is CompiledBlock.SimCameraBlock -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
                     val smoothing = inst.smoothingExpr.evalFloat(vars, evalScope, 0.1f).coerceIn(0.01f, 1f)
-                    cameraRef[0] = SimCamera(name = inst.name, enabled = inst.enabled, targetName = target,
-                        smoothing = smoothing, uiTags = inst.uiTags)
+                    val rawUiTags = inst.uiTagsExpr.evalString(vars, evalScope)
+                    val uiTags = rawUiTags.split(",").map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.toSet()
+                    val existing = cameraRef[0]
+                    cameraRef[0] = (existing ?: SimCamera(name = inst.name)).copy(
+                        name = inst.name,
+                        enabled = inst.enabled,
+                        targetName = target,
+                        smoothing = smoothing,
+                        uiTags = uiTags
+                    )
                     pc++
                 }
 
