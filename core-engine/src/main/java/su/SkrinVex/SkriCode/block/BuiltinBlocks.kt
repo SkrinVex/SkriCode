@@ -172,6 +172,10 @@ object BlockFactory {
         "sim_show" -> build("sim_show", "Показать объект", "Делает объект видимым и кликабельным", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Какой объект показать")))
 
+        "sim_alpha" -> build("sim_alpha", "Изменить непрозрачность", "Изменяет прозрачность объекта (1 = полностью видно, 0 = невидим)", BlockCategory.SIMULATION, listOf(
+            "name"  to p("rect1", "Имя объекта", "Какой объект или #тег"),
+            "alpha" to p("1.0", "Непрозрачность", "0.0..1.0 или 0..100%", ParamType.NUMBER)))
+
         "sim_touch_disable" -> build("sim_touch_disable", "Запретить касание", "Блокирует нажатия и удержания на объекте", BlockCategory.SIMULATION, listOf(
             "name" to p("rect1", "Имя объекта", "Имя объекта или #тег")))
 
@@ -238,6 +242,10 @@ object BlockFactory {
         "sim_no_collision" -> build("sim_no_collision", "Игнорировать коллизию", "Объект не будет сталкиваться с указанными объектами/тегами", BlockCategory.PHYSICS, listOf(
             "name"   to p("ammo", "Имя объекта", "Кому игнорировать"),
             "ignore" to p("player", "Игнорировать", "Имя или #тег через запятую")))
+
+        "sim_restore_collision" -> build("sim_restore_collision", "Не игнорировать коллизию", "Возобновляет столкновения с указанными объектами/тегами", BlockCategory.PHYSICS, listOf(
+            "name"   to p("ammo", "Имя объекта", "Какому объекту"),
+            "target" to p("player", "Не игнорировать", "Имя, #тег через запятую или all для всех")))
 
         "physics_toggle" -> build("physics_toggle", "Переключить физику", "Включает или выключает физику симуляции", BlockCategory.PHYSICS, listOf(
             "enabled" to p("true", "Физика", "true = вкл, false = выкл")))
@@ -379,6 +387,7 @@ object BlockFactory {
             "maxY" to p("1000", "Верхняя граница Y", "Максимум по Y", ParamType.NUMBER)))
 
         "camera_zoom" -> build("camera_zoom", "Масштаб камеры", "Приближает или отдаляет камеру (1 = стандарт, 2 = приблизить 2x, 0.5 = отдалить 2x)", BlockCategory.CAMERA, listOf(
+            "name"      to p("cam1", "Имя камеры", "Какую камеру"),
             "zoom"      to p("1.0", "Масштаб", "1.0 = обычный, >1 = приблизить, <1 = отдалить (напр. 1.5 или 0.5)", ParamType.NUMBER),
             "smoothing" to p("1.0", "Плавность", "1 = мгновенно, 0.05 = плавно", ParamType.NUMBER)))
 

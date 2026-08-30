@@ -261,6 +261,7 @@ class BlockCompilerTest {
                 "ui_tags" to BlockParam("#UI, hud", "ui_tags")
             )),
             BlockDef("c2", "camera_zoom", "Масштаб камеры", params = mapOf(
+                "name" to BlockParam("cam1", "name"),
                 "zoom" to BlockParam("2.0", "zoom"),
                 "smoothing" to BlockParam("0.5", "smoothing")
             ))
@@ -275,6 +276,39 @@ class BlockCompilerTest {
 
         assertTrue(compiled[1] is CompiledBlock.CameraZoom)
         val zoom = compiled[1] as CompiledBlock.CameraZoom
+        assertEquals("cam1", zoom.nameExpr.evalString(emptyMap(), ExprEval.fallbackScope))
         assertEquals(2.0f, zoom.zoomExpr.evalFloat(emptyMap(), ExprEval.fallbackScope), 0.001f)
+    }
+
+    @Test
+    fun testCompileSimRestoreCollision() {
+        val blocks = listOf(
+            BlockDef("rc1", "sim_restore_collision", "Не игнорировать коллизию", params = mapOf(
+                "name" to BlockParam("box", "name"),
+                "target" to BlockParam("player, #mobs", "target")
+            ))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SimRestoreCollision)
+        val rc = compiled[0] as CompiledBlock.SimRestoreCollision
+        assertEquals("box", rc.targetExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals("player, #mobs", rc.targetUnignoreExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+    }
+
+    @Test
+    fun testCompileSimAlpha() {
+        val blocks = listOf(
+            BlockDef("a1", "sim_alpha", "Изменить непрозрачность", params = mapOf(
+                "name" to BlockParam("hero", "name"),
+                "alpha" to BlockParam("0.5", "alpha")
+            ))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SimAlpha)
+        val alphaBlock = compiled[0] as CompiledBlock.SimAlpha
+        assertEquals("hero", alphaBlock.targetExpr.evalString(emptyMap(), ExprEval.fallbackScope))
+        assertEquals(0.5f, alphaBlock.alphaExpr.evalFloat(emptyMap(), ExprEval.fallbackScope), 0.001f)
     }
 }

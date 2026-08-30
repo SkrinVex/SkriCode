@@ -136,6 +136,7 @@ object BlockCompiler {
                 "sim_rotate" -> result += CompiledBlock.SimRotate(expr("name"), p("mode", "instant"), expr("angle", "0"))
                 "sim_hide" -> result += CompiledBlock.SimHide(expr("name", altKey = "target"))
                 "sim_show" -> result += CompiledBlock.SimShow(expr("name", altKey = "target"))
+                "sim_alpha" -> result += CompiledBlock.SimAlpha(expr("name", altKey = "target"), expr("alpha", "1.0"))
                 "sim_touch_disable", "touch_disable", "disable_touch", "sim_disable_touch" ->
                     result += CompiledBlock.SimTouchDisable(expr("name", altKey = "target"))
                 "sim_touch_enable", "touch_enable", "enable_touch", "sim_enable_touch" ->
@@ -223,6 +224,11 @@ object BlockCompiler {
                     ignoreExpr = expr("ignore")
                 )
 
+                "sim_restore_collision" -> result += CompiledBlock.SimRestoreCollision(
+                    targetExpr = expr("name", altKey = "target"),
+                    targetUnignoreExpr = expr("target", "all", altKey = "ignore")
+                )
+
                 "physics_toggle" -> result += CompiledBlock.PhysicsToggle(expr("enabled", "true"))
 
                 "set_texture" -> result += CompiledBlock.SetTexture(
@@ -297,7 +303,7 @@ object BlockCompiler {
                     durationExpr = expr("duration", "0.2")
                 )
                 "camera_bounds" -> result += CompiledBlock.CameraBounds(expr("minX", "-1000"), expr("maxX", "1000"), expr("minY", "-1000"), expr("maxY", "1000"))
-                "camera_zoom" -> result += CompiledBlock.CameraZoom(expr("zoom", "1.0"), expr("smoothing", "1.0"))
+                "camera_zoom" -> result += CompiledBlock.CameraZoom(expr("name", "cam1"), expr("zoom", "1.0"), expr("smoothing", "1.0"))
 
                 "sim_camera" -> result += CompiledBlock.SimCameraBlock(
                     name = p("name", "cam1"),

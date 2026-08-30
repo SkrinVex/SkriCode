@@ -61,6 +61,7 @@ sealed interface CompiledBlock {
     data class SimRotate(val targetExpr: AstExpr, val mode: String, val angleExpr: AstExpr) : CompiledBlock
     data class SimHide(val targetExpr: AstExpr) : CompiledBlock
     data class SimShow(val targetExpr: AstExpr) : CompiledBlock
+    data class SimAlpha(val targetExpr: AstExpr, val alphaExpr: AstExpr) : CompiledBlock
     data class SimTouchDisable(val targetExpr: AstExpr) : CompiledBlock
     data class SimTouchEnable(val targetExpr: AstExpr) : CompiledBlock
     data class SimDelete(val targetExpr: AstExpr) : CompiledBlock
@@ -113,6 +114,7 @@ sealed interface CompiledBlock {
     data class PhysicsMove(val targetExpr: AstExpr, val speedExpr: AstExpr, val turnExpr: AstExpr, val frictionExpr: AstExpr) : CompiledBlock
     data class SimHitbox(val targetExpr: AstExpr, val type: String, val pointsExpr: AstExpr) : CompiledBlock
     data class SimNoCollision(val targetExpr: AstExpr, val ignoreExpr: AstExpr) : CompiledBlock
+    data class SimRestoreCollision(val targetExpr: AstExpr, val targetUnignoreExpr: AstExpr) : CompiledBlock
     data class PhysicsToggle(val enabledExpr: AstExpr) : CompiledBlock
 
     // ── Частицы (Particle System) ─────────────────────────────────────────────
@@ -159,7 +161,7 @@ sealed interface CompiledBlock {
     ) : CompiledBlock
 
     data class CameraToggle(val name: String, val enabledExpr: AstExpr) : CompiledBlock
-    data class CameraZoom(val zoomExpr: AstExpr, val smoothingExpr: AstExpr) : CompiledBlock
+    data class CameraZoom(val nameExpr: AstExpr, val zoomExpr: AstExpr, val smoothingExpr: AstExpr) : CompiledBlock
 
     // ── Звуки и музыка ───────────────────────────────────────────────────────
     data class SoundPlay(val soundExpr: AstExpr, val volumeExpr: AstExpr, val loopExpr: AstExpr, val rateExpr: AstExpr) : CompiledBlock

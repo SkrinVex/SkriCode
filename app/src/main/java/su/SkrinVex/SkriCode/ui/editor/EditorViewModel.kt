@@ -787,13 +787,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        val currentSimState = currentSim.copy(globalVars = updatedVars, log = newLog)
-        _simState.value = currentSimState
+        val latest = _simState.value ?: currentSim
+        _simState.value = latest.copy(globalVars = updatedVars, log = newLog)
 
         val scriptId = obj?.tapScriptId ?: return
         _runningTapJobs[objectName]?.cancel()
         val job = viewModelScope.launch {
-            val liveSim = _simState.value ?: currentSimState
+            val liveSim = _simState.value ?: latest
             val newSim = SimEngine.runTap(scriptId, _simScripts, liveSim,
                 onUpdate = { liveState -> _simState.value = liveState },
                 getLatestState = { _simState.value ?: liveSim }

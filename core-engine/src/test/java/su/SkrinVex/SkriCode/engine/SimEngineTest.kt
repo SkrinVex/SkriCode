@@ -3,6 +3,7 @@ package su.SkrinVex.SkriCode.engine
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -959,7 +960,7 @@ class SimEngineTest {
         )
         val zoomBlock = SerializedBlock(
             type = "camera_zoom",
-            params = mapOf("zoom" to "2.5", "smoothing" to "1.0")
+            params = mapOf("name" to "cam1", "zoom" to "2.5", "smoothing" to "1.0")
         )
         val script = Script(
             id = "s_zoom",
@@ -972,5 +973,91 @@ class SimEngineTest {
         assertNotNull("Camera must exist", state.camera)
         assertEquals(2.5f, state.camera!!.targetZoom, 0.001f)
         assertEquals(2.5f, state.camera!!.zoom, 0.001f)
+    }
+
+    @Test
+    fun testTapDuringMovementDoesNotRevertPositionOrCamera() = runBlocking {
+        // Player moves to x = 200, camera follows player
+        val player = SimObject(name = "player", x = 100f, y = 0f, width = 50f, height = 50f, radius = 0f, color = Color.White)
+        val btn = SimObject(name = "btn", x = 0f, y = 0f, width = 50f, height = 50f, radius = 0f, color = Color.White, tapScriptId = "tap_btn")
+        val initialCam = SimCamera(name = "cam1", enabled = true, targetName = "player", offsetX = -100f)
+        var liveState = SimState(
+            objects = mapOf("player" to player, "btn" to btn),
+            camera = initialCam
+        )
+
+        val resizeBtnBlock = SerializedBlock(type = "sim_resize", params = mapOf("name" to "btn", "width" to "80", "height" to "80"))
+        val tapScript = Script(id = "tap_btn", name = "TapBtn", event = ScriptEvent.ON_TAP, blocks = listOf(resizeBtnBlock))
+
+        // While tap is executing, liveState has already moved player to x = 150 and camera to offsetX = -150
+        val movedPlayer = player.copy(x = 150f)
+        val movedCam = initialCam.copy(offsetX = -150f)
+        liveState = liveState.copy(
+            objects = mapOf("player" to movedPlayer, "btn" to btn),
+            camera = movedCam
+        )
+
+        var emittedState: SimState? = null
+        val finalState = SimEngine.runTap(
+            scriptId = "tap_btn",
+            scripts = listOf(tapScript),
+            currentState = liveState,
+            onUpdate = { emittedState = it },
+            getLatestState = { liveState }
+        )
+
+        // Verifications:
+        // 1. Button resized to 80x80
+        assertEquals(80f, finalState.objects["btn"]?.width)
+        assertEquals(80f, finalState.objects["btn"]?.height)
+
+        // 2. Player position was NOT reverted to 100, remained 150
+        assertEquals(150f, finalState.objects["player"]?.x)
+
+        // 3. Camera was NOT reverted to -100, remained -150
+        assertEquals(-150f, finalState.camera?.offsetX)
+
+        // 4. Intermediate onUpdate also preserved live player position and camera
+        assertNotNull(emittedState)
+        assertEquals(150f, emittedState?.objects?.get("player")?.x)
+        assertEquals(-150f, emittedState?.camera?.offsetX)
+        assertEquals(80f, emittedState?.objects?.get("btn")?.width)
+    }
+
+    @Test
+    fun testSimRestoreCollision() = runBlocking {
+        val box = SerializedBlock(type = "sim_create", params = mapOf("name" to "box", "x" to "0", "y" to "0"))
+        val ignoreBlock = SerializedBlock(type = "sim_no_collision", params = mapOf("name" to "box", "ignore" to "player, #mobs"))
+        val restorePlayerBlock = SerializedBlock(type = "sim_restore_collision", params = mapOf("name" to "box", "target" to "player"))
+
+        val script1 = Script(id = "s_rc1", name = "RC1", event = ScriptEvent.ON_START, blocks = listOf(box, ignoreBlock, restorePlayerBlock))
+        val state1 = SimEngine.run(scripts = listOf(script1), globalVarDefs = emptyList())
+
+        val boxObj1 = state1.objects["box"]
+        assertNotNull(boxObj1)
+        assertFalse("player should no longer be in collisionIgnore", boxObj1!!.collisionIgnore.contains("player"))
+        assertTrue("#mobs should still be in collisionIgnore", boxObj1.collisionIgnore.contains("#mobs"))
+
+        val restoreAllBlock = SerializedBlock(type = "sim_restore_collision", params = mapOf("name" to "box", "target" to "all"))
+        val script2 = Script(id = "s_rc2", name = "RC2", event = ScriptEvent.ON_START, blocks = listOf(box, ignoreBlock, restoreAllBlock))
+        val state2 = SimEngine.run(scripts = listOf(script2), globalVarDefs = emptyList())
+
+        val boxObj2 = state2.objects["box"]
+        assertNotNull(boxObj2)
+        assertTrue("collisionIgnore should be completely empty after restoring all", boxObj2!!.collisionIgnore.isEmpty())
+    }
+
+    @Test
+    fun testSimAlpha() = runBlocking {
+        val rect = SerializedBlock(type = "sim_create", params = mapOf("name" to "card", "x" to "0", "y" to "0"))
+        val alphaBlock = SerializedBlock(type = "sim_alpha", params = mapOf("name" to "card", "alpha" to "0.35"))
+
+        val script = Script(id = "s_alpha", name = "AlphaScript", event = ScriptEvent.ON_START, blocks = listOf(rect, alphaBlock))
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+
+        val cardObj = state.objects["card"]
+        assertNotNull(cardObj)
+        assertEquals(0.35f, cardObj!!.alpha, 0.001f)
+        assertEquals(0.35f, cardObj.spriteAlpha, 0.001f)
     }
 }

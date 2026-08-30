@@ -18,7 +18,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,7 +39,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -430,6 +431,7 @@ fun SimulationScreen(
                     modifier = Modifier
                         .offset { IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
                         .size(with(density) { objW.toDp() }, with(density) { objH.toDp() })
+                        .alpha(obj.alpha.coerceIn(0f, 1f))
                         .rotate(obj.rotation)
                         .clip(RoundedCornerShape(with(density) { (obj.radius * if (isUi) 1f else zoom).toDp() }))
                         .background(obj.color)
@@ -666,9 +668,12 @@ private fun DrawScope.drawSimObject(
     val centerY = top + obj.height / 2f
 
     rotate(obj.rotation, Offset(centerX, centerY)) {
+        val objectAlpha = obj.alpha.coerceIn(0f, 1f)
+
         // Фон (цвет) — рисуем если нет спрайта или цвет не прозрачный
         if (obj.spriteName == null && obj.color != Color.Transparent) {
-            drawRoundRect(color = obj.color, topLeft = Offset(left, top), size = Size(obj.width, obj.height), cornerRadius = cr)
+            val bgAlpha = (obj.color.alpha * objectAlpha).coerceIn(0f, 1f)
+            drawRoundRect(color = obj.color.copy(alpha = bgAlpha), topLeft = Offset(left, top), size = Size(obj.width, obj.height), cornerRadius = cr)
         }
 
         // Спрайт
@@ -687,7 +692,7 @@ private fun DrawScope.drawSimObject(
             }
         }
         if (bitmap != null) {
-            spritePaint.alpha = (obj.spriteAlpha.coerceIn(0f, 1f) * 255).toInt()
+            spritePaint.alpha = ((obj.spriteAlpha.coerceIn(0f, 1f) * objectAlpha).coerceIn(0f, 1f) * 255).toInt()
             val srcRect = if (obj.animCols > 1 || obj.animRows > 1 || obj.animPlaying || obj.animCurrentFrame > 0) {
                 val cols = obj.animCols.coerceAtLeast(1)
                 val rows = obj.animRows.coerceAtLeast(1)
@@ -733,8 +738,9 @@ private fun DrawScope.drawSimObject(
             else -> obj.color.copy(alpha = 0.4f)
         }
         if (strokeColor != Color.Transparent) {
+            val strokeAlpha = (strokeColor.alpha * objectAlpha).coerceIn(0f, 1f)
             drawRoundRect(
-                color = strokeColor,
+                color = strokeColor.copy(alpha = strokeAlpha),
                 topLeft = Offset(left - 1f, top - 1f),
                 size = Size(obj.width + 2f, obj.height + 2f),
                 cornerRadius = CornerRadius(obj.radius + 1f, obj.radius + 1f),
@@ -748,8 +754,9 @@ private fun DrawScope.drawSimObject(
             val textSize = obj.fontSize * density
             val isPlaceholder = obj.label.isBlank() && obj.isTextInput
             val tc = if (isPlaceholder) (obj.textColor ?: Color.White).copy(alpha = 0.45f) else (obj.textColor ?: Color.White)
+            val finalAlpha = (tc.alpha * objectAlpha).coerceIn(0f, 1f)
             textPaint.color = android.graphics.Color.argb(
-                (tc.alpha * 255).toInt(), (tc.red * 255).toInt(),
+                (finalAlpha * 255).toInt(), (tc.red * 255).toInt(),
                 (tc.green * 255).toInt(), (tc.blue * 255).toInt()
             )
             textPaint.textSize = textSize

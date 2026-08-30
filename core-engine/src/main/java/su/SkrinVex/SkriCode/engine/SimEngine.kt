@@ -394,6 +394,109 @@ object SimEngine {
         val deletedJoysticks = mutableSetOf<String>()
         val modifiedFields = mutableMapOf<String, MutableSet<String>>()
 
+        fun buildMergedState(base: SimState): SimState {
+            val mergedObjects = base.objects.toMutableMap()
+            deletedObjects.forEach { mergedObjects.remove(it) }
+            objects.forEach { (name, scriptObj) ->
+                val liveObj = mergedObjects[name]
+                if (liveObj != null) {
+                    val fields = modifiedFields[name] ?: emptySet()
+                    if (fields.isNotEmpty()) {
+                        mergedObjects[name] = liveObj.copy(
+                            visible = if ("visible" in fields) scriptObj.visible else liveObj.visible,
+                            alpha = if ("alpha" in fields) scriptObj.alpha else liveObj.alpha,
+                            touchEnabled = if ("touchEnabled" in fields) scriptObj.touchEnabled else liveObj.touchEnabled,
+                            label = if ("label" in fields) scriptObj.label else liveObj.label,
+                            fontSize = if ("fontSize" in fields) scriptObj.fontSize else liveObj.fontSize,
+                            bold = if ("bold" in fields) scriptObj.bold else liveObj.bold,
+                            textColor = if ("textColor" in fields) scriptObj.textColor else liveObj.textColor,
+                            color = if ("color" in fields) scriptObj.color else liveObj.color,
+                            tags = if ("tags" in fields) scriptObj.tags else liveObj.tags,
+                            spriteName = if ("sprite" in fields) scriptObj.spriteName else liveObj.spriteName,
+                            spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) scriptObj.spriteAlpha else liveObj.spriteAlpha,
+                            spriteScaleX = if ("spriteScaleX" in fields || "sprite" in fields) scriptObj.spriteScaleX else liveObj.spriteScaleX,
+                            spriteScaleY = if ("spriteScaleY" in fields || "sprite" in fields) scriptObj.spriteScaleY else liveObj.spriteScaleY,
+                            spriteCropX = if ("spriteCrop" in fields || "cropX" in fields) scriptObj.spriteCropX else liveObj.spriteCropX,
+                            spriteCropY = if ("spriteCrop" in fields || "cropY" in fields) scriptObj.spriteCropY else liveObj.spriteCropY,
+                            spriteCropW = if ("spriteCrop" in fields || "cropW" in fields) scriptObj.spriteCropW else liveObj.spriteCropW,
+                            spriteCropH = if ("spriteCrop" in fields || "cropH" in fields) scriptObj.spriteCropH else liveObj.spriteCropH,
+                            animCols = if ("anim" in fields) scriptObj.animCols else liveObj.animCols,
+                            animRows = if ("anim" in fields) scriptObj.animRows else liveObj.animRows,
+                            animFps = if ("anim" in fields) scriptObj.animFps else liveObj.animFps,
+                            animStartFrame = if ("anim" in fields) scriptObj.animStartFrame else liveObj.animStartFrame,
+                            animEndFrame = if ("anim" in fields) scriptObj.animEndFrame else liveObj.animEndFrame,
+                            animLoop = if ("anim" in fields) scriptObj.animLoop else liveObj.animLoop,
+                            animPlaying = if ("anim" in fields) scriptObj.animPlaying else liveObj.animPlaying,
+                            animCurrentFrame = if ("anim" in fields) scriptObj.animCurrentFrame else liveObj.animCurrentFrame,
+                            animElapsed = if ("anim" in fields) scriptObj.animElapsed else liveObj.animElapsed,
+                            animOffsetX = if ("anim" in fields) scriptObj.animOffsetX else liveObj.animOffsetX,
+                            animOffsetY = if ("anim" in fields) scriptObj.animOffsetY else liveObj.animOffsetY,
+                            animSpacingX = if ("anim" in fields) scriptObj.animSpacingX else liveObj.animSpacingX,
+                            animSpacingY = if ("anim" in fields) scriptObj.animSpacingY else liveObj.animSpacingY,
+                            animFrameWidth = if ("anim" in fields) scriptObj.animFrameWidth else liveObj.animFrameWidth,
+                            animFrameHeight = if ("anim" in fields) scriptObj.animFrameHeight else liveObj.animFrameHeight,
+                            zOrder = if ("zOrder" in fields || "layer" in fields) scriptObj.zOrder else liveObj.zOrder,
+                            collisionIgnore = if ("collisionIgnore" in fields) scriptObj.collisionIgnore else liveObj.collisionIgnore,
+                            width = if ("width" in fields) scriptObj.width else liveObj.width,
+                            height = if ("height" in fields) scriptObj.height else liveObj.height,
+                            radius = if ("radius" in fields) scriptObj.radius else liveObj.radius,
+                            rotation = if ("rotation" in fields) scriptObj.rotation else liveObj.rotation,
+                            x = if ("x" in fields) scriptObj.x else liveObj.x,
+                            y = if ("y" in fields) scriptObj.y else liveObj.y,
+                            physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) scriptObj.physicsBody else liveObj.physicsBody,
+                            hitbox = if ("hitbox" in fields) scriptObj.hitbox else liveObj.hitbox,
+                            isTextInput = if ("isTextInput" in fields) scriptObj.isTextInput else liveObj.isTextInput,
+                            multiline = if ("multiline" in fields) scriptObj.multiline else liveObj.multiline,
+                            placeholder = if ("placeholder" in fields) scriptObj.placeholder else liveObj.placeholder,
+                            targetVar = if ("targetVar" in fields) scriptObj.targetVar else liveObj.targetVar,
+                            inputTrigger = if ("inputTrigger" in fields) scriptObj.inputTrigger else liveObj.inputTrigger,
+                            inputButton = if ("inputButton" in fields) scriptObj.inputButton else liveObj.inputButton
+                        )
+                    }
+                } else if (name !in currentState.objects) {
+                    mergedObjects[name] = scriptObj
+                }
+            }
+
+            val mergedJoysticks = base.joysticks.toMutableMap()
+            deletedJoysticks.forEach { mergedJoysticks.remove(it) }
+            joysticks.forEach { (name, scriptJoy) ->
+                val liveJoy = mergedJoysticks[name]
+                if (liveJoy != null) {
+                    mergedJoysticks[name] = liveJoy.copy(visible = scriptJoy.visible)
+                } else if (name !in currentState.joysticks) {
+                    mergedJoysticks[name] = scriptJoy
+                }
+            }
+
+            bindEventScripts(scripts, mergedObjects, errors, warnMissing = false)
+
+            val updatedGlobalVars = base.globalVars.toMutableMap()
+            vars.forEach { (k, v) ->
+                if (k !in localVars.keys && !k.startsWith("collision_")) {
+                    updatedGlobalVars[k] = v
+                }
+            }
+
+            return base.copy(
+                objects = mergedObjects,
+                joysticks = mergedJoysticks,
+                globalVars = updatedGlobalVars,
+                tables = allTables.mapValues { it.value.toMap() },
+                log = log.toList(),
+                errors = errors.toList(),
+                physicsEnabled = physicsEnabled,
+                camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else base.camera,
+                pendingSceneSwitch = sceneSwitchRef[0],
+                backgroundColor = backgroundColorRef[0],
+                particles = particles.toList(),
+                particleEmitters = particleEmitters.toMap(),
+                screenShake = if (screenShakeRef[0] != currentState.screenShake) screenShakeRef[0] else base.screenShake,
+                screenFlash = if (screenFlashRef[0] != currentState.screenFlash) screenFlashRef[0] else base.screenFlash,
+                clearFocusTrigger = clearFocusRef[0]
+            )
+        }
+
         log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
@@ -406,112 +509,16 @@ object SimEngine {
             modifiedFields = modifiedFields,
             evalScopeIn = evalScope,
             onUpdate = if (onUpdate != null) {
-                { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], sprites = currentState.sprites, projectId = currentState.projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) }
+                {
+                    val currentLatest = getLatestState?.invoke() ?: currentState
+                    onUpdate(buildMergedState(currentLatest))
+                }
             } else null
         )
         vars.filterKeys { it !in localTables.keys && it !in script.localVars.orEmpty().map { lv -> lv.name } }.forEach { (k, v) -> globalVars[k] = v }
 
-        bindEventScripts(scripts, objects, errors, warnMissing = false)
-
         val baseState = getLatestState?.invoke() ?: currentState
-
-        val mergedObjects = baseState.objects.toMutableMap()
-        deletedObjects.forEach { mergedObjects.remove(it) }
-        objects.forEach { (name, scriptObj) ->
-            val liveObj = mergedObjects[name]
-            if (liveObj != null) {
-                val fields = modifiedFields[name] ?: emptySet()
-                if (fields.isNotEmpty()) {
-                    mergedObjects[name] = liveObj.copy(
-                        visible = if ("visible" in fields) scriptObj.visible else liveObj.visible,
-                        touchEnabled = if ("touchEnabled" in fields) scriptObj.touchEnabled else liveObj.touchEnabled,
-                        label = if ("label" in fields) scriptObj.label else liveObj.label,
-                        fontSize = if ("fontSize" in fields) scriptObj.fontSize else liveObj.fontSize,
-                        bold = if ("bold" in fields) scriptObj.bold else liveObj.bold,
-                        textColor = if ("textColor" in fields) scriptObj.textColor else liveObj.textColor,
-                        color = if ("color" in fields) scriptObj.color else liveObj.color,
-                        tags = if ("tags" in fields) scriptObj.tags else liveObj.tags,
-                        spriteName = if ("sprite" in fields) scriptObj.spriteName else liveObj.spriteName,
-                        spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) scriptObj.spriteAlpha else liveObj.spriteAlpha,
-                        spriteScaleX = if ("spriteScaleX" in fields || "sprite" in fields) scriptObj.spriteScaleX else liveObj.spriteScaleX,
-                        spriteScaleY = if ("spriteScaleY" in fields || "sprite" in fields) scriptObj.spriteScaleY else liveObj.spriteScaleY,
-                        spriteCropX = if ("spriteCrop" in fields || "cropX" in fields) scriptObj.spriteCropX else liveObj.spriteCropX,
-                        spriteCropY = if ("spriteCrop" in fields || "cropY" in fields) scriptObj.spriteCropY else liveObj.spriteCropY,
-                        spriteCropW = if ("spriteCrop" in fields || "cropW" in fields) scriptObj.spriteCropW else liveObj.spriteCropW,
-                        spriteCropH = if ("spriteCrop" in fields || "cropH" in fields) scriptObj.spriteCropH else liveObj.spriteCropH,
-                        animCols = if ("anim" in fields) scriptObj.animCols else liveObj.animCols,
-                        animRows = if ("anim" in fields) scriptObj.animRows else liveObj.animRows,
-                        animFps = if ("anim" in fields) scriptObj.animFps else liveObj.animFps,
-                        animStartFrame = if ("anim" in fields) scriptObj.animStartFrame else liveObj.animStartFrame,
-                        animEndFrame = if ("anim" in fields) scriptObj.animEndFrame else liveObj.animEndFrame,
-                        animLoop = if ("anim" in fields) scriptObj.animLoop else liveObj.animLoop,
-                        animPlaying = if ("anim" in fields) scriptObj.animPlaying else liveObj.animPlaying,
-                        animCurrentFrame = if ("anim" in fields) scriptObj.animCurrentFrame else liveObj.animCurrentFrame,
-                        animElapsed = if ("anim" in fields) scriptObj.animElapsed else liveObj.animElapsed,
-                        animOffsetX = if ("anim" in fields) scriptObj.animOffsetX else liveObj.animOffsetX,
-                        animOffsetY = if ("anim" in fields) scriptObj.animOffsetY else liveObj.animOffsetY,
-                        animSpacingX = if ("anim" in fields) scriptObj.animSpacingX else liveObj.animSpacingX,
-                        animSpacingY = if ("anim" in fields) scriptObj.animSpacingY else liveObj.animSpacingY,
-                        animFrameWidth = if ("anim" in fields) scriptObj.animFrameWidth else liveObj.animFrameWidth,
-                        animFrameHeight = if ("anim" in fields) scriptObj.animFrameHeight else liveObj.animFrameHeight,
-                        zOrder = if ("zOrder" in fields || "layer" in fields) scriptObj.zOrder else liveObj.zOrder,
-                        collisionIgnore = if ("collisionIgnore" in fields) scriptObj.collisionIgnore else liveObj.collisionIgnore,
-                        width = if ("width" in fields) scriptObj.width else liveObj.width,
-                        height = if ("height" in fields) scriptObj.height else liveObj.height,
-                        radius = if ("radius" in fields) scriptObj.radius else liveObj.radius,
-                        rotation = if ("rotation" in fields) scriptObj.rotation else liveObj.rotation,
-                        x = if ("x" in fields) scriptObj.x else liveObj.x,
-                        y = if ("y" in fields) scriptObj.y else liveObj.y,
-                        physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) scriptObj.physicsBody else liveObj.physicsBody,
-                        hitbox = if ("hitbox" in fields) scriptObj.hitbox else liveObj.hitbox,
-                        isTextInput = if ("isTextInput" in fields) scriptObj.isTextInput else liveObj.isTextInput,
-                        multiline = if ("multiline" in fields) scriptObj.multiline else liveObj.multiline,
-                        placeholder = if ("placeholder" in fields) scriptObj.placeholder else liveObj.placeholder,
-                        targetVar = if ("targetVar" in fields) scriptObj.targetVar else liveObj.targetVar,
-                        inputTrigger = if ("inputTrigger" in fields) scriptObj.inputTrigger else liveObj.inputTrigger,
-                        inputButton = if ("inputButton" in fields) scriptObj.inputButton else liveObj.inputButton
-                    )
-                }
-            } else if (name !in currentState.objects) {
-                mergedObjects[name] = scriptObj
-            }
-        }
-
-        val mergedJoysticks = baseState.joysticks.toMutableMap()
-        deletedJoysticks.forEach { mergedJoysticks.remove(it) }
-        joysticks.forEach { (name, scriptJoy) ->
-            val liveJoy = mergedJoysticks[name]
-            if (liveJoy != null) {
-                mergedJoysticks[name] = liveJoy.copy(visible = scriptJoy.visible)
-            } else if (name !in currentState.joysticks) {
-                mergedJoysticks[name] = scriptJoy
-            }
-        }
-
-        bindEventScripts(scripts, mergedObjects, errors, warnMissing = false)
-
-        val updatedGlobalVars = baseState.globalVars.toMutableMap()
-        vars.forEach { (k, v) ->
-            if (k !in localVars.keys && !k.startsWith("collision_")) {
-                updatedGlobalVars[k] = v
-            }
-        }
-
-        return baseState.copy(
-            objects = mergedObjects,
-            joysticks = mergedJoysticks,
-            globalVars = updatedGlobalVars,
-            tables = allTables.mapValues { it.value.toMap() },
-            log = log, errors = errors, isStopped = !continued, physicsEnabled = physicsEnabled,
-            camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else baseState.camera,
-            pendingSceneSwitch = sceneSwitchRef[0],
-            backgroundColor = backgroundColorRef[0],
-            particles = particles.toList(),
-            particleEmitters = particleEmitters.toMap(),
-            screenShake = if (screenShakeRef[0] != currentState.screenShake) screenShakeRef[0] else baseState.screenShake,
-            screenFlash = if (screenFlashRef[0] != currentState.screenFlash) screenFlashRef[0] else baseState.screenFlash,
-            clearFocusTrigger = clearFocusRef[0]
-        )
+        return buildMergedState(baseState).copy(isStopped = !continued)
     }
 
     private suspend fun runScript(
@@ -978,6 +985,21 @@ object SimEngine {
                     pc++
                 }
 
+                is CompiledBlock.SimAlpha -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val targets = getObjectsOrReport(target, "sim_alpha")
+                    val rawAlpha = inst.alphaExpr.evalFloat(vars, evalScope, 1f)
+                    val alphaVal = if (rawAlpha > 1.0f && rawAlpha <= 100f) (rawAlpha / 100f).coerceIn(0f, 1f) else rawAlpha.coerceIn(0f, 1f)
+                    targets.forEach { (name, obj) ->
+                        objects[name] = obj.copy(alpha = alphaVal, spriteAlpha = alphaVal)
+                        val mSet = modifiedFields.getOrPut(name) { mutableSetOf() }
+                        mSet.add("alpha")
+                        mSet.add("spriteAlpha")
+                    }
+                    onUpdate?.invoke()
+                    pc++
+                }
+
                 is CompiledBlock.SimTouchDisable -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
                     val targets = getObjectsOrReport(target, "sim_touch_disable")
@@ -1035,6 +1057,11 @@ object SimEngine {
                                 "textColor" -> modified.copy(textColor = if (resolved.isNotBlank()) parseColor(resolved) else null)
                                 "sprite" -> modified.copy(spriteName = resolved.ifBlank { null })
                                 "spriteAlpha" -> modified.copy(spriteAlpha = propExpr.evalFloat(vars, evalScope, 1f).coerceIn(0f, 1f))
+                                "alpha", "opacity" -> {
+                                    val a = propExpr.evalFloat(vars, evalScope, 1f)
+                                    val aVal = if (a > 1f && a <= 100f) (a / 100f).coerceIn(0f, 1f) else a.coerceIn(0f, 1f)
+                                    modified.copy(alpha = aVal, spriteAlpha = aVal)
+                                }
                                 "spriteScaleX" -> modified.copy(spriteScaleX = propExpr.evalFloat(vars, evalScope, 1f))
                                 "spriteScaleY" -> modified.copy(spriteScaleY = propExpr.evalFloat(vars, evalScope, 1f))
                                 "physics_enabled" -> {
@@ -1174,6 +1201,30 @@ object SimEngine {
                     val ignore = inst.ignoreExpr.evalString(vars, evalScope).split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
                     targets.forEach { (name, obj) ->
                         objects[name] = obj.copy(collisionIgnore = obj.collisionIgnore + ignore)
+                        modifiedFields.getOrPut(name) { mutableSetOf() }.add("collisionIgnore")
+                    }
+                    pc++
+                }
+
+                is CompiledBlock.SimRestoreCollision -> {
+                    val target = inst.targetExpr.evalString(vars, evalScope)
+                    val targets = getObjectsOrReport(target, "sim_restore_collision")
+                    val rawUnignore = inst.targetUnignoreExpr.evalString(vars, evalScope).trim()
+                    val toRestore = rawUnignore.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                    val isAll = toRestore.isEmpty() || toRestore.any { it.equals("all", ignoreCase = true) || it == "*" }
+                    targets.forEach { (name, obj) ->
+                        val newIgnore = if (isAll) {
+                            emptySet()
+                        } else {
+                            obj.collisionIgnore.filterNot { ignored ->
+                                toRestore.any { r ->
+                                    ignored.equals(r, ignoreCase = true) ||
+                                    (r.startsWith("#") && ignored.removePrefix("#").equals(r.removePrefix("#"), ignoreCase = true)) ||
+                                    (ignored.startsWith("#") && ignored.removePrefix("#").equals(r.removePrefix("#"), ignoreCase = true))
+                                }
+                            }.toSet()
+                        }
+                        objects[name] = obj.copy(collisionIgnore = newIgnore)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("collisionIgnore")
                     }
                     pc++
@@ -1385,14 +1436,17 @@ object SimEngine {
                 }
 
                 is CompiledBlock.CameraZoom -> {
+                    val name = inst.nameExpr.evalString(vars, evalScope)
                     val targetZ = inst.zoomExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.05f, 20f)
                     val sm = inst.smoothingExpr.evalFloat(vars, evalScope, 1f).coerceIn(0.01f, 1f)
-                    val existing = cameraRef[0] ?: SimCamera(name = "cam1", enabled = true)
-                    cameraRef[0] = existing.copy(
-                        targetZoom = targetZ,
-                        zoomSmoothing = sm,
-                        zoom = if (sm >= 1f) targetZ else existing.zoom
-                    )
+                    val existing = cameraRef[0] ?: SimCamera(name = name.ifBlank { "cam1" }, enabled = true)
+                    if (name.isBlank() || name.equals("all", ignoreCase = true) || existing.name.isBlank() || existing.name.equals(name, ignoreCase = true)) {
+                        cameraRef[0] = existing.copy(
+                            targetZoom = targetZ,
+                            zoomSmoothing = sm,
+                            zoom = if (sm >= 0.99f) targetZ else existing.zoom
+                        )
+                    }
                     pc++
                 }
 

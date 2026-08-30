@@ -257,13 +257,13 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        val currentSimState = cur.copy(globalVars = updatedVars, log = newLog)
-        _simState.value = currentSimState
+        val latest = _simState.value ?: cur
+        _simState.value = latest.copy(globalVars = updatedVars, log = newLog)
 
         val scriptId = obj?.tapScriptId ?: return
         _runningTapJobs[name]?.cancel()
         val job = viewModelScope.launch {
-            val liveSim = _simState.value ?: currentSimState
+            val liveSim = _simState.value ?: latest
             val res = SimEngine.runTap(scriptId, _scripts, liveSim,
                 onUpdate = { live -> _simState.value = live },
                 getLatestState = { _simState.value ?: liveSim }
