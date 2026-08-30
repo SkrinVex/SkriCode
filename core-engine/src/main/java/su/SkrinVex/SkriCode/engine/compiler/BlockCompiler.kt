@@ -119,21 +119,21 @@ object BlockCompiler {
                 "sim_clear_focus" -> result += CompiledBlock.SimClearFocus
 
                 "sim_move" -> result += CompiledBlock.SimMove(
-                    targetExpr = expr("name"),
-                    mode = p("mode", "instant"),
+                    targetExpr = expr("name", altKey = "target"),
+                    mode = p("mode", "instant", altKey = "type"),
                     xExpr = expr("x", "0"),
                     yExpr = expr("y", "0")
                 )
 
                 "sim_resize" -> result += CompiledBlock.SimResize(
-                    targetExpr = expr("name"),
+                    targetExpr = expr("name", altKey = "target"),
                     widthExpr = expr("width", "100"),
                     heightExpr = expr("height", "60")
                 )
 
-                "sim_color" -> result += CompiledBlock.SimColor(expr("name"), expr("color", "#EF4444"))
-                "sim_update_text" -> result += CompiledBlock.SimUpdateText(expr("name"), expr("text"))
-                "sim_rotate" -> result += CompiledBlock.SimRotate(expr("name"), p("mode", "instant"), expr("angle", "0"))
+                "sim_color" -> result += CompiledBlock.SimColor(expr("name", altKey = "target"), expr("color", "#EF4444"))
+                "sim_update_text" -> result += CompiledBlock.SimUpdateText(expr("name", altKey = "target"), expr("text"))
+                "sim_rotate" -> result += CompiledBlock.SimRotate(expr("name", altKey = "target"), p("mode", "instant", altKey = "type"), expr("angle", "0"))
                 "sim_hide" -> result += CompiledBlock.SimHide(expr("name", altKey = "target"))
                 "sim_show" -> result += CompiledBlock.SimShow(expr("name", altKey = "target"))
                 "sim_alpha" -> result += CompiledBlock.SimAlpha(expr("name", altKey = "target"), expr("alpha", "1.0"))
@@ -292,7 +292,7 @@ object BlockCompiler {
                     gravityExpr = expr("gravity", "50")
                 )
 
-                "particle_emitter_stop" -> result += CompiledBlock.ParticleEmitterStop(p("name", "emitter1"))
+                "particle_emitter_stop", "emitter_stop", "emitter_toggle", "particle_emitter_toggle" -> result += CompiledBlock.ParticleEmitterStop(p("name", "emitter1", altKey = "emitter"))
 
                 "screen_shake" -> result += CompiledBlock.ScreenShake(
                     intensityExpr = expr("intensity", "10"),
@@ -331,7 +331,7 @@ object BlockCompiler {
                 "music_volume" -> result += CompiledBlock.MusicVolume(expr("volume", "1.0"))
 
                 "scene_switch" -> result += CompiledBlock.SceneSwitch(expr("scene"))
-                "sim_stop" -> result += CompiledBlock.SimStop
+                "sim_stop", "stop_script", "script_stop" -> result += CompiledBlock.SimStop
 
                 "call_func" -> {
                     val rawArgs = p("args").trim()

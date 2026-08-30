@@ -2185,9 +2185,10 @@ internal fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
         ) {
             Icon(Icons.Default.Tag, null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
+            val cleanValue = value.trim().trimStart('#')
             Text(
-                if (value.isBlank()) "Нажми чтобы выбрать тег" else "#$value",
-                color = if (value.isBlank()) TextSec else TextPrim,
+                if (cleanValue.isBlank()) "Нажми чтобы выбрать тег" else "#$cleanValue",
+                color = if (cleanValue.isBlank()) TextSec else TextPrim,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
             Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))

@@ -741,14 +741,16 @@ object SimEngine {
 
                 is CompiledBlock.SetTag -> {
                     val target = inst.targetExpr.evalString(vars, evalScope)
-                    val tag = inst.tagExpr.evalString(vars, evalScope).removePrefix("#").trim()
+                    val rawTags = inst.tagExpr.evalString(vars, evalScope)
+                    val tagsToAdd = rawTags.split(",").map { it.trim().trimStart('#').trim() }.filter { it.isNotBlank() }.toSet()
                     val targets = getObjectsOrReport(target, "set_tag")
                     targets.forEach { (name, obj) ->
-                        val newTags = if (tag.isNotBlank()) obj.tags + tag else obj.tags
+                        val newTags = if (tagsToAdd.isNotEmpty()) obj.tags + tagsToAdd else obj.tags
                         objects[name] = obj.copy(tags = newTags)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("tags")
-                        log += "  Тег #$tag установлен для «$name»"
+                        log += "  Тег ${tagsToAdd.joinToString(", ") { "#$it" }} установлен для «$name»"
                     }
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1153,7 +1155,7 @@ object SimEngine {
                                     modified.copy(physicsBody = body.copy(velocityY = propExpr.evalFloat(vars, evalScope, 0f)))
                                 }
                                 "tag", "tags" -> {
-                                    val newTags = resolved.split(",").map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.toSet()
+                                    val newTags = resolved.split(",").map { it.trim().trimStart('#').trim() }.filter { it.isNotBlank() }.toSet()
                                     if (newTags.isNotEmpty()) modified.copy(tags = modified.tags + newTags) else modified
                                 }
                                 else -> modified
@@ -1876,7 +1878,10 @@ object SimEngine {
                                                 y = if ("y" in fields) currentObj.y else liveObj.y,
                                                 rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
                                                 visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+                                                alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
+                                                spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
                                                 touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+                                                collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
                                                 physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
                                                 animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
                                                 animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
@@ -1890,6 +1895,17 @@ object SimEngine {
                                 live.joysticks.forEach { (name, liveJoy) ->
                                     if (name !in deletedJoysticks && name !in joysticks) {
                                         joysticks[name] = liveJoy
+                                    }
+                                }
+                                if (live.camera != null) {
+                                    val currentCam = cameraRef[0]
+                                    if (currentCam != null) {
+                                        cameraRef[0] = currentCam.copy(
+                                            offsetX = live.camera.offsetX,
+                                            offsetY = live.camera.offsetY
+                                        )
+                                    } else {
+                                        cameraRef[0] = live.camera
                                     }
                                 }
                             }

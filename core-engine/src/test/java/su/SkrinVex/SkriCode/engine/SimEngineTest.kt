@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import su.SkrinVex.SkriCode.data.ProjectVar
@@ -1131,5 +1132,186 @@ class SimEngineTest {
 
         assertEquals(20f, updatedCrosshair.x, 0.001f)
         assertEquals(20f, updatedCrosshair.y, 0.001f)
+    }
+
+    @Test
+    fun testSetTagRobustness() = runBlocking {
+        val script = Script(
+            id = "s_start",
+            name = "Start",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "b1", "x" to "0", "y" to "0", "width" to "50", "height" to "50", "radius" to "0", "color" to "#FFFFFF")),
+                SerializedBlock(type = "set_tag", params = mapOf("object" to "b1", "tag" to "##custom_tag, #extra_tag"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val obj = state.objects["b1"]!!
+
+        assertTrue("Tags should contain custom_tag", "custom_tag" in obj.tags)
+        assertTrue("Tags should contain extra_tag", "extra_tag" in obj.tags)
+
+        // Matching with #custom_tag should find the object
+        val matched = SimEngine.getMatchingObjects("#custom_tag", state.objects)
+        assertEquals(1, matched.size)
+        assertEquals("b1", matched[0].first)
+    }
+
+    @Test
+    fun testScreenShakeAndFlashBlocks() = runBlocking {
+        val script = Script(
+            id = "s_effects",
+            name = "Effects",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "screen_shake", params = mapOf("intensity" to "15", "duration" to "0.5")),
+                SerializedBlock(type = "screen_flash", params = mapOf("color" to "#FF0000", "duration" to "0.8"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        assertEquals(15f, state.screenShake.intensity, 0.001f)
+        assertEquals(0.5f, state.screenShake.duration, 0.001f)
+        assertEquals(0.8f, state.screenFlash.duration, 0.001f)
+    }
+
+    @Test
+    fun testParticleEmitterAndBurstBlocks() = runBlocking {
+        val script = Script(
+            id = "s_part",
+            name = "Particles",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "particle_emitter", params = mapOf("name" to "fire_emitter", "x" to "100", "y" to "200", "rate" to "30", "speed" to "50")),
+                SerializedBlock(type = "particle_emitter_stop", params = mapOf("name" to "fire_emitter")),
+                SerializedBlock(type = "particle_burst", params = mapOf("x" to "50", "y" to "50", "count" to "10", "speed" to "100"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        assertNull("Stopped emitter should be removed from active emitters", state.particleEmitters["fire_emitter"])
+        assertEquals(10, state.particles.size)
+    }
+
+    @Test
+    fun testCameraBoundsAndToggle() = runBlocking {
+        val script = Script(
+            id = "s_cam",
+            name = "CamBounds",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_camera", params = mapOf("name" to "main_cam", "target" to "hero", "smoothing" to "0.5")),
+                SerializedBlock(type = "camera_bounds", params = mapOf("name" to "main_cam", "minX" to "-100", "maxX" to "100", "minY" to "-200", "maxY" to "200")),
+                SerializedBlock(type = "camera_toggle", params = mapOf("name" to "main_cam", "enabled" to "false"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val cam = state.camera
+        assertNotNull(cam)
+        assertFalse(cam!!.enabled)
+        assertEquals(-100f, cam.boundMinX!!, 0.001f)
+        assertEquals(100f, cam.boundMaxX!!, 0.001f)
+        assertEquals(-200f, cam.boundMinY!!, 0.001f)
+        assertEquals(200f, cam.boundMaxY!!, 0.001f)
+    }
+
+    @Test
+    fun testPhysicsMoveAndImpulse() = runBlocking {
+        val script = Script(
+            id = "s_phys",
+            name = "PhysicsMove",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "car", "x" to "0", "y" to "0", "width" to "40", "height" to "20", "color" to "#FFCC00")),
+                SerializedBlock(type = "sim_physics", params = mapOf("name" to "car", "gravity" to "0", "static" to "false", "mass" to "2")),
+                SerializedBlock(type = "physics_impulse", params = mapOf("name" to "car", "vx" to "10", "vy" to "5")),
+                SerializedBlock(type = "physics_move", params = mapOf("name" to "car", "speed" to "5", "turn" to "90", "friction" to "1"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val car = state.objects["car"]!!
+        val body = car.physicsBody!!
+        assertEquals(90f, car.rotation, 0.001f)
+        assertTrue("Car should have positive X velocity from impulse and move", body.velocityX > 0)
+    }
+
+    @Test
+    fun testPhysicsNoCollisionWithTags() = runBlocking {
+        val script = Script(
+            id = "s_nocoll",
+            name = "NoColl",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "player", "x" to "0", "y" to "0", "width" to "50", "height" to "50", "color" to "#0000FF")),
+                SerializedBlock(type = "sim_physics", params = mapOf("name" to "player", "static" to "false", "gravity" to "0")),
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "ghost", "x" to "0", "y" to "0", "width" to "50", "height" to "50", "color" to "#FFFFFF")),
+                SerializedBlock(type = "sim_physics", params = mapOf("name" to "ghost", "static" to "false", "gravity" to "0")),
+                SerializedBlock(type = "set_tag", params = mapOf("object" to "ghost", "tag" to "#ghost_tag")),
+                SerializedBlock(type = "sim_no_collision", params = mapOf("name" to "player", "ignore" to "#ghost_tag"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val player = state.objects["player"]!!
+        assertTrue("Player should ignore #ghost_tag", "#ghost_tag" in player.collisionIgnore)
+
+        val (nextState, newCols, _) = SimEngine.physicsTick(state)
+        assertTrue("No collision should be detected between player and ghost with tag", newCols.isEmpty())
+    }
+
+    @Test
+    fun testSimRotateModes() = runBlocking {
+        val script = Script(
+            id = "s_rot",
+            name = "Rotate",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "obj1", "x" to "0", "y" to "0", "width" to "50", "height" to "50", "color" to "#FFFFFF")),
+                SerializedBlock(type = "sim_rotate", params = mapOf("name" to "obj1", "angle" to "45", "mode" to "step")),
+                SerializedBlock(type = "sim_rotate", params = mapOf("name" to "obj1", "angle" to "30", "mode" to "step")),
+                SerializedBlock(type = "sim_rotate", params = mapOf("name" to "obj1", "angle" to "180", "mode" to "instant"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = emptyList())
+        val obj = state.objects["obj1"]!!
+        assertEquals(180f, obj.rotation, 0.001f)
+    }
+
+    @Test
+    fun testStopScriptBlock() = runBlocking {
+        val script = Script(
+            id = "s_stop",
+            name = "StopScript",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "set_var", params = mapOf("name" to "score", "value" to "10")),
+                SerializedBlock(type = "sim_stop"),
+                SerializedBlock(type = "set_var", params = mapOf("name" to "score", "value" to "999"))
+            )
+        )
+
+        val state = SimEngine.run(scripts = listOf(script), globalVarDefs = listOf(ProjectVar(name = "score", value = "0", scope = VarScope.GLOBAL)))
+        assertEquals("10", state.globalVars["score"])
+    }
+
+    @Test
+    fun testDirectionalJoystickRotation() {
+        val player = SimObject(name = "player", x = 0f, y = 0f, width = 50f, height = 50f, radius = 0f, color = androidx.compose.ui.graphics.Color.Green)
+        val joy = JoystickState(name = "joy1", targetObject = "player", directional = true, speed = 5f, knobDx = 1f, knobDy = 0f, pointerId = 1L)
+
+        val state = SimState(
+            objects = mapOf("player" to player),
+            joysticks = mapOf("joy1" to joy)
+        )
+
+        val updated = SimEngine.tickJoysticks(state)
+        val updatedPlayer = updated.objects["player"]!!
+
+        assertEquals(90f, updatedPlayer.rotation, 0.001f)
+        assertEquals(5f, updatedPlayer.x, 0.001f)
     }
 }

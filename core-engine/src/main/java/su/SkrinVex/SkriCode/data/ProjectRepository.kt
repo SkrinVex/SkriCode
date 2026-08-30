@@ -130,7 +130,17 @@ fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
 
 fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { proto ->
     var b = proto.copy(id = this.id, pairId = this.pairId ?: "")
-    params.forEach { (k, v) -> if (b.params.containsKey(k)) b = b.withParam(k, v) }
+    params.forEach { (k, v) ->
+        if (b.params.containsKey(k)) {
+            b = b.withParam(k, v)
+        } else if ((k == "target" || k == "object") && b.params.containsKey("name")) {
+            b = b.withParam("name", v)
+        } else if ((k == "name" || k == "object") && b.params.containsKey("target")) {
+            b = b.withParam("target", v)
+        } else if ((k == "name" || k == "target") && b.params.containsKey("object")) {
+            b = b.withParam("object", v)
+        }
+    }
     if (!children.isNullOrEmpty()) {
         b = b.copy(children = children.mapValues { (_, list) -> list.mapNotNull { it.deserialize() } })
     }

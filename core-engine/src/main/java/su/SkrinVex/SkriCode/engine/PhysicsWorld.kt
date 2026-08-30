@@ -161,7 +161,10 @@ object PhysicsWorld {
 
     private fun ignores(obj: SimObject, other: SimObject): Boolean {
         if (other.name in obj.collisionIgnore) return true
-        return obj.collisionIgnore.any { it.startsWith("#") && it.substring(1) in other.tags }
+        return obj.collisionIgnore.any { ign ->
+            val cleanIgn = ign.trim().trimStart('#').lowercase()
+            other.tags.any { it.trim().trimStart('#').lowercase() == cleanIgn }
+        }
     }
 
     private fun rebuildBounds(n: Int) {

@@ -119,7 +119,7 @@ object BlockFactory {
             "op"    to p("==", "Оператор", "== != > < >= <=", ParamType.SELECT),
             "right" to p("0", "Правое значение", "С чем сравниваем")))
 
-        "sim_stop" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
+        "sim_stop", "stop_script" -> build("sim_stop", "Завершить симуляцию", "Останавливает выполнение скрипта", BlockCategory.CONTROL, emptyList())
 
         // Циклы (legacy — только для обратной совместимости, не показываются в пикере)
         "for_loop" -> build("for_loop", "Цикл (повторить)", "Повторяет блоки указанное количество раз (0 или true = бесконечно)", BlockCategory.CONTROL, listOf(
@@ -368,7 +368,7 @@ object BlockFactory {
             "lifetime"   to p("0.6", "Время жизни (сек)", "Длительность", ParamType.NUMBER),
             "gravity"    to p("50", "Гравитация", "Вниз = -, вверх = +", ParamType.NUMBER)))
 
-        "particle_emitter_stop" -> build("particle_emitter_stop", "Остановить частицы", "Останавливает генератор частиц", BlockCategory.PHYSICS, listOf(
+        "particle_emitter_stop", "emitter_toggle", "particle_emitter_toggle" -> build("particle_emitter_stop", "Остановить частицы", "Останавливает генератор частиц", BlockCategory.PHYSICS, listOf(
             "name" to p("fire1", "Имя источника", "Имя эмиттера или all")))
 
         // ── Визуальные эффекты экрана ─────────────────────────────────────────────
