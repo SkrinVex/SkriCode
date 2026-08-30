@@ -380,6 +380,7 @@ object SimEngine {
         val allTables = ((getLatestState?.invoke() ?: currentState).tables.mapValues { it.value.toMutableMap() } + localTables).toMutableMap<String, MutableMap<String, String>>()
         var physicsEnabled = currentState.physicsEnabled
         val cameraRef: Array<SimCamera?> = arrayOf(currentState.camera)
+        val cameraModifiedRef: BooleanArray = booleanArrayOf(false)
         val sceneSwitchRef: Array<String?> = arrayOf(null)
         val particles = currentState.particles.toMutableList()
         val particleEmitters = currentState.particleEmitters.toMutableMap()
@@ -478,6 +479,27 @@ object SimEngine {
                 }
             }
 
+            val liveCam = base.camera
+            val scriptCam = cameraRef[0]
+            val mergedCamera = if (cameraModifiedRef[0] && scriptCam != null) {
+                if (liveCam != null) {
+                    liveCam.copy(
+                        name = scriptCam.name,
+                        targetName = scriptCam.targetName,
+                        smoothing = scriptCam.smoothing,
+                        uiTags = scriptCam.uiTags,
+                        enabled = scriptCam.enabled,
+                        boundMinX = scriptCam.boundMinX,
+                        boundMaxX = scriptCam.boundMaxX,
+                        boundMinY = scriptCam.boundMinY,
+                        boundMaxY = scriptCam.boundMaxY,
+                        targetZoom = scriptCam.targetZoom,
+                        zoomSmoothing = scriptCam.zoomSmoothing,
+                        zoom = if (scriptCam.zoomSmoothing >= 0.99f) scriptCam.targetZoom else liveCam.zoom
+                    )
+                } else scriptCam
+            } else liveCam
+
             return base.copy(
                 objects = mergedObjects,
                 joysticks = mergedJoysticks,
@@ -486,7 +508,7 @@ object SimEngine {
                 log = log.toList(),
                 errors = errors.toList(),
                 physicsEnabled = physicsEnabled,
-                camera = if (cameraRef[0] != currentState.camera) cameraRef[0] else base.camera,
+                camera = mergedCamera,
                 pendingSceneSwitch = sceneSwitchRef[0],
                 backgroundColor = backgroundColorRef[0],
                 particles = particles.toList(),
@@ -500,7 +522,7 @@ object SimEngine {
         log += if (collisionTarget.isNotBlank()) "Коллизия -> «${script.name}» (с «$collisionTarget»)" else "Касание -> «${script.name}»"
         val continued = runScript(script.blocks.mapNotNull { it.deserialize() }, vars, objects, joysticks, allTables, log, errors, allowDelay = true,
             physicsEnabledRef = { physicsEnabled }, setPhysicsEnabled = { physicsEnabled = it },
-            cameraRef = cameraRef, sceneSwitchRef = sceneSwitchRef,
+            cameraRef = cameraRef, cameraModifiedRef = cameraModifiedRef, sceneSwitchRef = sceneSwitchRef,
             particles = particles, particleEmitters = particleEmitters,
             screenShakeRef = screenShakeRef, screenFlashRef = screenFlashRef,
             backgroundColorRef = backgroundColorRef, clearFocusRef = clearFocusRef,
@@ -533,6 +555,7 @@ object SimEngine {
         physicsEnabledRef: () -> Boolean = { true },
         setPhysicsEnabled: (Boolean) -> Unit = {},
         cameraRef: Array<SimCamera?> = arrayOf(null),
+        cameraModifiedRef: BooleanArray = BooleanArray(1),
         sceneSwitchRef: Array<String?> = arrayOf(null),
         particles: MutableList<Particle> = mutableListOf(),
         particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
@@ -553,7 +576,7 @@ object SimEngine {
         val compiled = BlockCompiler.compile(blocks)
         return executeCompiled(
             compiled, vars, objects, joysticks, tables, log, errors,
-            allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+            allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, cameraModifiedRef, sceneSwitchRef,
             particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
             returnValRef, callDepth,
             getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
@@ -572,6 +595,7 @@ object SimEngine {
         physicsEnabledRef: () -> Boolean,
         setPhysicsEnabled: (Boolean) -> Unit,
         cameraRef: Array<SimCamera?>,
+        cameraModifiedRef: BooleanArray = BooleanArray(1),
         sceneSwitchRef: Array<String?>,
         particles: MutableList<Particle> = mutableListOf(),
         particleEmitters: MutableMap<String, ParticleEmitterState> = mutableMapOf(),
@@ -616,7 +640,7 @@ object SimEngine {
                     kotlinx.coroutines.runBlocking {
                         executeCompiled(
                             compiledFunc, funcVars, objects, joysticks, tables, log, errors,
-                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, cameraModifiedRef, sceneSwitchRef,
                             particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
                             returnValRef = funcRetRef, callDepth = callDepth + 1,
                             getLatestState = getLatestState, deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,
@@ -1203,6 +1227,7 @@ object SimEngine {
                         objects[name] = obj.copy(collisionIgnore = obj.collisionIgnore + ignore)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("collisionIgnore")
                     }
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1227,6 +1252,7 @@ object SimEngine {
                         objects[name] = obj.copy(collisionIgnore = newIgnore)
                         modifiedFields.getOrPut(name) { mutableSetOf() }.add("collisionIgnore")
                     }
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1412,6 +1438,7 @@ object SimEngine {
                     val intensity = inst.intensityExpr.evalFloat(vars, evalScope, 15f)
                     val duration = inst.durationExpr.evalFloat(vars, evalScope, 0.3f)
                     screenShakeRef[0] = ScreenShakeState(intensity = intensity, duration = duration, elapsed = 0f)
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1420,6 +1447,7 @@ object SimEngine {
                     val col = parseColor(colStr.ifBlank { "#FFFFFF" })
                     val duration = inst.durationExpr.evalFloat(vars, evalScope, 0.2f)
                     screenFlashRef[0] = ScreenFlashState(color = col, duration = duration, elapsed = 0f, active = true)
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1432,6 +1460,8 @@ object SimEngine {
                     cameraRef[0] = existing.copy(
                         boundMinX = minX, boundMaxX = maxX, boundMinY = minY, boundMaxY = maxY
                     )
+                    cameraModifiedRef[0] = true
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1446,7 +1476,9 @@ object SimEngine {
                             zoomSmoothing = sm,
                             zoom = if (sm >= 0.99f) targetZ else existing.zoom
                         )
+                        cameraModifiedRef[0] = true
                     }
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1463,12 +1495,20 @@ object SimEngine {
                         smoothing = smoothing,
                         uiTags = uiTags
                     )
+                    cameraModifiedRef[0] = true
+                    onUpdate?.invoke()
                     pc++
                 }
 
                 is CompiledBlock.CameraToggle -> {
                     val en = inst.enabledExpr.evalString(vars, evalScope) == "true"
-                    cameraRef[0]?.let { if (it.name == inst.name) cameraRef[0] = it.copy(enabled = en) }
+                    cameraRef[0]?.let {
+                        if (it.name == inst.name) {
+                            cameraRef[0] = it.copy(enabled = en)
+                            cameraModifiedRef[0] = true
+                        }
+                    }
+                    onUpdate?.invoke()
                     pc++
                 }
 
@@ -1676,7 +1716,10 @@ object SimEngine {
                                             y = if ("y" in fields) currentObj.y else liveObj.y,
                                             rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
                                             visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+                                            alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
+                                            spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
                                             touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+                                            collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
                                             physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
                                             animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
                                             animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
@@ -1690,6 +1733,17 @@ object SimEngine {
                             live.joysticks.forEach { (name, liveJoy) ->
                                 if (name !in deletedJoysticks && name !in joysticks) {
                                     joysticks[name] = liveJoy
+                                }
+                            }
+                            if (live.camera != null) {
+                                val currentCam = cameraRef[0]
+                                if (currentCam != null) {
+                                    cameraRef[0] = currentCam.copy(
+                                        offsetX = live.camera.offsetX,
+                                        offsetY = live.camera.offsetY
+                                    )
+                                } else {
+                                    cameraRef[0] = live.camera
                                 }
                             }
                         }
@@ -1722,7 +1776,10 @@ object SimEngine {
                                                 y = if ("y" in fields) currentObj.y else liveObj.y,
                                                 rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
                                                 visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+                                                alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
+                                                spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
                                                 touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+                                                collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
                                                 physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
                                                 animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
                                                 animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
@@ -1736,6 +1793,17 @@ object SimEngine {
                                 live.joysticks.forEach { (name, liveJoy) ->
                                     if (name !in deletedJoysticks && name !in joysticks) {
                                         joysticks[name] = liveJoy
+                                    }
+                                }
+                                if (live.camera != null) {
+                                    val currentCam = cameraRef[0]
+                                    if (currentCam != null) {
+                                        cameraRef[0] = currentCam.copy(
+                                            offsetX = live.camera.offsetX,
+                                            offsetY = live.camera.offsetY
+                                        )
+                                    } else {
+                                        cameraRef[0] = live.camera
                                     }
                                 }
                             }
@@ -1792,7 +1860,7 @@ object SimEngine {
                             if (inst.innerBlocks.isNotEmpty()) {
                                 val ok = executeCompiled(
                                     inst.innerBlocks, vars, objects, joysticks, tables, log, errors,
-                                    allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                                    allowDelay, physicsEnabledRef, setPhysicsEnabled, cameraRef, cameraModifiedRef, sceneSwitchRef,
                                     particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
                                     returnValRef, callDepth,
                                     getLatestState, deletedObjects, deletedJoysticks, modifiedFields, evalScope, onUpdate
@@ -1840,7 +1908,7 @@ object SimEngine {
                         val funcRetRef = arrayOf<String?>(null)
                         runScript(
                             funcScript.blocks.mapNotNull { it.deserialize() }, funcVars, objects, joysticks, tables, log, errors,
-                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, sceneSwitchRef,
+                            allowDelay = false, physicsEnabledRef, setPhysicsEnabled, cameraRef, cameraModifiedRef, sceneSwitchRef,
                             particles, particleEmitters, screenShakeRef, screenFlashRef, backgroundColorRef, clearFocusRef,
                             returnValRef = funcRetRef, callDepth = callDepth + 1,
                             getLatestState = getLatestState, deletedObjects = deletedObjects, deletedJoysticks = deletedJoysticks,

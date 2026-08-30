@@ -275,7 +275,7 @@ fun LocationObjectEditorScreen(
                         text = { Text("«${block.displayName}» будет удалён.", color = TextSec) },
                         confirmButton = {
                             Button(onClick = {
-                                setupBlocks = setupBlocks.toMutableList().also { it.removeAt(index) }
+                                setupBlocks = setupBlocks.filter { it.id != block.id }
                                 showDelete = false
                             }, colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Удалить") }
                         },

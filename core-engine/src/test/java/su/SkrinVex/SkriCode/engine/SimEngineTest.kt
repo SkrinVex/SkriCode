@@ -1060,4 +1060,53 @@ class SimEngineTest {
         assertEquals(0.35f, cardObj!!.alpha, 0.001f)
         assertEquals(0.35f, cardObj.spriteAlpha, 0.001f)
     }
+
+    @Test
+    fun testJumpOverBoxSequenceWithCameraZoomAndCollision() = runBlocking {
+        val createCam = SerializedBlock(type = "sim_camera", params = mapOf("name" to "Гг", "target" to "гг", "smoothing" to "0.1"))
+        val initZoom = SerializedBlock(type = "camera_zoom", params = mapOf("name" to "Гг", "zoom" to "0.8", "smoothing" to "1.0"))
+        val hero = SerializedBlock(type = "sim_create", params = mapOf("name" to "гг", "x" to "0", "y" to "0"))
+        val box = SerializedBlock(type = "sim_create", params = mapOf("name" to "ящ", "x" to "0", "y" to "100"))
+        val button = SerializedBlock(type = "sim_create", params = mapOf("name" to "п", "x" to "200", "y" to "-200"))
+
+        val onStartScript = Script(
+            id = "s_start", name = "Start", event = ScriptEvent.ON_START,
+            blocks = listOf(hero, box, button, createCam, initZoom)
+        )
+
+        val tapBlocks = listOf(
+            SerializedBlock(type = "sim_touch_disable", params = mapOf("name" to "п")),
+            SerializedBlock(type = "camera_zoom", params = mapOf("name" to "Гг", "zoom" to "1.0", "smoothing" to "1.0")),
+            SerializedBlock(type = "sim_alpha", params = mapOf("name" to "ящ", "alpha" to "0.5")),
+            SerializedBlock(type = "sim_no_collision", params = mapOf("name" to "ящ", "ignore" to "гг")),
+            SerializedBlock(type = "wait_open", params = mapOf("seconds" to "0.05", "count" to "1"), pairId = "w1"),
+            SerializedBlock(type = "camera_zoom", params = mapOf("name" to "Гг", "zoom" to "0.8", "smoothing" to "1.0")),
+            SerializedBlock(type = "sim_restore_collision", params = mapOf("name" to "ящ", "target" to "гг")),
+            SerializedBlock(type = "sim_alpha", params = mapOf("name" to "ящ", "alpha" to "1.0")),
+            SerializedBlock(type = "wait_close", pairId = "w1"),
+            SerializedBlock(type = "sim_touch_enable", params = mapOf("name" to "п"))
+        )
+
+        val tapScript = Script(
+            id = "s_tap", name = "Tap", event = ScriptEvent.ON_TAP, eventTarget = "п",
+            blocks = tapBlocks
+        )
+
+        var liveState = SimEngine.run(scripts = listOf(onStartScript, tapScript), globalVarDefs = emptyList())
+        assertEquals(0.8f, liveState.camera!!.zoom, 0.001f)
+
+        // Run tap script with live simulation tracking
+        val endState = SimEngine.runTap(
+            scriptId = "s_tap",
+            scripts = listOf(onStartScript, tapScript),
+            currentState = liveState,
+            onUpdate = { updated -> liveState = updated },
+            getLatestState = { liveState }
+        )
+
+        assertEquals(0.8f, endState.camera!!.zoom, 0.001f)
+        assertEquals(1.0f, endState.objects["ящ"]!!.alpha, 0.001f)
+        assertTrue("Collision should be restored", endState.objects["ящ"]!!.collisionIgnore.isEmpty())
+        assertTrue("Button touch should be enabled", endState.objects["п"]!!.touchEnabled)
+    }
 }

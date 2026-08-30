@@ -68,6 +68,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     var animEditorTarget by remember { mutableStateOf<AnimEditorTarget?>(null) }
     var showLocationEditor by remember { mutableStateOf(false) }
+    var blockToDelete by remember { mutableStateOf<BlockDef?>(null) }
 
     // Редактор локации — всегда портретная ориентация устройства, но рамка экрана по ориентации проекта
     if (showLocationEditor) {
@@ -425,7 +426,6 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                 }
                 itemsIndexed(activeBlocks, key = { _, b -> b.id }) { index, block ->
                     val collapsed = collapsedState[block.id] ?: vm.isBlockCollapsed(activeScriptId, block.id)
-                    var showDeleteConfirm by remember { mutableStateOf(false) }
 
                     val openTypes = setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
                     val closeTypes = setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
@@ -476,27 +476,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         }
                         depth
                     }.let { (it * 12).dp }
-                    if (showDeleteConfirm) {
-                        val isPaired = block.pairId.isNotBlank()
-                        AlertDialog(
-                            onDismissRequest = { showDeleteConfirm = false },
-                            containerColor = Surface2,
-                            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
-                            title = { Text("Удалить блок?", color = TextPrim) },
-                            text = { Text(
-                                if (isPaired) "«${block.displayName}» и все связанные блоки (включая тело) будут удалены."
-                                else "«${block.displayName}»${if (block.children.isNotEmpty()) " и все вложенные блоки" else ""} будут удалены.",
-                                color = TextSec
-                            ) },
-                            confirmButton = {
-                                Button(onClick = { vm.removeBlock(index); showDeleteConfirm = false },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Danger)) {
-                                    Text("Удалить")
-                                }
-                            },
-                            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Отмена", color = TextSec) } }
-                        )
-                    }
+
                     BlockCard(
                         block = block,
                         index = index,
@@ -515,7 +495,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         },
                         onToggleChildCollapsed = { childId -> vm.toggleBlockCollapsed(activeScriptId, childId) },
                         isChildCollapsed = { childId -> vm.isBlockCollapsed(activeScriptId, childId) },
-                        onRemove = { showDeleteConfirm = true },
+                        onRemove = { blockToDelete = block },
                         onMoveUp = { if (vm.canMoveUp(index, activeBlocks)) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (vm.canMoveDown(index, activeBlocks)) vm.moveBlock(index, index + 1) },
                         canMoveUp = vm.canMoveUp(index, activeBlocks),
@@ -556,6 +536,35 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
         ) {
             Icon(Icons.Default.Add, "Добавить блок", tint = Navy900)
         }
+    }
+
+    // Диалог подтверждения удаления блока
+    if (blockToDelete != null) {
+        val b = blockToDelete!!
+        val isPaired = b.pairId.isNotBlank()
+        AlertDialog(
+            onDismissRequest = { blockToDelete = null },
+            containerColor = Surface2,
+            icon = { Icon(Icons.Default.DeleteOutline, null, tint = Danger) },
+            title = { Text("Удалить блок?", color = TextPrim) },
+            text = { Text(
+                if (isPaired) "«${b.displayName}» и все связанные блоки (включая тело) будут удалены."
+                else "«${b.displayName}»${if (b.children.isNotEmpty()) " и все вложенные блоки" else ""} будут удалены.",
+                color = TextSec
+            ) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.removeBlock(b.id)
+                        blockToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
+                ) {
+                    Text("Удалить")
+                }
+            },
+            dismissButton = { TextButton(onClick = { blockToDelete = null }) { Text("Отмена", color = TextSec) } }
+        )
     }
 
     // Диалог добавления скрипта

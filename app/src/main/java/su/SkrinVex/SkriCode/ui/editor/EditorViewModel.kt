@@ -235,6 +235,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private fun isOpenBlock(type: String) = type in setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
     private fun isCloseBlock(type: String) = type in setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
 
+    fun removeBlock(blockId: String) = modifyActiveBlocks { list ->
+        val targetIdx = list.indexOfFirst { it.id == blockId }
+        if (targetIdx < 0) return@modifyActiveBlocks list
+        val block = list[targetIdx].deserialize() ?: return@modifyActiveBlocks list
+        if (block.pairId.isNotBlank()) {
+            val pairId = block.pairId
+            val deserialized = list.map { it.deserialize() }
+            val openIdx = deserialized.indexOfFirst { it?.pairId == pairId && isOpenBlock(it.type) }
+            val closeIdx = deserialized.indexOfFirst { it?.pairId == pairId && isCloseBlock(it.type) }
+            if (openIdx >= 0 && closeIdx > openIdx) {
+                list.filterIndexed { i, _ -> i < openIdx || i > closeIdx }
+            } else {
+                list.filter { it.deserialize()?.pairId != pairId }
+            }
+        } else {
+            list.toMutableList().also { it.removeAt(targetIdx) }
+        }
+    }
+
     fun removeBlock(index: Int) = modifyActiveBlocks { list ->
         val block = list.getOrNull(index)?.deserialize() ?: return@modifyActiveBlocks list
         if (block.pairId.isNotBlank()) {
