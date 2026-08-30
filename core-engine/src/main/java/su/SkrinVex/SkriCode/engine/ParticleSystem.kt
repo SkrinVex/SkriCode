@@ -92,16 +92,10 @@ object ParticleSystem {
             var emX = emitter.x
             var emY = emitter.y
             if (emitter.targetName.isNotBlank()) {
-                val tName = emitter.targetName.trim()
-                val target = if (tName.startsWith("#")) {
-                    val tag = tName.substring(1)
-                    objects.values.firstOrNull { tag in it.tags }
-                } else {
-                    objects[tName] ?: objects.entries.firstOrNull { it.key.trim() == tName }?.value
-                }
-                if (target != null) {
-                    emX = target.x
-                    emY = target.y
+                val targets = SimEngine.getMatchingObjects(emitter.targetName, objects)
+                if (targets.isNotEmpty()) {
+                    emX = targets[0].second.x
+                    emY = targets[0].second.y
                 }
             }
 

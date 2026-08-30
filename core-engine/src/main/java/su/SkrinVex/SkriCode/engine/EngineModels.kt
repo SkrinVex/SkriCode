@@ -84,14 +84,14 @@ data class SimObject(
 
 data class JoystickState(
     val name: String,
-    val x: Float, val y: Float,          // позиция центра джойстика
-    val baseRadius: Float,               // радиус базы
-    val knobRadius: Float,               // радиус ручки
-    val baseColor: Color,
-    val knobColor: Color,
-    val targetObject: String,            // имя объекта которым управляет
-    val speed: Float,                    // скорость движения px/tick
-    val directional: Boolean,            // вращать объект по направлению
+    val x: Float = 0f, val y: Float = 0f,          // позиция центра джойстика
+    val baseRadius: Float = 100f,                  // радиус базы
+    val knobRadius: Float = 40f,                   // радиус ручки
+    val baseColor: Color = Color(0xFF334466),
+    val knobColor: Color = Color(0xFF4F8EF7),
+    val targetObject: String = "",                 // имя объекта которым управляет
+    val speed: Float = 8f,                         // скорость движения px/tick
+    val directional: Boolean = false,              // вращать объект по направлению
     val visible: Boolean = true,
     // runtime
     val knobDx: Float = 0f,             // смещение ручки от центра (-1..1)

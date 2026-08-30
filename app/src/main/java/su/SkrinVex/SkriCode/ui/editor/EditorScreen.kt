@@ -951,7 +951,7 @@ internal fun BlockParamContent(
                 BoolToggle(param = param, onChange = { onParamChange(key, it) })
             (block.type == "save_var" || block.type == "load_var" || block.type == "save_table" || block.type == "load_table") && key == "encrypt" ->
                 EncryptToggle(param = param, onChange = { onParamChange(key, it) })
-            (key == "name" || key == "target") && (block.category == BlockCategory.SIMULATION || block.category == BlockCategory.SPRITE || block.category == BlockCategory.PHYSICS) && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" && block.type != "particle_emitter" ->
+            (key == "target" || (key == "name" && block.type != "sim_create" && block.type != "sim_text" && block.type != "sim_joystick" && block.type != "particle_emitter")) && (block.category == BlockCategory.SIMULATION || block.category == BlockCategory.SPRITE || block.category == BlockCategory.PHYSICS) ->
                 ObjectNameChip(param = param, variables = variables,
                     onClick = { onOpenExpr(key, param.label, param.value, false) })
             key == "name" && (block.type == "sim_create" || block.type == "sim_text" || block.type == "sim_joystick" || block.type == "particle_emitter") ->

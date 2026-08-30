@@ -228,18 +228,12 @@ object SimEngine {
             scripts.filter { it.event == event }.forEach { script ->
                 val target = script.eventTarget.trim()
                 if (target.isBlank()) return@forEach
-                val targets = if (target.startsWith("#")) {
-                    val tag = target.substring(1)
-                    objects.filter { (_, o) -> tag in o.tags }.keys.toList()
-                } else {
-                    val key = objects.keys.firstOrNull { it == target || it.trim() == target }
-                    listOfNotNull(key)
-                }
-                if (targets.isEmpty() && warnMissing) {
+                val matched = getMatchingObjects(target, objects).map { it.first }
+                if (matched.isEmpty() && warnMissing) {
                     val msg = "Скрипт «${script.name}»: объект/тег «$target» не найден для события ${event.name}"
                     if (msg !in errors && errors.size < 50) errors += msg
                 }
-                targets.forEach { name -> objects[name] = objects[name]!!.assign(script.id) }
+                matched.forEach { name -> objects[name]?.let { objects[name] = it.assign(script.id) } }
             }
         }
         bindToObjects(ScriptEvent.ON_TAP)          { id -> if (tapScriptId != id) copy(tapScriptId = id) else this }
@@ -292,6 +286,66 @@ object SimEngine {
         return Triple(updated, newCols, endedCols)
     }
 
+    fun getMatchingObjects(targetPattern: String, objects: Map<String, SimObject>): List<Pair<String, SimObject>> {
+        val clean = targetPattern.trim()
+        if (clean.isBlank()) return emptyList()
+        val parts = clean.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val result = mutableListOf<Pair<String, SimObject>>()
+        for (part in parts) {
+            if (part.equals("all", ignoreCase = true) || part == "*") {
+                result.addAll(objects.entries.map { it.key to it.value })
+            } else if (part.startsWith("#")) {
+                val tag = part.removePrefix("#").trim().lowercase()
+                result.addAll(objects.entries.filter { (_, obj) ->
+                    obj.tags.any { it.trim().removePrefix("#").lowercase() == tag }
+                }.map { it.key to it.value })
+            } else {
+                val direct = objects[part]
+                if (direct != null) {
+                    result.add(part to direct)
+                } else {
+                    val found = objects.entries.firstOrNull { it.key.trim().equals(part, ignoreCase = true) }
+                    if (found != null) result.add(found.key to found.value)
+                }
+            }
+        }
+        return result.distinctBy { it.first }
+    }
+
+    fun tickJoysticks(sim: SimState): SimState {
+        var state = sim
+        for ((_, joy) in state.joysticks) {
+            if (joy.pointerId == null) continue
+            val len = kotlin.math.hypot(joy.knobDx, joy.knobDy)
+            if (len <= 0.05f) continue
+            val targets = getMatchingObjects(joy.targetObject, state.objects)
+            if (targets.isEmpty()) continue
+
+            val updated = state.objects.toMutableMap()
+            for ((name, target) in targets) {
+                val body = target.physicsBody
+                if (body != null && body.isStatic) continue
+                if (body != null && !state.physicsEnabled) continue
+                val newTarget = if (joy.directional) {
+                    val newRot = (Math.toDegrees(kotlin.math.atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
+                    val rad = Math.toRadians(newRot.toDouble() - 90.0)
+                    target.copy(
+                        x = target.x + (kotlin.math.cos(rad) * len * joy.speed).toFloat(),
+                        y = target.y + (kotlin.math.sin(-rad) * len * joy.speed).toFloat(),
+                        rotation = newRot
+                    )
+                } else if (body != null && body.enabled) {
+                    target.copy(physicsBody = body.copy(velocityX = joy.knobDx * joy.speed, velocityY = joy.knobDy * joy.speed))
+                } else {
+                    target.copy(x = target.x + joy.knobDx * joy.speed, y = target.y + joy.knobDy * joy.speed)
+                }
+                updated[name] = newTarget
+            }
+            state = state.copy(objects = updated)
+        }
+        return state
+    }
+
     fun tickCamera(state: SimState): SimState {
         val cam = state.camera ?: return state
         if (!cam.enabled) return state
@@ -303,19 +357,13 @@ object SimEngine {
         if (cam.targetName.isBlank()) {
             return if (newZoom != cam.zoom) state.copy(camera = cam.copy(zoom = newZoom)) else state
         }
-        val tName = cam.targetName.trim()
-        val target = if (tName.startsWith("#")) {
-            val tag = tName.substring(1).trim().removePrefix("#").lowercase()
-            state.objects.values.firstOrNull { obj -> obj.tags.any { it.trim().removePrefix("#").lowercase() == tag } }
-        } else {
-            state.objects[tName] ?: state.objects.entries.firstOrNull { it.key.trim().equals(tName, ignoreCase = true) }?.value
-        }
-        if (target == null) {
+        val targets = getMatchingObjects(cam.targetName, state.objects)
+        if (targets.isEmpty()) {
             return if (newZoom != cam.zoom) state.copy(camera = cam.copy(zoom = newZoom)) else state
         }
 
-        var targetX = target.x
-        var targetY = target.y
+        var targetX = if (targets.size == 1) targets[0].second.x else targets.map { it.second.x }.average().toFloat()
+        var targetY = if (targets.size == 1) targets[0].second.y else targets.map { it.second.y }.average().toFloat()
         if (cam.boundMinX != null && cam.boundMaxX != null) {
             targetX = targetX.coerceIn(minOf(cam.boundMinX, cam.boundMaxX), maxOf(cam.boundMinX, cam.boundMaxX))
         }
@@ -658,19 +706,7 @@ object SimEngine {
         }
 
         fun getObjectsByNameOrTag(nameOrTag: String): List<Pair<String, SimObject>> {
-            val clean = nameOrTag.trim()
-            return if (clean.startsWith("#")) {
-                val tag = clean.substring(1)
-                objects.filter { (_, obj) -> tag in obj.tags }.toList()
-            } else {
-                val direct = objects[clean]
-                if (direct != null) {
-                    listOf(clean to direct)
-                } else {
-                    val found = objects.entries.firstOrNull { it.key.trim() == clean }
-                    if (found != null) listOf(found.key to found.value) else emptyList()
-                }
-            }
+            return getMatchingObjects(nameOrTag, objects)
         }
 
         fun getObjectsOrReport(target: String, blockName: String = ""): List<Pair<String, SimObject>> {

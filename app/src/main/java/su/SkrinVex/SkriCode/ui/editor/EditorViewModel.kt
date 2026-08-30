@@ -644,33 +644,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 if (_simState.value?.isStopped == true) continue
 
                 val curSim = _simState.value ?: continue
-                var sim = curSim
-                for ((_, joy) in sim.joysticks) {
-                    if (joy.pointerId == null) continue
-                    val len = hypot(joy.knobDx, joy.knobDy)
-                    if (len <= 0.05f) continue
-                    val target = sim.objects[joy.targetObject] ?: continue
-                    val body = target.physicsBody
-                    if (body != null && body.isStatic) continue
-                    if (body != null && !sim.physicsEnabled) continue
-                    val newTarget = if (joy.directional) {
-                        val newRot = (Math.toDegrees(atan2(-joy.knobDy.toDouble(), joy.knobDx.toDouble())) + 90.0).toFloat()
-                        val rad = Math.toRadians(newRot.toDouble() - 90.0)
-                        target.copy(
-                            x = target.x + (cos(rad) * len * joy.speed).toFloat(),
-                            y = target.y + (sin(-rad) * len * joy.speed).toFloat(),
-                            rotation = newRot
-                        )
-                    } else if (body != null && body.enabled) {
-                        target.copy(physicsBody = body.copy(velocityX = joy.knobDx * joy.speed, velocityY = joy.knobDy * joy.speed))
-                    } else {
-                        target.copy(x = target.x + joy.knobDx * joy.speed, y = target.y + joy.knobDy * joy.speed)
-                    }
-                    sim = sim.copy(objects = sim.objects + (joy.targetObject to newTarget))
-                }
-                if (sim !== curSim) _simState.value = sim
-
-                val (newSim, newCols, endedCols) = SimEngine.physicsTick(_simState.value ?: continue)
+                val joySim = SimEngine.tickJoysticks(curSim)
+                val (newSim, newCols, endedCols) = SimEngine.physicsTick(joySim)
                 _simState.value = SimEngine.tickCamera(newSim)
 
                 for ((_, pair) in _activeHolds.toMap()) {

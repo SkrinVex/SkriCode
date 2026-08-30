@@ -195,7 +195,7 @@ object BlockFactory {
             "knobRadius"  to p("40", "Радиус ручки", "Размер ручки", ParamType.NUMBER),
             "baseColor"   to p("#334466", "Цвет базы", "#RRGGBB"),
             "knobColor"   to p("#4F8EF7", "Цвет ручки", "#RRGGBB"),
-            "target"      to p("rect1", "Объект управления", "Какой объект двигать"),
+            "target"      to p("rect1", "Объект управления", "Имя объекта или #тег"),
             "speed"       to p("8", "Скорость", "Пикселей за тик", ParamType.NUMBER),
             "directional" to p("false", "Поворот по направлению", "true = объект поворачивается")))
 

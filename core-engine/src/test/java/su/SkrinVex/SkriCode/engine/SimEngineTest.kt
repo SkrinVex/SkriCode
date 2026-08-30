@@ -1109,4 +1109,27 @@ class SimEngineTest {
         assertTrue("Collision should be restored", endState.objects["ящ"]!!.collisionIgnore.isEmpty())
         assertTrue("Button touch should be enabled", endState.objects["п"]!!.touchEnabled)
     }
+
+    @Test
+    fun testJoystickControlByTag() {
+        val hero = SimObject(name = "hero", x = 0f, y = 0f, width = 50f, height = 50f, radius = 0f, color = androidx.compose.ui.graphics.Color.Blue, tags = setOf("aim_tag"))
+        val crosshair = SimObject(name = "crosshair", x = 10f, y = 20f, width = 20f, height = 20f, radius = 0f, color = androidx.compose.ui.graphics.Color.Red, tags = setOf("aim_tag"))
+        val joy = JoystickState(name = "joy1", x = -200f, y = -200f, baseRadius = 100f, knobRadius = 40f, targetObject = "#aim_tag", speed = 10f, knobDx = 1f, knobDy = 0f, pointerId = 1L)
+
+        val initialState = SimState(
+            objects = mapOf("hero" to hero, "crosshair" to crosshair),
+            joysticks = mapOf("joy1" to joy)
+        )
+
+        val updatedState = SimEngine.tickJoysticks(initialState)
+
+        val updatedHero = updatedState.objects["hero"]!!
+        val updatedCrosshair = updatedState.objects["crosshair"]!!
+
+        assertEquals(10f, updatedHero.x, 0.001f)
+        assertEquals(0f, updatedHero.y, 0.001f)
+
+        assertEquals(20f, updatedCrosshair.x, 0.001f)
+        assertEquals(20f, updatedCrosshair.y, 0.001f)
+    }
 }
