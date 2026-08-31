@@ -46,7 +46,7 @@ object BlockCompiler {
             fun expr(key: String, def: String = "", altKey: String = "") = ExprCompiler.compile(p(key, def, altKey))
 
             when (b.type) {
-                "set_var" -> result += CompiledBlock.SetVar(p("name"), expr("value", "0"))
+                "set_var" -> result += CompiledBlock.SetVar(p("name").removePrefix("{").removeSuffix("}").trim(), expr("value", "0"))
                 "set_tag" -> result += CompiledBlock.SetTag(expr("object"), expr("tag"))
 
                 "sim_create" -> result += CompiledBlock.SimCreate(
@@ -316,9 +316,9 @@ object BlockCompiler {
                 "camera_toggle" -> result += CompiledBlock.CameraToggle(p("name", "cam1"), expr("enabled", "true"))
 
                 "table_set" -> result += CompiledBlock.TableSet(expr("table"), expr("key"), expr("value"))
-                "table_get" -> result += CompiledBlock.TableGet(expr("table"), expr("key"), p("var"))
+                "table_get" -> result += CompiledBlock.TableGet(expr("table"), expr("key"), p("var").removePrefix("{").removeSuffix("}").trim())
                 "save_var" -> result += CompiledBlock.SaveVar(expr("key"), expr("value"), p("encrypt") == "true")
-                "load_var" -> result += CompiledBlock.LoadVar(expr("key"), p("var"), expr("default", "0"), p("encrypt") == "true")
+                "load_var" -> result += CompiledBlock.LoadVar(expr("key"), p("var").removePrefix("{").removeSuffix("}").trim(), expr("default", "0"), p("encrypt") == "true")
                 "save_table" -> result += CompiledBlock.SaveTable(expr("key"), expr("table"), p("encrypt") == "true")
                 "load_table" -> result += CompiledBlock.LoadTable(expr("key"), expr("table"), p("encrypt") == "true")
 

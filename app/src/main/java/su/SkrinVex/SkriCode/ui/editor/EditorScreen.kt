@@ -2162,7 +2162,7 @@ internal fun VarNameChip(value: String, label: String, variables: List<ProjectVa
             Icon(Icons.Default.DataObject, null, tint = Warning, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-                clean.ifBlank { "Нажми чтобы выбрать переменную" },
+                if (clean.isBlank()) "Нажми чтобы выбрать переменную" else "{$clean}",
                 color = if (clean.isBlank()) TextSec else TextPrim,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
@@ -2199,6 +2199,7 @@ internal fun TagNameChip(value: String, label: String, onClick: () -> Unit) {
 @Composable
 internal fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
     val tableColor = Color(0xFF34D399)
+    val clean = value.removePrefix("[").removeSuffix("]").removePrefix("{").removeSuffix("}").trim()
     Column {
         Text(label, color = TextSec, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
         Row(
@@ -2212,8 +2213,8 @@ internal fun TableNameChip(value: String, label: String, onClick: () -> Unit) {
             Icon(Icons.Default.TableChart, null, tint = tableColor, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-                if (value.isBlank()) "Нажми чтобы выбрать таблицу" else value,
-                color = if (value.isBlank()) TextSec else tableColor,
+                if (clean.isBlank()) "Нажми чтобы выбрать таблицу" else "[$clean]",
+                color = if (clean.isBlank()) TextSec else tableColor,
                 fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
             )
             Icon(Icons.Default.ArrowDropDown, null, tint = TextSec, modifier = Modifier.size(18.dp))

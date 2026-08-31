@@ -1314,4 +1314,123 @@ class SimEngineTest {
         assertEquals(90f, updatedPlayer.rotation, 0.001f)
         assertEquals(5f, updatedPlayer.x, 0.001f)
     }
+
+    @Test
+    fun testMultipleTapsIncrementVariable() = runBlocking {
+        val tapScript = Script(
+            id = "s_tap_clicker",
+            name = "OnClick",
+            event = ScriptEvent.ON_TAP,
+            blocks = listOf(
+                SerializedBlock(type = "set_var", params = mapOf("name" to "clicks", "value" to "clicks + 1"))
+            )
+        )
+
+        val btn = SerializedBlock(
+            type = "sim_button",
+            params = mapOf("name" to "click_btn", "text" to "Click me")
+        )
+
+        // Начальный запуск симуляции
+        var state = SimEngine.run(
+            scripts = listOf(tapScript),
+            locationBlocks = listOf(btn),
+            globalVarDefs = listOf(ProjectVar("clicks", VarScope.GLOBAL, "0"))
+        )
+        assertEquals("0", state.globalVars["clicks"])
+
+        // Клик 1
+        state = SimEngine.runTap("s_tap_clicker", listOf(tapScript), state)
+        assertEquals("1", state.globalVars["clicks"])
+
+        // Клик 2
+        state = SimEngine.runTap("s_tap_clicker", listOf(tapScript), state)
+        assertEquals("2", state.globalVars["clicks"])
+
+        // Клик 3
+        state = SimEngine.runTap("s_tap_clicker", listOf(tapScript), state)
+        assertEquals("3", state.globalVars["clicks"])
+
+        // Клик 4
+        state = SimEngine.runTap("s_tap_clicker", listOf(tapScript), state)
+        assertEquals("4", state.globalVars["clicks"])
+    }
+
+    @Test
+    fun testTableIncrementOperations() = runBlocking {
+        val tapScript = Script(
+            id = "s_tap_tbl",
+            name = "OnTblClick",
+            event = ScriptEvent.ON_TAP,
+            blocks = listOf(
+                SerializedBlock(type = "table_set", params = mapOf("table" to "player_data", "key" to "score", "value" to "[player_data.score] + 10"))
+            )
+        )
+
+        var state = SimEngine.run(
+            scripts = listOf(tapScript),
+            globalVarDefs = emptyList()
+        )
+        state = state.copy(tables = mapOf("player_data" to mapOf("score" to "100")))
+
+        // Клик 1: 100 + 10 = 110
+        state = SimEngine.runTap("s_tap_tbl", listOf(tapScript), state)
+        assertEquals("110", state.tables["player_data"]?.get("score"))
+
+        // Клик 2: 110 + 10 = 120
+        state = SimEngine.runTap("s_tap_tbl", listOf(tapScript), state)
+        assertEquals("120", state.tables["player_data"]?.get("score"))
+    }
+
+    @Test
+    fun testExactUserClickerProject() = runBlocking {
+        val onStartScript = Script(
+            id = "99c3014e-2168-4213-8fd9-83133c627a58",
+            name = "Скрипт 1",
+            event = ScriptEvent.ON_START,
+            blocks = listOf(
+                SerializedBlock(type = "sim_create", params = mapOf("name" to "rect1", "x" to "0", "y" to "0", "width" to "250", "height" to "250")),
+                SerializedBlock(type = "set_var", params = mapOf("name" to "{clicks}", "value" to "0")),
+                SerializedBlock(type = "sim_text", params = mapOf("name" to "text1", "text" to "Кликай", "x" to "0", "y" to "0"))
+            )
+        )
+
+        val onTapScript = Script(
+            id = "05356120-f349-4418-b5e4-f5d362f65795",
+            name = "клик",
+            event = ScriptEvent.ON_TAP,
+            eventTarget = "rect1",
+            localVars = listOf(ProjectVar("clicks", VarScope.LOCAL, "0")),
+            blocks = listOf(
+                SerializedBlock(type = "sim_resize", params = mapOf("name" to "rect1", "width" to "256", "height" to "256")),
+                SerializedBlock(type = "set_var", params = mapOf("name" to "{clicks}", "value" to "{clicks} + 1")),
+                SerializedBlock(type = "sim_resize", params = mapOf("name" to "rect1", "width" to "250", "height" to "250")),
+                SerializedBlock(type = "sim_update_text", params = mapOf("name" to "text1", "text" to "{clicks}"))
+            )
+        )
+
+        val scripts = listOf(onStartScript, onTapScript)
+
+        var state = SimEngine.run(
+            scripts = scripts,
+            globalVarDefs = listOf(ProjectVar("clicks", VarScope.GLOBAL, "0"))
+        )
+
+        assertEquals("0", state.globalVars["clicks"])
+
+        // Клик 1
+        state = SimEngine.runTap("05356120-f349-4418-b5e4-f5d362f65795", scripts, state)
+        assertEquals("1", state.globalVars["clicks"])
+        assertEquals("1", state.objects["text1"]?.label)
+
+        // Клик 2
+        state = SimEngine.runTap("05356120-f349-4418-b5e4-f5d362f65795", scripts, state)
+        assertEquals("2", state.globalVars["clicks"])
+        assertEquals("2", state.objects["text1"]?.label)
+
+        // Клик 3
+        state = SimEngine.runTap("05356120-f349-4418-b5e4-f5d362f65795", scripts, state)
+        assertEquals("3", state.globalVars["clicks"])
+        assertEquals("3", state.objects["text1"]?.label)
+    }
 }

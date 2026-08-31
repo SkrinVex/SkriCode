@@ -181,8 +181,8 @@ object SimEngine {
             scope.launch {
                 if (sceneSwitchRef[0] != null) return@launch
                 log += "Скрипт «${script.name}»"
-                val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
-                val vars = (globalVars + localVars).toMutableMap()
+                val localVars = script.localVars.orEmpty().associate { it.name to it.value }
+                val vars = (localVars + globalVars).toMutableMap()
                 val localTables = script.localTables.orEmpty().associate { it.name to it.entries.toMutableMap() }
                 val allTables = (globalTables + localTables).toMutableMap<String, MutableMap<String, String>>()
                 val evalScope = ExprScope(objects, joysticks, allTables, functions = funcMap)
@@ -194,8 +194,8 @@ object SimEngine {
                     backgroundColorRef = backgroundColorRef, clearFocusRef = clearFocusRef,
                     evalScopeIn = evalScope,
                     onUpdate = { onUpdate(SimState(objects.toMap(), joysticks.toMap(), globalVars.toMap(), allTables.mapValues { it.value.toMap() }, log.toList(), errors.toList(), physicsEnabled = physicsEnabled, camera = cameraRef[0], pendingSceneSwitch = sceneSwitchRef[0], sprites = sprites, projectId = projectId, backgroundColor = backgroundColorRef[0], particles = particles.toList(), particleEmitters = particleEmitters.toMap(), screenShake = screenShakeRef[0], screenFlash = screenFlashRef[0], clearFocusTrigger = clearFocusRef[0])) })
-                vars.filterKeys { it !in localVars }.forEach { (k, v) -> globalVars[k] = v }
-                allTables.filterKeys { it !in localTables }.forEach { (k, v) -> globalTables[k] = v }
+                vars.filterKeys { !it.startsWith("collision_") && !it.startsWith("joy_") && it !in localTables.keys }.forEach { (k, v) -> globalVars[k] = v }
+                allTables.filterKeys { it !in localTables.keys }.forEach { (k, v) -> globalTables[k] = v }
             }
         }
 
@@ -207,7 +207,7 @@ object SimEngine {
             }
         }
 
-        bindEventScripts(scripts, objects, errors, warnMissing = true)
+        bindEventScripts(scripts, objects, errors, warnMissing = false)
 
         return SimState(objects = objects, joysticks = joysticks, globalVars = globalVars,
             tables = globalTables.mapValues { it.value.toMap() }, log = log, errors = errors, isStopped = false,
@@ -396,8 +396,8 @@ object SimEngine {
         val log = currentState.log.toMutableList()
         val errors = currentState.errors.toMutableList()
         val globalVars = currentState.globalVars.toMutableMap()
-        val localVars = script.localVars.orEmpty().associate { it.name to it.value }.toMutableMap()
-        val vars = (globalVars + localVars).toMutableMap()
+        val localVars = script.localVars.orEmpty().associate { it.name to it.value }
+        val vars = (localVars + globalVars).toMutableMap()
         currentState.objects.values.filter { it.isTextInput }.forEach { inputObj ->
             val cleanVar = inputObj.targetVar.removePrefix("{").removeSuffix("}").trim()
             if (cleanVar.isNotBlank() && (cleanVar !in vars || vars[cleanVar].isNullOrEmpty() || vars[cleanVar] == "0")) {
@@ -522,7 +522,7 @@ object SimEngine {
 
             val updatedGlobalVars = base.globalVars.toMutableMap()
             vars.forEach { (k, v) ->
-                if (k !in localVars.keys && !k.startsWith("collision_")) {
+                if (!k.startsWith("collision_") && !k.startsWith("joy_") && k !in localTables.keys) {
                     updatedGlobalVars[k] = v
                 }
             }
@@ -585,7 +585,7 @@ object SimEngine {
                 }
             } else null
         )
-        vars.filterKeys { it !in localTables.keys && it !in script.localVars.orEmpty().map { lv -> lv.name } }.forEach { (k, v) -> globalVars[k] = v }
+        vars.filterKeys { !it.startsWith("collision_") && !it.startsWith("joy_") && it !in localTables.keys }.forEach { (k, v) -> globalVars[k] = v }
 
         val baseState = getLatestState?.invoke() ?: currentState
         return buildMergedState(baseState).copy(isStopped = !continued)

@@ -147,23 +147,62 @@ fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { 
     b
 }
 
+fun ScriptProject.normalize(): ScriptProject {
+    val currentScenes = if (scenes.isNullOrEmpty()) {
+        listOf(
+            Scene(
+                id = activeSceneId?.ifBlank { id } ?: id,
+                name = "Сцена 1",
+                scripts = scripts ?: emptyList(),
+                locationBlocks = locationBlocks ?: emptyList()
+            )
+        )
+    } else {
+        scenes.map { sc ->
+            sc.copy(
+                scripts = sc.scripts.orEmpty(),
+                locationBlocks = sc.locationBlocks.orEmpty()
+            )
+        }
+    }
+    val actId = if (!activeSceneId.isNullOrBlank() && currentScenes.any { it.id == activeSceneId }) {
+        activeSceneId
+    } else {
+        currentScenes.first().id
+    }
+    val gVars = globalVars.orEmpty()
+    val gVarNames = gVars.map { it.name }.toSet()
+    val cleanedScenes = currentScenes.map { sc ->
+        sc.copy(scripts = sc.scripts.map { s ->
+            s.copy(localVars = s.localVars.orEmpty().filter { lv -> lv.name !in gVarNames })
+        })
+    }
+    return this.copy(
+        scenes = cleanedScenes,
+        activeSceneId = actId,
+        globalVars = gVars,
+        globalTags = globalTags.orEmpty(),
+        globalTables = globalTables.orEmpty()
+    )
+}
+
 object ProjectRepository {
     private val gson = Gson()
     private fun dir(ctx: Context) = File(ctx.filesDir, "projects").also { it.mkdirs() }
 
     fun save(ctx: Context, project: ScriptProject) =
-        File(dir(ctx), "${project.id}.json").writeText(gson.toJson(project))
+        File(dir(ctx), "${project.id}.json").writeText(gson.toJson(project.normalize()))
 
     fun load(ctx: Context, id: String): ScriptProject? {
         val f = File(dir(ctx), "$id.json")
         if (!f.exists()) return null
-        return runCatching { gson.fromJson(f.readText(), ScriptProject::class.java) }.getOrNull()
+        return runCatching { gson.fromJson(f.readText(), ScriptProject::class.java)?.normalize() }.getOrNull()
     }
 
     fun list(ctx: Context): List<ScriptProject> {
         val type = object : TypeToken<ScriptProject>() {}.type
         return dir(ctx).listFiles()
-            ?.mapNotNull { runCatching { gson.fromJson<ScriptProject>(it.readText(), type) }.getOrNull() }
+            ?.mapNotNull { runCatching { gson.fromJson<ScriptProject>(it.readText(), type)?.normalize() }.getOrNull() }
             ?: emptyList()
     }
 

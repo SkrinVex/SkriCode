@@ -31,19 +31,33 @@ data class LiteralString(val value: String) : AstExpr {
     override fun evalDouble(vars: Map<String, String>, scope: ExprScope): Double? = value.toDoubleOrNull()
 }
 
-data class VarRef(val varName: String) : AstExpr {
+data class VarRef(val varName: String, val isBare: Boolean = false) : AstExpr {
     override fun evalFast(vars: Map<String, String>, scope: ExprScope): Any {
-        val v = vars[varName] ?: ""
-        return v.toDoubleOrNull() ?: v
+        val v = vars[varName]
+        if (v != null) return v.toDoubleOrNull() ?: v
+        if (varName.contains('+') || varName.contains('-') || varName.contains('*') || varName.contains('/')) {
+            return ExprCompiler.compile(varName).evalFast(vars, scope)
+        }
+        return if (isBare) varName else ""
     }
 
     override fun evalString(vars: Map<String, String>, scope: ExprScope): String {
-        return vars[varName] ?: ""
+        val v = vars[varName]
+        if (v != null) return v
+        if (varName.contains('+') || varName.contains('-') || varName.contains('*') || varName.contains('/')) {
+            return ExprCompiler.compile(varName).evalString(vars, scope)
+        }
+        return if (isBare) varName else ""
     }
 
     override fun evalDouble(vars: Map<String, String>, scope: ExprScope): Double? {
-        val v = vars[varName] ?: return null
-        return v.toDoubleOrNull()
+        val v = vars[varName]
+        if (v != null) return v.toDoubleOrNull()
+        if (varName.contains('+') || varName.contains('-') || varName.contains('*') || varName.contains('/')) {
+            return ExprCompiler.compile(varName).evalDouble(vars, scope)
+        }
+        val fallback = if (isBare) varName else null
+        return fallback?.toDoubleOrNull()
     }
 }
 

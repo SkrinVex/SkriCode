@@ -81,7 +81,7 @@ object ExprCompiler {
                     val rightStr = expr.substring(i + 1).trim()
                     if (leftStr.isNotEmpty() && rightStr.isNotEmpty()) {
                         val leftNode = parseExpr(leftStr)
-                        val rightNode = parseMulDiv(rightStr) ?: parsePrimary(rightStr)
+                        val rightNode = parseMulDiv(rightStr) ?: parseExpr(rightStr)
                         return BinaryArith(leftNode, expr[i], rightNode)
                     }
                 }
@@ -102,8 +102,8 @@ object ExprCompiler {
                     val leftStr = expr.substring(0, i).trim()
                     val rightStr = expr.substring(i + 1).trim()
                     if (leftStr.isNotEmpty() && rightStr.isNotEmpty()) {
-                        val leftNode = parseMulDiv(leftStr) ?: parsePrimary(leftStr)
-                        val rightNode = parsePrimary(rightStr)
+                        val leftNode = parseMulDiv(leftStr) ?: parseExpr(leftStr)
+                        val rightNode = parseExpr(rightStr)
                         return BinaryArith(leftNode, expr[i], rightNode)
                     }
                 }
@@ -246,6 +246,13 @@ object ExprCompiler {
             }
             if (parts.size == 1) return parts[0]
             if (parts.isNotEmpty()) return InterpolatedText(parts)
+        }
+
+        val d = t.toDoubleOrNull()
+        if (d != null) return LiteralNumber(d, t)
+
+        if (t.matches(Regex("^[a-zA-Z_\\p{L}][a-zA-Z0-9_\\p{L}]*$"))) {
+            return VarRef(t, isBare = true)
         }
 
         return LiteralString(t)

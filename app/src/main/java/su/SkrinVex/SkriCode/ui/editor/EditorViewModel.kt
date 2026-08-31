@@ -420,11 +420,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun addVariable(name: String, scope: VarScope, value: String = "0") {
         when (scope) {
             VarScope.GLOBAL -> _state.update {
-                if (it.globalVars.any { v -> v.name == name }) it
-                else it.copy(globalVars = it.globalVars + ProjectVar(name, scope, value))
+                val cleanScripts = it.scripts.map { s ->
+                    s.copy(localVars = s.localVars.orEmpty().filter { lv -> lv.name != name })
+                }
+                if (it.globalVars.any { v -> v.name == name }) it.copy(scripts = cleanScripts)
+                else it.copy(
+                    globalVars = it.globalVars + ProjectVar(name, scope, value),
+                    scripts = cleanScripts
+                )
             }
             VarScope.LOCAL -> {
                 val activeId = _state.value.activeScriptId
+                if (_state.value.globalVars.any { v -> v.name == name }) return
                 updateScript(activeId) { script ->
                     if (script.localVars.orEmpty().any { v -> v.name == name }) script
                     else script.copy(localVars = script.localVars.orEmpty() + ProjectVar(name, scope, value))
