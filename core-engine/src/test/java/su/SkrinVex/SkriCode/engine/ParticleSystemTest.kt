@@ -132,6 +132,40 @@ class ParticleSystemTest {
     }
 
     @Test
+    fun testEmitterRateZeroNeverEmits() {
+        val emitter = ParticleEmitterState(name = "e", rate = 0f, countPerEmission = 3)
+        var emitters = mapOf("e" to emitter)
+        var particles = emptyList<Particle>()
+
+        // Симулируем несколько секунд — при rate=0 не должно появиться ни одной частицы
+        repeat(300) {
+            val (nextParticles, nextEmitters) = ParticleSystem.tick(particles, emitters, emptyMap(), 0.016f)
+            particles = nextParticles
+            emitters = nextEmitters
+        }
+        assertEquals(0, particles.size)
+        assertEquals(0f, emitters["e"]!!.timer, 0.001f)
+    }
+
+    @Test
+    fun testEmitterAtParticleLimitDoesNotAccumulateTimerDebt() {
+        val emitter = ParticleEmitterState(name = "e", rate = 1000f, countPerEmission = 500, lifetime = 100f)
+        var emitters = mapOf("e" to emitter)
+        var particles = emptyList<Particle>()
+
+        // Быстро упираемся в MAX_PARTICLES
+        repeat(20) {
+            val (nextParticles, nextEmitters) = ParticleSystem.tick(particles, emitters, emptyMap(), 0.1f)
+            particles = nextParticles
+            emitters = nextEmitters
+        }
+        assertEquals(ParticleSystem.MAX_PARTICLES, particles.size)
+        // Таймер не должен неограниченно расти сверх одного интервала испускания
+        val interval = 1f / emitter.rate
+        assertTrue(emitters["e"]!!.timer <= interval + 0.001f)
+    }
+
+    @Test
     fun testTickShake() {
         val shake = ScreenShakeState(intensity = 20f, duration = 0.5f)
         val nextShake = ParticleSystem.tickShake(shake, 0.1f)

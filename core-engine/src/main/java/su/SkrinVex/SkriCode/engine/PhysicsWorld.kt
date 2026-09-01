@@ -351,7 +351,7 @@ object PhysicsWorld {
 
         val aRatio = invMassA / totalInvMass
         val bRatio = invMassB / totalInvMass
-        val push = hit.pen + PENETRATION_SLOP
+        val push = (hit.pen - PENETRATION_SLOP).coerceAtLeast(0f)
 
         // Разведение перекрывающихся тел
         if (!aStatic) {

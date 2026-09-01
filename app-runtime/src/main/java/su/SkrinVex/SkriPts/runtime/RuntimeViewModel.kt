@@ -183,9 +183,12 @@ class RuntimeViewModel(app: Application) : AndroidViewModel(app) {
         stopSimulation()
         _scripts = scene.scripts
         val project = _project ?: return
-        val updatedGlobalVarDefs = project.globalVars.orEmpty().map { v ->
+        val declaredVarDefs = project.globalVars.orEmpty().map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
+        val declaredNames = declaredVarDefs.map { it.name }.toSet()
+        val updatedGlobalVarDefs = declaredVarDefs + globalVars.filterKeys { it !in declaredNames }
+            .map { (name, value) -> ProjectVar(name = name, scope = VarScope.GLOBAL, value = value) }
         _simState.value = SimState(globalVars = globalVars, sprites = project.sprites.orEmpty(), projectId = project.id)
         _simJob = viewModelScope.launch {
             val result = SimEngine.run(

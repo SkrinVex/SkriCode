@@ -107,7 +107,7 @@ object ProjectIO {
         if (spriteFiles.isNotEmpty()) {
             val spritesDir = SpriteRepository.spritesDir(ctx, p.id)
             spriteFiles.forEach { (name, data) ->
-                File(spritesDir, name).writeBytes(data)
+                safeChildFile(spritesDir, name).writeBytes(data)
             }
         }
 
@@ -115,11 +115,28 @@ object ProjectIO {
         if (soundFiles.isNotEmpty()) {
             val soundsDir = SoundRepository.soundsDir(ctx, p.id)
             soundFiles.forEach { (name, data) ->
-                File(soundsDir, name).writeBytes(data)
+                safeChildFile(soundsDir, name).writeBytes(data)
             }
         }
 
         return p
+    }
+
+    /**
+     * Резолвит имя файла из ZIP-архива относительно [dir] и убеждается, что итоговый путь
+     * не выходит за пределы [dir] (защита от zip-slip / path traversal через "../" в имени entry).
+     */
+    private fun safeChildFile(dir: File, name: String): File {
+        val safeName = File(name).name
+        if (safeName.isBlank() || safeName == "." || safeName == "..") {
+            throw ImportException("Архив содержит недопустимое имя файла: $name")
+        }
+        val dirCanonical = dir.canonicalFile
+        val target = File(dirCanonical, safeName).canonicalFile
+        if (target.parentFile?.path != dirCanonical.path) {
+            throw ImportException("Архив содержит недопустимый путь файла: $name")
+        }
+        return target
     }
 
     private fun importLegacyJson(bytes: ByteArray): ScriptProject {

@@ -58,6 +58,8 @@ fun LocationEditorScreen(
     sprites: List<su.SkrinVex.SkriCode.data.SpriteAsset> = emptyList(),
     isLandscape: Boolean = false,
     onCopyToScene: (BlockDef, String) -> Unit = { _, _ -> },
+    onSendObjectToBackpack: (BlockDef, String) -> Unit = { _, _ -> },
+    onRegisterSprite: (su.SkrinVex.SkriCode.data.SpriteAsset) -> Unit = {},
     onSave: (List<SerializedBlock>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -96,6 +98,8 @@ fun LocationEditorScreen(
     var editingBlock by remember { mutableStateOf<BlockDef?>(null) }
     var deleteConfirmBlock by remember { mutableStateOf<BlockDef?>(null) }
     var copyToSceneBlock by remember { mutableStateOf<BlockDef?>(null) }
+    var showBackpack by remember { mutableStateOf(false) }
+    var pendingBackpackObject by remember { mutableStateOf<BlockDef?>(null) }
     var copySelectionToScene by remember { mutableStateOf(false) }
     var deleteSelectionConfirm by remember { mutableStateOf(false) }
     // Сохраняем свёрнутость блоков между открытиями редактора объекта
@@ -385,6 +389,9 @@ fun LocationEditorScreen(
                                 Icon(Icons.Default.IosShare, null, tint = TextSec, modifier = Modifier.size(18.dp))
                             }
                         }
+                        IconButton(onClick = { pendingBackpackObject = obj }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Backpack, "В рюкзак", tint = Color(0xFFF472B6), modifier = Modifier.size(18.dp))
+                        }
                         IconButton(onClick = {
                             val copy = obj.copy(
                                 id = UUID.randomUUID().toString(),
@@ -439,6 +446,7 @@ fun LocationEditorScreen(
         Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallLocFab(Icons.Default.CenterFocusStrong, "Сброс") { zoom = 1f; panX = 0f; panY = 0f }
             SmallLocFab(Icons.Default.Add, "Добавить") { showAddSheet = true }
+            SmallLocFab(Icons.Default.Backpack, "Рюкзак") { showBackpack = true }
             SmallFloatingActionButton(
                 onClick = { undo() },
                 containerColor = if (undoStack.isNotEmpty()) Color(0xFF1E2535) else Color(0xFF111520),
@@ -665,6 +673,42 @@ fun LocationEditorScreen(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { copySelectionToScene = false }) { Text("Отмена", color = TextSec) } }
+        )
+    }
+
+    pendingBackpackObject?.let { obj ->
+        val defaultName = obj.params["name"]?.value?.takeIf { it.isNotBlank() } ?: obj.displayName
+        su.SkrinVex.SkriCode.ui.backpack.BackpackNameDialog(
+            defaultName = defaultName,
+            onConfirm = { name -> onSendObjectToBackpack(obj, name); pendingBackpackObject = null },
+            onDismiss = { pendingBackpackObject = null }
+        )
+    }
+
+    if (showBackpack) {
+        su.SkrinVex.SkriCode.ui.backpack.BackpackScreen(
+            onBack = { showBackpack = false },
+            onPasteObject = { item ->
+                val proto = item.blocks.firstOrNull()?.deserialize()
+                if (proto != null) {
+                    pushUndo()
+                    val pasted = proto.copy(id = UUID.randomUUID().toString())
+                    locBlocks = locBlocks + pasted
+                    item.sprites.forEach { backpackSprite ->
+                        if (sprites.none { it.name == backpackSprite.name }) {
+                            val srcFile = su.SkrinVex.SkriCode.data.BackpackRepository.getSpriteFile(ctx, backpackSprite.fileName)
+                            if (srcFile != null) {
+                                val destDir = su.SkrinVex.SkriCode.data.SpriteRepository.spritesDir(ctx, projectId)
+                                val destFile = java.io.File(destDir, backpackSprite.fileName)
+                                if (runCatching { srcFile.copyTo(destFile, overwrite = true) }.isSuccess) {
+                                    onRegisterSprite(backpackSprite)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            onPasted = { showBackpack = false }
         )
     }
 }

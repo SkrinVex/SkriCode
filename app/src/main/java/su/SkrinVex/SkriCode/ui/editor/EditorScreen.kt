@@ -21,12 +21,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -34,6 +36,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -63,6 +66,10 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
     var exprTarget by remember { mutableStateOf<ExprEditTarget?>(null) }
     var showScriptMenu by remember { mutableStateOf<String?>(null) }
     var showAddScriptDialog by remember { mutableStateOf(false) }
+    var showScriptManager by remember { mutableStateOf(false) }
+    var showBackpack by remember { mutableStateOf(false) }
+    // Запрос имени при отправке чего-либо в рюкзак: (имя по умолчанию, что сделать после подтверждения)
+    var backpackNameRequest by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     var positionPickerBlock by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
     // blockIndex -> sim_hitbox block
     var hitboxEditorTarget by remember { mutableStateOf<Pair<Int, BlockDef>?>(null) }
@@ -88,11 +95,25 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
             sprites = state.sprites,
             isLandscape = projectIsLandscape,
             onCopyToScene = { block, sceneId -> vm.copyLocationBlockToScene(block, sceneId) },
+            onSendObjectToBackpack = { block, name -> vm.sendObjectToBackpack(block, name) },
+            onRegisterSprite = { asset -> vm.registerSpriteAsset(asset) },
             onSave = { blocks ->
                 vm.updateLocationBlocks(blocks)
                 showLocationEditor = false
             },
             onDismiss = { showLocationEditor = false }
+        )
+        return
+    }
+
+    // Рюкзак — вставка скриптов/блоков в текущий проект
+    if (showBackpack) {
+        su.SkrinVex.SkriCode.ui.backpack.BackpackScreen(
+            onBack = { showBackpack = false },
+            onPasteScript = vm::pasteScriptFromBackpack,
+            onPasteBlock = vm::pasteBlockFromBackpack,
+            onPasteScene = vm::pasteSceneFromBackpack,
+            onPasted = { showBackpack = false }
         )
         return
     }
@@ -354,6 +375,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         IconButton(onClick = { showLocationEditor = true }) {
                             Icon(Icons.Default.Map, "Редактор локации", tint = TextSec)
                         }
+                        IconButton(onClick = { showBackpack = true }) {
+                            Icon(Icons.Default.Backpack, "Рюкзак", tint = TextSec)
+                        }
                         IconButton(onClick = vm::runSim) {
                             Icon(Icons.Default.PlayArrow, "Запустить", tint = Success)
                         }
@@ -366,16 +390,32 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onAdd = { vm.addScene("Сцена ${state.scenes.size + 1}") },
                         onRename = { id, name -> vm.renameScene(id, name) },
                         onDelete = { id -> vm.deleteScene(id) },
-                        onMove = { from, to -> vm.moveScene(from, to) }
+                        onMove = { from, to -> vm.moveScene(from, to) },
+                        onSendToBackpack = { scene ->
+                            // Для активной сцены живые правки лежат в state.scripts/state.locationBlocks,
+                            // а не в scene — берём их, чтобы в рюкзак не улетела устаревшая копия.
+                            val liveScene = if (scene.id == state.activeSceneId)
+                                scene.copy(scripts = state.scripts, locationBlocks = state.locationBlocks)
+                            else scene
+                            backpackNameRequest = liveScene.name to { name -> vm.sendSceneToBackpack(liveScene, name) }
+                        }
                     )
                     // Панель скриптов
-                    ScriptTabsRow(
-                        scripts = state.scripts,
-                        activeId = state.activeScript.id,
-                        onSelect = vm::selectScript,
-                        onAdd = { showAddScriptDialog = true },
-                        onLongPress = { showScriptMenu = it }
-                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        ScriptTabsRow(
+                            scripts = state.scripts,
+                            activeId = state.activeScript.id,
+                            onSelect = vm::selectScript,
+                            onAdd = { showAddScriptDialog = true },
+                            onLongPress = { showScriptMenu = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (state.scripts.size > 3) {
+                            IconButton(onClick = { showScriptManager = true }) {
+                                Icon(Icons.Default.List, "Все скрипты", tint = TextSec, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -496,6 +536,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onToggleChildCollapsed = { childId -> vm.toggleBlockCollapsed(activeScriptId, childId) },
                         isChildCollapsed = { childId -> vm.isBlockCollapsed(activeScriptId, childId) },
                         onRemove = { blockToDelete = block },
+                        onToggleEnabled = { vm.toggleBlockEnabled(block.id) },
                         onMoveUp = { if (vm.canMoveUp(index, activeBlocks)) vm.moveBlock(index, index - 1) },
                         onMoveDown = { if (vm.canMoveDown(index, activeBlocks)) vm.moveBlock(index, index + 1) },
                         canMoveUp = vm.canMoveUp(index, activeBlocks),
@@ -503,7 +544,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                         onMoveTo = { targetIndex -> vm.moveBlock(index, targetIndex) },
                         onDuplicate = { vm.duplicateBlock(index) },
                         onParamChange = { k, v -> vm.updateParam(index, k, v) },
-                        onCopyBlock = { vm.copyBlock(state.activeScript.blocks[index]) },
+                        onCopyBlock = { vm.copyBlock(index) },
+                        onSendToBackpack = { backpackNameRequest = block.displayName to { name -> vm.sendBlockToBackpack(index, name) } },
                         onOpenExpr = { key, label, cur, isId -> exprTarget = ExprEditTarget(index, key, label, cur, isId) },
                         onOpenPositionPicker = { b -> positionPickerBlock = index to b },
                         onOpenHitboxEditor = { b -> hitboxEditorTarget = index to b },
@@ -604,9 +646,34 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onLandscapeNeeded: (Bo
                 onRename = { name -> vm.renameScript(scriptId, name); showScriptMenu = null },
                 onDelete = { vm.deleteScript(scriptId); showScriptMenu = null },
                 onCopy = { vm.copyScript(script) },
+                onSendToBackpack = { backpackNameRequest = script.name to { name -> vm.sendScriptToBackpack(script, name) } },
                 onDismiss = { showScriptMenu = null }
             )
         }
+    }
+
+    // Менеджер скриптов — поиск + список всех событий/функций с быстрым редактированием
+    if (showScriptManager) {
+        ScriptManagerSheet(
+            scripts = state.scripts,
+            activeId = state.activeScript.id,
+            onSelect = { id -> vm.selectScript(id); showScriptManager = false },
+            onRename = vm::renameScript,
+            onDelete = vm::deleteScript,
+            onCopy = vm::copyScript,
+            onSendToBackpack = { script -> backpackNameRequest = script.name to { name -> vm.sendScriptToBackpack(script, name) } },
+            onAdd = { showScriptManager = false; showAddScriptDialog = true },
+            onDismiss = { showScriptManager = false }
+        )
+    }
+
+    // Запрос имени при отправке в рюкзак (скрипт/блок/сцена)
+    backpackNameRequest?.let { (defaultName, onConfirm) ->
+        su.SkrinVex.SkriCode.ui.backpack.BackpackNameDialog(
+            defaultName = defaultName,
+            onConfirm = { name -> onConfirm(name); backpackNameRequest = null },
+            onDismiss = { backpackNameRequest = null }
+        )
     }
 
     // FAB вставки — показывается когда в буфере есть скрипт или блок
@@ -635,10 +702,11 @@ private fun ScriptTabsRow(
     activeId: String,
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
-    onLongPress: (String) -> Unit
+    onLongPress: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        modifier.horizontalScroll(rememberScrollState())
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -826,7 +894,7 @@ private fun EventPickerDialog(
 }
 
 @Composable
-private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelete: () -> Unit, onCopy: () -> Unit, onDismiss: () -> Unit) {
+private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelete: () -> Unit, onCopy: () -> Unit, onSendToBackpack: (() -> Unit)? = null, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(script.name) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -848,6 +916,13 @@ private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelet
                     Spacer(Modifier.width(6.dp))
                     Text("Копировать скрипт", color = Accent)
                 }
+                if (onSendToBackpack != null) {
+                    TextButton(onClick = { onSendToBackpack(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Backpack, null, tint = Color(0xFFF472B6), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Отправить в рюкзак", color = Color(0xFFF472B6))
+                    }
+                }
                 TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.DeleteOutline, null, tint = Danger, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -863,6 +938,141 @@ private fun ScriptMenuDialog(script: Script, onRename: (String) -> Unit, onDelet
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = TextSec) } }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScriptManagerSheet(
+    scripts: List<Script>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onCopy: (Script) -> Unit,
+    onSendToBackpack: (Script) -> Unit,
+    onAdd: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var menuScriptId by remember { mutableStateOf<String?>(null) }
+
+    val filtered = remember(scripts, query) {
+        if (query.isBlank()) scripts else scripts.filter { it.name.contains(query, ignoreCase = true) }
+    }
+    val events = filtered.filter { it.event != ScriptEvent.FUNCTION }
+    val functions = filtered.filter { it.event == ScriptEvent.FUNCTION }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, containerColor = Surface1,
+        dragHandle = {
+            Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Surface3))
+            }
+        }
+    ) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Все скрипты (${scripts.size})", color = TextPrim, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Новый скрипт", tint = Accent) }
+            }
+            OutlinedTextField(
+                value = query, onValueChange = { query = it },
+                placeholder = { Text("Поиск по названию...", color = TextSec) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSec) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent, unfocusedBorderColor = Surface3,
+                    focusedTextColor = TextPrim, unfocusedTextColor = TextPrim, cursorColor = Accent
+                )
+            )
+            LazyColumn(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (events.isNotEmpty()) {
+                    item(key = "hdr_events") { ScriptGroupLabel("События (${events.size})") }
+                    items(events, key = { it.id }) { script ->
+                        ScriptManagerRow(script, script.id == activeId,
+                            onClick = { onSelect(script.id) },
+                            onMenu = { menuScriptId = script.id })
+                    }
+                }
+                if (functions.isNotEmpty()) {
+                    item(key = "hdr_functions") { ScriptGroupLabel("Функции (${functions.size})") }
+                    items(functions, key = { it.id }) { script ->
+                        ScriptManagerRow(script, script.id == activeId,
+                            onClick = { onSelect(script.id) },
+                            onMenu = { menuScriptId = script.id })
+                    }
+                }
+                if (filtered.isEmpty()) {
+                    item(key = "empty") {
+                        Text("Ничего не найдено", color = TextSec, fontSize = 13.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(24.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+
+    menuScriptId?.let { id ->
+        val script = scripts.find { it.id == id }
+        if (script != null) {
+            ScriptMenuDialog(
+                script = script,
+                onRename = { name -> onRename(id, name); menuScriptId = null },
+                onDelete = { onDelete(id); menuScriptId = null },
+                onCopy = { onCopy(script) },
+                onSendToBackpack = { onSendToBackpack(script) },
+                onDismiss = { menuScriptId = null }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScriptGroupLabel(text: String) {
+    Text(text, color = TextSec, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+}
+
+@Composable
+private fun ScriptManagerRow(script: Script, isActive: Boolean, onClick: () -> Unit, onMenu: () -> Unit) {
+    val itemColor = if (script.event == ScriptEvent.FUNCTION) Color(0xFFA855F7) else Accent
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isActive) itemColor.copy(alpha = 0.14f) else Surface2)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(eventIcon(script.event), null, tint = itemColor, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(script.name, color = TextPrim, fontSize = 14.sp,
+                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
+            val subtitle = when {
+                script.event == ScriptEvent.FUNCTION -> {
+                    val params = script.functionParams?.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: script.eventTarget
+                    if (params.isNotBlank()) "Функция ($params)" else "Функция"
+                }
+                script.eventTarget.isNotBlank() -> "${script.event.label} · ${script.eventTarget}"
+                else -> script.event.label
+            }
+            Text(subtitle, color = TextSec, fontSize = 11.sp)
+        }
+        IconButton(onClick = onMenu, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.MoreVert, "Действия", tint = TextSec, modifier = Modifier.size(18.dp))
+        }
+    }
 }
 
 @Composable
@@ -1117,6 +1327,7 @@ internal fun BlockCard(
     onToggleChildCollapsed: ((blockId: String) -> Boolean)? = null,
     isChildCollapsed: ((blockId: String) -> Boolean)? = null,
     onRemove: () -> Unit,
+    onToggleEnabled: () -> Unit = {},
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     canMoveUp: Boolean = index > 0,
@@ -1126,6 +1337,7 @@ internal fun BlockCard(
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     onCopyBlock: (() -> Unit)? = null,
+    onSendToBackpack: (() -> Unit)? = null,
     onOpenPositionPicker: ((block: BlockDef) -> Unit)? = null,
     onOpenHitboxEditor: ((block: BlockDef) -> Unit)? = null,
     onOpenAnimEditor: ((block: BlockDef) -> Unit)? = null,
@@ -1163,7 +1375,9 @@ internal fun BlockCard(
             onMoveTo = onMoveTo,
             onDuplicate = onDuplicate,
             onCopyBlock = onCopyBlock,
+            onSendToBackpack = onSendToBackpack,
             onRemove = onRemove,
+            onToggleEnabled = onToggleEnabled,
             onParamChange = onParamChange,
             onOpenExpr = onOpenExpr,
             indentStart = indentStart
@@ -1174,6 +1388,7 @@ internal fun BlockCard(
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize()
             .padding(start = indentStart)
+            .alpha(if (block.enabled) 1f else 0.45f)
             .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -1196,6 +1411,14 @@ internal fun BlockCard(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(14.dp))
                             Text(block.displayName, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            if (!block.enabled && block.type != "comment") {
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(4.dp)).background(Danger.copy(alpha = 0.18f))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text("ВЫКЛ", color = Danger, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                         Text(block.description, color = TextSec, fontSize = 11.sp)
                     }
@@ -1213,6 +1436,23 @@ internal fun BlockCard(
                 }
                 if (!collapsed) {
                     when (block.type) {
+                        "comment" -> {
+                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = Surface3)
+                            Spacer(Modifier.height(10.dp))
+                            val param = block.params["text"]!!
+                            OutlinedTextField(
+                                value = param.value,
+                                onValueChange = { onParamChange("text", it) },
+                                placeholder = { Text("Заметка...", color = TextSec) },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2, maxLines = 6,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accent, focusedLabelColor = accent,
+                                    cursorColor = accent, focusedTextColor = TextPrim, unfocusedTextColor = TextPrim
+                                )
+                            )
+                        }
                         "if_block" -> {
                             Spacer(Modifier.height(10.dp))
                             HorizontalDivider(color = Surface3)
@@ -1350,6 +1590,17 @@ internal fun BlockCard(
             title = { Text("Действия с блоком №${index + 1}", color = TextPrim, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (block.type != "comment") {
+                        Button(
+                            onClick = { onToggleEnabled(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (block.enabled) Color(0xFF4B5563) else Success)
+                        ) {
+                            Icon(if (block.enabled) Icons.AutoMirrored.Filled.Comment else Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (block.enabled) "Отключить (закомментировать)" else "Включить блок")
+                        }
+                    }
                     Button(
                         onClick = { onDuplicate(); showContextMenu = false },
                         modifier = Modifier.fillMaxWidth(),
@@ -1368,6 +1619,17 @@ internal fun BlockCard(
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Копировать блок")
+                        }
+                    }
+                    if (onSendToBackpack != null) {
+                        Button(
+                            onClick = { onSendToBackpack(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF472B6).copy(alpha = 0.85f))
+                        ) {
+                            Icon(Icons.Default.Backpack, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Отправить в рюкзак")
                         }
                     }
                     if (total > 1 && onMoveTo != null) {
@@ -1427,7 +1689,9 @@ internal fun OpenCloseBlockCard(
     onMoveTo: ((targetIndex: Int) -> Unit)? = null,
     onDuplicate: (() -> Unit)? = null,
     onCopyBlock: (() -> Unit)? = null,
+    onSendToBackpack: (() -> Unit)? = null,
     onRemove: () -> Unit,
+    onToggleEnabled: () -> Unit = {},
     onParamChange: (String, String) -> Unit,
     onOpenExpr: (key: String, label: String, current: String, isIdentifier: Boolean) -> Unit,
     indentStart: Dp = 0.dp
@@ -1446,6 +1710,7 @@ internal fun OpenCloseBlockCard(
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize()
             .padding(start = indentStart)
+            .alpha(if (block.enabled) 1f else 0.45f)
             .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -1468,6 +1733,14 @@ internal fun OpenCloseBlockCard(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(categoryIcon(block.category), null, tint = accent, modifier = Modifier.size(14.dp))
                         Text(block.displayName, color = TextPrim, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        if (!block.enabled && isOpen) {
+                            Box(
+                                Modifier.clip(RoundedCornerShape(4.dp)).background(Danger.copy(alpha = 0.18f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text("ВЫКЛ", color = Danger, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                     if (!isClose && !isElse) {
                         Text(block.description, color = TextSec, fontSize = 11.sp)
@@ -1502,6 +1775,17 @@ internal fun OpenCloseBlockCard(
             title = { Text("Действия с блоком №${index + 1}", color = TextPrim, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isOpen) {
+                        Button(
+                            onClick = { onToggleEnabled(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (block.enabled) Color(0xFF4B5563) else Success)
+                        ) {
+                            Icon(if (block.enabled) Icons.AutoMirrored.Filled.Comment else Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (block.enabled) "Отключить блок целиком (с телом)" else "Включить блок")
+                        }
+                    }
                     if (onDuplicate != null) {
                         Button(
                             onClick = { onDuplicate(); showContextMenu = false },
@@ -1522,6 +1806,17 @@ internal fun OpenCloseBlockCard(
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Копировать блок")
+                        }
+                    }
+                    if (onSendToBackpack != null) {
+                        Button(
+                            onClick = { onSendToBackpack(); showContextMenu = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF472B6).copy(alpha = 0.85f))
+                        ) {
+                            Icon(Icons.Default.Backpack, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Отправить в рюкзак")
                         }
                     }
                     if (total > 1 && onMoveTo != null) {
@@ -2412,6 +2707,7 @@ fun categoryColor(cat: BlockCategory) = when (cat) {
     BlockCategory.AUDIO      -> Color(0xFFE879F9)
     BlockCategory.WIDGET     -> Color(0xFF818CF8)
     BlockCategory.FUNCTION   -> Color(0xFFA855F7)
+    BlockCategory.COMMENT    -> Color(0xFF9CA3AF)
 }
 
 fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
@@ -2428,6 +2724,7 @@ fun categoryIcon(cat: BlockCategory): ImageVector = when (cat) {
     BlockCategory.AUDIO      -> Icons.Default.MusicNote
     BlockCategory.WIDGET     -> Icons.Default.SmartButton
     BlockCategory.FUNCTION   -> Icons.Default.Functions
+    BlockCategory.COMMENT    -> Icons.AutoMirrored.Filled.Comment
 }
 
 fun eventIcon(event: ScriptEvent): ImageVector = when (event) {
@@ -2999,7 +3296,8 @@ private fun SceneTabsRow(
     onAdd: () -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
-    onMove: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> }
+    onMove: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onSendToBackpack: (su.SkrinVex.SkriCode.data.Scene) -> Unit = {}
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -3091,6 +3389,17 @@ private fun SceneTabsRow(
                             Icon(Icons.Default.PlayArrow, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(14.dp))
                             Text("Стартовая сцена (запускается первой)", color = Color(0xFF4ADE80), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = { onSendToBackpack(scene); renamingId = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF472B6))
+                    ) {
+                        Icon(Icons.Default.Backpack, null, tint = Color(0xFFF472B6), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Отправить сцену в рюкзак", fontSize = 12.sp, color = Color(0xFFF472B6))
                     }
 
                     if (scenes.size > 1) {

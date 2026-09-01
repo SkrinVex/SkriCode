@@ -235,6 +235,49 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private fun isOpenBlock(type: String) = type in setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
     private fun isCloseBlock(type: String) = type in setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
 
+    /**
+     * Возвращает блок по индексу в текущем активном списке; если это часть парного блока
+     * (if/for/while/wait — открывающий/else/закрывающий делят один pairId), возвращает
+     * весь диапазон open..close целиком. Так парный блок нельзя "разорвать" копированием,
+     * дублированием или отправкой в рюкзак только его половины.
+     */
+    private fun resolveBlockRange(deserialized: List<BlockDef?>, index: Int): Pair<Int, List<BlockDef>>? {
+        val block = deserialized.getOrNull(index) ?: return null
+        if (block.pairId.isBlank()) return index to listOf(block)
+        val openIdx = deserialized.indexOfFirst { it != null && it.pairId == block.pairId && isOpenBlock(it.type) }
+        val closeIdx = deserialized.indexOfFirst { it != null && it.pairId == block.pairId && isCloseBlock(it.type) }
+        return if (openIdx >= 0 && closeIdx > openIdx) {
+            closeIdx to deserialized.subList(openIdx, closeIdx + 1).filterNotNull()
+        } else {
+            index to listOf(block)
+        }
+    }
+
+    /**
+     * Присваивает новые id всем блокам списка (рекурсивно по children). Каждый встреченный
+     * непустой pairId переотображается на один новый — консистентно для всех блоков этой пары
+     * (open/else/close) — но независимо для разных пар, если список содержит их несколько
+     * (например, вставляется целый скрипт с несколькими if/for). Так вставленная копия
+     * никогда не коллизирует по pairId ни со старым диапазоном, ни с другими парами в списке.
+     */
+    private fun List<BlockDef>.withFreshIds(): List<BlockDef> {
+        if (isEmpty()) return this
+        val pairIdMap = mutableMapOf<String, String>()
+
+        fun BlockDef.withNewIds(): BlockDef {
+            val newChildren = children.mapValues { (_, blocks) -> blocks.map { it.withNewIds() } }
+            return copy(id = UUID.randomUUID().toString(), children = newChildren)
+        }
+
+        return map { b ->
+            val fresh = b.withNewIds()
+            if (b.pairId.isNotBlank()) {
+                val newPairId = pairIdMap.getOrPut(b.pairId) { UUID.randomUUID().toString() }
+                fresh.copy(pairId = newPairId)
+            } else fresh
+        }
+    }
+
     fun removeBlock(blockId: String) = modifyActiveBlocks { list ->
         val targetIdx = list.indexOfFirst { it.id == blockId }
         if (targetIdx < 0) return@modifyActiveBlocks list
@@ -275,17 +318,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun duplicateBlock(index: Int) = modifyActiveBlocks { list ->
-        val block = list[index].deserialize() ?: return@modifyActiveBlocks list
-        
-        fun BlockDef.withNewIds(): BlockDef {
-            val newChildren = children.mapValues { (_, blocks) -> 
-                blocks.map { it.withNewIds() }
+        val deserialized = list.map { it.deserialize() }
+        val (insertAfter, range) = resolveBlockRange(deserialized, index) ?: return@modifyActiveBlocks list
+        val duplicated = range.withFreshIds().map { it.serialize() }
+        list.toMutableList().also { it.addAll(insertAfter + 1, duplicated) }
+    }
+
+    /** Включает/отключает блок ("комментирует"). Для пары if/for/while/wait переключает весь блок целиком. */
+    fun toggleBlockEnabled(blockId: String) = modifyActiveBlocks { list ->
+        val target = list.find { it.id == blockId }?.deserialize() ?: return@modifyActiveBlocks list
+        val newEnabled = !target.enabled
+        if (target.pairId.isNotBlank()) {
+            val pairId = target.pairId
+            list.map { sb ->
+                val d = sb.deserialize()
+                if (d != null && d.pairId == pairId) d.copy(enabled = newEnabled).serialize() else sb
             }
-            return copy(id = java.util.UUID.randomUUID().toString(), children = newChildren)
+        } else {
+            list.map { sb -> if (sb.id == blockId) target.copy(enabled = newEnabled).serialize() else sb }
         }
-        
-        val duplicated = block.withNewIds().serialize()
-        list.toMutableList().also { it.add(index + 1, duplicated) }
     }
 
     fun moveBlock(from: Int, to: Int) = modifyActiveBlocks { list ->
@@ -840,14 +891,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Буфер обмена ---
     private var _clipboardScript: su.SkrinVex.SkriCode.data.Script? = null
-    private var _clipboardBlock: SerializedBlock? = null
+    private var _clipboardBlock: List<SerializedBlock>? = null
 
     fun copyScript(script: su.SkrinVex.SkriCode.data.Script) {
         _clipboardScript = script; _clipboardBlock = null
         _state.update { it.copy(clipboardIsScript = true) }
     }
-    fun copyBlock(block: SerializedBlock) {
-        _clipboardBlock = block; _clipboardScript = null
+
+    /** Копирует блок по индексу. Если это часть парного блока (if/for/while/wait) — копирует весь диапазон целиком. */
+    fun copyBlock(index: Int) {
+        val list = _state.value.activeScript.blocks
+        val deserialized = list.map { it.deserialize() }
+        val (_, range) = resolveBlockRange(deserialized, index) ?: return
+        _clipboardBlock = range.map { it.serialize() }; _clipboardScript = null
         _state.update { it.copy(clipboardIsScript = false) }
     }
     fun hasClipboard() = _state.value.clipboardIsScript != null
@@ -859,17 +915,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val newScript = src.copy(
             id = UUID.randomUUID().toString(),
             name = src.name + " (копия)",
-            blocks = src.blocks.map { it.copy(id = UUID.randomUUID().toString()) }
+            blocks = src.blocks.mapNotNull { it.deserialize() }.withFreshIds().map { it.serialize() }
         )
         _state.update { it.copy(scripts = it.scripts + newScript, activeScriptId = newScript.id, clipboardIsScript = null) }
         _clipboardScript = null
     }
 
-    /** Вставить скопированный блок в активный скрипт */
+    /** Вставить скопированный блок (или весь диапазон парного блока) в конец активного скрипта */
     fun pasteBlock() {
         val src = _clipboardBlock ?: return
-        val newBlock = src.copy(id = UUID.randomUUID().toString())
-        modifyActiveBlocks { it + newBlock }
+        val fresh = src.mapNotNull { it.deserialize() }.withFreshIds().map { it.serialize() }
+        modifyActiveBlocks { it + fresh }
         _clipboardBlock = null
         _state.update { it.copy(clipboardIsScript = null) }
     }
@@ -962,9 +1018,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         stopPhysics()
         su.SkrinVex.SkriCode.engine.ExprEval.setOrientation(s.orientation)
         isSimulationRunning = true
-        val updatedGlobalVarDefs = s.globalVars.map { v ->
+        val declaredVarDefs = s.globalVars.map { v ->
             globalVars[v.name]?.let { v.copy(value = it) } ?: v
         }
+        val declaredNames = declaredVarDefs.map { it.name }.toSet()
+        val updatedGlobalVarDefs = declaredVarDefs + globalVars.filterKeys { it !in declaredNames }
+            .map { (name, value) -> su.SkrinVex.SkriCode.data.ProjectVar(name = name, scope = su.SkrinVex.SkriCode.data.VarScope.GLOBAL, value = value) }
         _simState.value = SimState(globalVars = globalVars, sprites = s.sprites, projectId = s.projectId)
         _simRunCount.value++
         _simScripts = targetScene.scripts
@@ -1092,6 +1151,83 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun getSpriteFile(name: String): java.io.File? {
         val asset = _state.value.sprites.find { it.name == name } ?: return null
         return su.SkrinVex.SkriCode.data.SpriteRepository.getFile(getApplication(), projectId, asset.fileName)
+    }
+
+    // --- Рюкзак ---
+    fun sendScriptToBackpack(script: Script, name: String) {
+        BackpackRepository.addScript(getApplication(), script, name)
+    }
+
+    /** Отправляет блок по индексу в рюкзак. Если это часть парного блока (if/for/while/wait) — весь диапазон целиком. */
+    fun sendBlockToBackpack(index: Int, name: String) {
+        val list = _state.value.activeScript.blocks
+        val deserialized = list.map { it.deserialize() }
+        val (_, range) = resolveBlockRange(deserialized, index) ?: return
+        BackpackRepository.addBlock(getApplication(), range, name)
+    }
+
+    /** Отправляет объект локации в рюкзак вместе со всеми его настройками (тэги/физика/хитбокс) и картинкой спрайта. */
+    fun sendObjectToBackpack(block: BlockDef, name: String) {
+        val spriteName = block.params["sprite"]?.value?.takeIf { it.isNotBlank() }
+        val spriteAsset = spriteName?.let { n -> _state.value.sprites.find { it.name == n } }
+        BackpackRepository.addObject(getApplication(), projectId, block, spriteAsset, name)
+    }
+
+    /** Отправляет активную сцену целиком (объекты + скрипты) в рюкзак вместе со спрайтами, на которые она ссылается. */
+    fun sendSceneToBackpack(scene: su.SkrinVex.SkriCode.data.Scene, name: String) {
+        BackpackRepository.addScene(getApplication(), projectId, scene, _state.value.sprites, name)
+    }
+
+    /** Вставляет скрипт из рюкзака как новый скрипт активной сцены. */
+    fun pasteScriptFromBackpack(item: BackpackItem) {
+        val src = item.script ?: return
+        val newScript = src.copy(
+            id = UUID.randomUUID().toString(),
+            blocks = src.blocks.mapNotNull { it.deserialize() }.withFreshIds().map { it.serialize() }
+        )
+        _state.update { it.copy(scripts = it.scripts + newScript, activeScriptId = newScript.id) }
+    }
+
+    /** Вставляет блок из рюкзака в конец активного скрипта. */
+    fun pasteBlockFromBackpack(item: BackpackItem) {
+        if (item.blocks.isEmpty()) return
+        val fresh = item.blocks.mapNotNull { it.deserialize() }.withFreshIds().map { it.serialize() }
+        modifyActiveBlocks { it + fresh }
+    }
+
+    /** Вставляет сцену из рюкзака как новую сцену проекта; регистрирует недостающие спрайты. */
+    fun pasteSceneFromBackpack(item: BackpackItem) {
+        val src = item.scene ?: return
+        val newScene = src.copy(
+            id = UUID.randomUUID().toString(),
+            scripts = src.scripts.map { s ->
+                s.copy(
+                    id = UUID.randomUUID().toString(),
+                    blocks = s.blocks.mapNotNull { it.deserialize() }.withFreshIds().map { it.serialize() }
+                )
+            },
+            locationBlocks = src.locationBlocks.map { it.copy(id = UUID.randomUUID().toString()) }
+        )
+        item.sprites.forEach { backpackSprite -> copyBackpackSpriteIntoProject(backpackSprite) }
+        _state.update { it.copy(scenes = it.scenes + newScene) }
+    }
+
+    /** Копирует файл спрайта из хранилища рюкзака в спрайты текущего проекта и регистрирует его, если ещё не зарегистрирован. */
+    private fun copyBackpackSpriteIntoProject(backpackSprite: su.SkrinVex.SkriCode.data.SpriteAsset) {
+        if (_state.value.sprites.any { it.name == backpackSprite.name }) return
+        val srcFile = BackpackRepository.getSpriteFile(getApplication(), backpackSprite.fileName) ?: return
+        val destDir = su.SkrinVex.SkriCode.data.SpriteRepository.spritesDir(getApplication(), projectId)
+        val destFile = java.io.File(destDir, backpackSprite.fileName)
+        if (runCatching { srcFile.copyTo(destFile, overwrite = true) }.isSuccess) {
+            registerSpriteAsset(backpackSprite)
+        }
+    }
+
+    /** Регистрирует в проекте спрайт, файл которого уже скопирован на диск (например, при вставке объекта из рюкзака). */
+    fun registerSpriteAsset(asset: su.SkrinVex.SkriCode.data.SpriteAsset) {
+        if (_state.value.sprites.none { it.name == asset.name }) {
+            _state.update { it.copy(sprites = it.sprites + asset) }
+        }
     }
 
     // --- Звуки ---

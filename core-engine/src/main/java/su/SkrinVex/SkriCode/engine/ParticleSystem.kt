@@ -99,24 +99,32 @@ object ParticleSystem {
                 }
             }
 
-            val interval = if (emitter.rate > 0f) 1f / emitter.rate else 1f
+            val interval = if (emitter.rate > 0f) 1f / emitter.rate else 0f
             var timer = emitter.timer + dt
 
-            while (timer >= interval && nextParticles.size < MAX_PARTICLES) {
-                timer -= interval
-                val newBorn = burst(
-                    x = emX,
-                    y = emY,
-                    count = emitter.countPerEmission,
-                    colorStart = emitter.colorStart,
-                    colorEnd = emitter.colorEnd,
-                    speed = emitter.speed,
-                    sizeStart = emitter.sizeStart,
-                    sizeEnd = emitter.sizeEnd,
-                    lifetime = emitter.lifetime,
-                    gravity = emitter.gravity
-                )
-                nextParticles.addAll(newBorn)
+            if (interval > 0f) {
+                while (timer >= interval && nextParticles.size < MAX_PARTICLES) {
+                    timer -= interval
+                    val newBorn = burst(
+                        x = emX,
+                        y = emY,
+                        count = emitter.countPerEmission,
+                        colorStart = emitter.colorStart,
+                        colorEnd = emitter.colorEnd,
+                        speed = emitter.speed,
+                        sizeStart = emitter.sizeStart,
+                        sizeEnd = emitter.sizeEnd,
+                        lifetime = emitter.lifetime,
+                        gravity = emitter.gravity
+                    )
+                    nextParticles.addAll(newBorn)
+                }
+                // Если уткнулись в лимит частиц — не копим долг таймера сверх одного интервала,
+                // иначе после освобождения места вылетит резкий всплеск накопленных частиц разом.
+                if (nextParticles.size >= MAX_PARTICLES) timer = timer.coerceAtMost(interval)
+            } else {
+                // rate <= 0 — эмиттер явно выключен, не эмитим и не копим таймер
+                timer = 0f
             }
 
             nextEmitters[name] = emitter.copy(timer = timer)

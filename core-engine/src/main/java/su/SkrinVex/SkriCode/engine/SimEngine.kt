@@ -631,6 +631,64 @@ object SimEngine {
         )
     }
 
+    /**
+     * Сливает объект, "разбуженный" после wait/delay: поля, которые сам скрипт менял до паузы
+     * (перечислены в [fields], собранных в modifiedFields), берутся из currentObj — локальной
+     * копии скрипта; всё остальное берётся из live — актуального состояния объекта, которое
+     * могло измениться за время паузы благодаря другим скриптам или физике.
+     * Набор полей должен зеркалить buildMergedState() в runScriptOnState.
+     */
+    private fun mergeAwaitedObject(currentObj: SimObject, liveObj: SimObject, fields: Set<String>): SimObject = currentObj.copy(
+        x = if ("x" in fields) currentObj.x else liveObj.x,
+        y = if ("y" in fields) currentObj.y else liveObj.y,
+        rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
+        visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
+        alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
+        touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
+        label = if ("label" in fields) currentObj.label else liveObj.label,
+        fontSize = if ("fontSize" in fields) currentObj.fontSize else liveObj.fontSize,
+        bold = if ("bold" in fields) currentObj.bold else liveObj.bold,
+        textColor = if ("textColor" in fields) currentObj.textColor else liveObj.textColor,
+        color = if ("color" in fields) currentObj.color else liveObj.color,
+        tags = if ("tags" in fields) currentObj.tags else liveObj.tags,
+        spriteName = if ("sprite" in fields) currentObj.spriteName else liveObj.spriteName,
+        spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
+        spriteScaleX = if ("spriteScaleX" in fields || "sprite" in fields) currentObj.spriteScaleX else liveObj.spriteScaleX,
+        spriteScaleY = if ("spriteScaleY" in fields || "sprite" in fields) currentObj.spriteScaleY else liveObj.spriteScaleY,
+        spriteCropX = if ("spriteCrop" in fields || "cropX" in fields) currentObj.spriteCropX else liveObj.spriteCropX,
+        spriteCropY = if ("spriteCrop" in fields || "cropY" in fields) currentObj.spriteCropY else liveObj.spriteCropY,
+        spriteCropW = if ("spriteCrop" in fields || "cropW" in fields) currentObj.spriteCropW else liveObj.spriteCropW,
+        spriteCropH = if ("spriteCrop" in fields || "cropH" in fields) currentObj.spriteCropH else liveObj.spriteCropH,
+        animCols = if ("anim" in fields) currentObj.animCols else liveObj.animCols,
+        animRows = if ("anim" in fields) currentObj.animRows else liveObj.animRows,
+        animFps = if ("anim" in fields) currentObj.animFps else liveObj.animFps,
+        animStartFrame = if ("anim" in fields) currentObj.animStartFrame else liveObj.animStartFrame,
+        animEndFrame = if ("anim" in fields) currentObj.animEndFrame else liveObj.animEndFrame,
+        animLoop = if ("anim" in fields) currentObj.animLoop else liveObj.animLoop,
+        animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying,
+        animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
+        animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
+        animOffsetX = if ("anim" in fields) currentObj.animOffsetX else liveObj.animOffsetX,
+        animOffsetY = if ("anim" in fields) currentObj.animOffsetY else liveObj.animOffsetY,
+        animSpacingX = if ("anim" in fields) currentObj.animSpacingX else liveObj.animSpacingX,
+        animSpacingY = if ("anim" in fields) currentObj.animSpacingY else liveObj.animSpacingY,
+        animFrameWidth = if ("anim" in fields) currentObj.animFrameWidth else liveObj.animFrameWidth,
+        animFrameHeight = if ("anim" in fields) currentObj.animFrameHeight else liveObj.animFrameHeight,
+        zOrder = if ("zOrder" in fields || "layer" in fields) currentObj.zOrder else liveObj.zOrder,
+        collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
+        width = if ("width" in fields) currentObj.width else liveObj.width,
+        height = if ("height" in fields) currentObj.height else liveObj.height,
+        radius = if ("radius" in fields) currentObj.radius else liveObj.radius,
+        physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
+        hitbox = if ("hitbox" in fields) currentObj.hitbox else liveObj.hitbox,
+        isTextInput = if ("isTextInput" in fields) currentObj.isTextInput else liveObj.isTextInput,
+        multiline = if ("multiline" in fields) currentObj.multiline else liveObj.multiline,
+        placeholder = if ("placeholder" in fields) currentObj.placeholder else liveObj.placeholder,
+        targetVar = if ("targetVar" in fields) currentObj.targetVar else liveObj.targetVar,
+        inputTrigger = if ("inputTrigger" in fields) currentObj.inputTrigger else liveObj.inputTrigger,
+        inputButton = if ("inputButton" in fields) currentObj.inputButton else liveObj.inputButton
+    )
+
     private suspend fun executeCompiled(
         instructions: List<CompiledBlock>,
         vars: MutableMap<String, String>,
@@ -728,6 +786,7 @@ object SimEngine {
         }
 
         val loopCounters = mutableMapOf<String, Int>()
+        val savedLoopVars = mutableMapOf<String, String?>()
         var pc = 0
 
         while (pc < instructions.size) {
@@ -1707,9 +1766,13 @@ object SimEngine {
                     val numVal = inst.countExpr.evalDouble(vars, evalScope)
                     val isInfinite = strVal == "true" || strVal == "infinity" || strVal == "бесконечно" || (numVal != null && numVal <= 0.0)
                     val count = if (isInfinite) Int.MAX_VALUE else (numVal?.toInt() ?: 1)
+                    val isFirstEntry = inst.loopId !in loopCounters
+                    if (isFirstEntry) savedLoopVars[inst.loopId] = vars["i"]
                     val current = loopCounters.getOrPut(inst.loopId) { 0 }
                     if (current >= count) {
                         loopCounters.remove(inst.loopId)
+                        val saved = savedLoopVars.remove(inst.loopId)
+                        if (saved != null) vars["i"] = saved else vars.remove("i")
                         pc = inst.endPc
                     } else {
                         vars["i"] = current.toString()
@@ -1749,20 +1812,7 @@ object SimEngine {
                                     val currentObj = objects[name]
                                     if (currentObj != null) {
                                         val fields = modifiedFields[name] ?: emptySet()
-                                        objects[name] = currentObj.copy(
-                                            x = if ("x" in fields) currentObj.x else liveObj.x,
-                                            y = if ("y" in fields) currentObj.y else liveObj.y,
-                                            rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
-                                            visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
-                                            alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
-                                            spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
-                                            touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
-                                            collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
-                                            physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
-                                            animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
-                                            animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
-                                            animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying
-                                        )
+                                        objects[name] = mergeAwaitedObject(currentObj, liveObj, fields)
                                     } else {
                                         objects[name] = liveObj
                                     }
@@ -1809,20 +1859,7 @@ object SimEngine {
                                         val currentObj = objects[name]
                                         if (currentObj != null) {
                                             val fields = modifiedFields[name] ?: emptySet()
-                                            objects[name] = currentObj.copy(
-                                                x = if ("x" in fields) currentObj.x else liveObj.x,
-                                                y = if ("y" in fields) currentObj.y else liveObj.y,
-                                                rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
-                                                visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
-                                                alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
-                                                spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
-                                                touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
-                                                collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
-                                                physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
-                                                animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
-                                                animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
-                                                animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying
-                                            )
+                                            objects[name] = mergeAwaitedObject(currentObj, liveObj, fields)
                                         } else {
                                             objects[name] = liveObj
                                         }
@@ -1873,20 +1910,7 @@ object SimEngine {
                                         val currentObj = objects[name]
                                         if (currentObj != null) {
                                             val fields = modifiedFields[name] ?: emptySet()
-                                            objects[name] = currentObj.copy(
-                                                x = if ("x" in fields) currentObj.x else liveObj.x,
-                                                y = if ("y" in fields) currentObj.y else liveObj.y,
-                                                rotation = if ("rotation" in fields) currentObj.rotation else liveObj.rotation,
-                                                visible = if ("visible" in fields) currentObj.visible else liveObj.visible,
-                                                alpha = if ("alpha" in fields) currentObj.alpha else liveObj.alpha,
-                                                spriteAlpha = if ("spriteAlpha" in fields || "sprite" in fields) currentObj.spriteAlpha else liveObj.spriteAlpha,
-                                                touchEnabled = if ("touchEnabled" in fields) currentObj.touchEnabled else liveObj.touchEnabled,
-                                                collisionIgnore = if ("collisionIgnore" in fields) currentObj.collisionIgnore else liveObj.collisionIgnore,
-                                                physicsBody = if ("physicsBody" in fields || fields.any { it.startsWith("physics_") }) currentObj.physicsBody else liveObj.physicsBody,
-                                                animCurrentFrame = if ("anim" in fields) currentObj.animCurrentFrame else liveObj.animCurrentFrame,
-                                                animElapsed = if ("anim" in fields) currentObj.animElapsed else liveObj.animElapsed,
-                                                animPlaying = if ("anim" in fields) currentObj.animPlaying else liveObj.animPlaying
-                                            )
+                                            objects[name] = mergeAwaitedObject(currentObj, liveObj, fields)
                                         } else {
                                             objects[name] = liveObj
                                         }

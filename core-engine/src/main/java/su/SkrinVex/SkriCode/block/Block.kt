@@ -16,6 +16,7 @@ enum class BlockCategory(val label: String) {
     AUDIO("Звук"),
     WIDGET("Виджеты"),
     FUNCTION("Функции"),
+    COMMENT("Комментарии"),
 }
 
 enum class ParamType { TEXT, NUMBER, SELECT }
@@ -43,7 +44,9 @@ data class BlockDef(
     // Дочерние блоки для if_block: "then" и "else" ветки
     val children: Map<String, List<BlockDef>> = emptyMap(),
     // ID парного блока (для open/close пар: for_loop_open↔for_loop_close и т.д.)
-    val pairId: String = ""
+    val pairId: String = "",
+    // Отключённый блок ("закомментирован") — сохраняется в проекте, но не выполняется движком
+    val enabled: Boolean = true
 ) {
     fun withParam(key: String, value: String): BlockDef =
         copy(params = params + (key to params[key]!!.copy(value = value)))

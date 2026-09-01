@@ -7,6 +7,9 @@ import su.SkrinVex.SkriCode.engine.ast.LiteralString
 
 object BlockCompiler {
 
+    private val OPEN_TYPES = setOf("if_open", "for_loop_open", "while_loop_open", "wait_open")
+    private val CLOSE_TYPES = setOf("if_close", "for_loop_close", "while_loop_close", "wait_close")
+
     fun compile(blocks: List<BlockDef>): List<CompiledBlock> {
         val result = mutableListOf<CompiledBlock>()
         val controlStack = java.util.ArrayDeque<ControlFrame>()
@@ -34,6 +37,30 @@ object BlockCompiler {
         var i = 0
         while (i < blocks.size) {
             val b = blocks[i]
+
+            // Комментарий — чисто декоративный блок, никогда не компилируется
+            if (b.type == "comment") { i++; continue }
+
+            // Отключённый ("закомментированный") блок пропускается целиком.
+            // Если это открывающий блок пары (if/for/while/wait), пропускаем весь диапазон
+            // до соответствующего закрывающего блока включительно, чтобы не сломать стек управления.
+            if (!b.enabled) {
+                if (b.type in OPEN_TYPES) {
+                    var depth = 1
+                    var j = i + 1
+                    while (j < blocks.size && depth > 0) {
+                        val t = blocks[j].type
+                        if (t in OPEN_TYPES) depth++
+                        else if (t in CLOSE_TYPES) depth--
+                        j++
+                    }
+                    i = j
+                } else {
+                    i++
+                }
+                continue
+            }
+
             fun p(key: String, def: String = "", altKey: String = ""): String {
                 val v1 = b.params[key]?.value
                 if (!v1.isNullOrBlank()) return v1

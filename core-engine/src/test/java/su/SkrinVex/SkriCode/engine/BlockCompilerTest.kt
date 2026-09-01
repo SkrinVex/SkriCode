@@ -53,6 +53,41 @@ class BlockCompilerTest {
     }
 
     @Test
+    fun testDisabledSimpleBlockIsSkipped() {
+        val blocks = listOf(
+            BlockDef("1", "set_var", "Переменная", params = mapOf("name" to BlockParam("x", "name"), "value" to BlockParam("1", "value")), enabled = false),
+            BlockDef("2", "set_var", "Переменная", params = mapOf("name" to BlockParam("y", "name"), "value" to BlockParam("2", "value")))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertEquals("y", (compiled[0] as CompiledBlock.SetVar).name)
+    }
+
+    @Test
+    fun testDisabledForLoopSkipsWholeBody() {
+        val blocks = listOf(
+            BlockDef("1", "for_loop_open", "Цикл", params = mapOf("count" to BlockParam("5", "count")), enabled = false),
+            BlockDef("2", "set_var", "Переменная", params = mapOf("name" to BlockParam("sum", "name"), "value" to BlockParam("1", "value"))),
+            BlockDef("3", "for_loop_close", "Конец цикла"),
+            BlockDef("4", "set_var", "Переменная", params = mapOf("name" to BlockParam("after", "name"), "value" to BlockParam("1", "value")))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertEquals("after", (compiled[0] as CompiledBlock.SetVar).name)
+    }
+
+    @Test
+    fun testCommentBlockNeverCompiles() {
+        val blocks = listOf(
+            BlockDef("1", "comment", "Комментарий", params = mapOf("text" to BlockParam("заметка", "text"))),
+            BlockDef("2", "set_var", "Переменная", params = mapOf("name" to BlockParam("x", "name"), "value" to BlockParam("1", "value")))
+        )
+        val compiled = BlockCompiler.compile(blocks)
+        assertEquals(1, compiled.size)
+        assertTrue(compiled[0] is CompiledBlock.SetVar)
+    }
+
+    @Test
     fun testCompileAnimationAndVisualBlocks() {
         val blocks = listOf(
             BlockDef("1", "anim_play", "Играть анимацию", params = mapOf(

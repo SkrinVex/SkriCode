@@ -110,8 +110,8 @@ data class BinaryArith(val left: AstExpr, val op: Char, val right: AstExpr) : As
             '+' -> lv + rv
             '-' -> lv - rv
             '*' -> lv * rv
-            '/' -> if (rv != 0.0) lv / rv else null
-            '%' -> if (rv != 0.0) lv % rv else null
+            '/' -> if (rv != 0.0) lv / rv else 0.0
+            '%' -> if (rv != 0.0) lv % rv else 0.0
             else -> null
         }
     }
@@ -312,7 +312,9 @@ data class BuiltinFunc(val name: String, val args: List<AstExpr>) : AstExpr {
             "saveExists" -> {
                 val key = args.firstOrNull()?.evalString(vars, scope) ?: return "false"
                 val ctx = ExprEval.appContext
-                val exists = if (ctx != null) SaveCrypto.hasKey(ctx, key) else false
+                val exists = if (ctx != null) {
+                    ctx.getSharedPreferences("skripts_saves", android.content.Context.MODE_PRIVATE).contains(key)
+                } else false
                 exists.toString()
             }
             "fieldVal", "inputVal" -> {

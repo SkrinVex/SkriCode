@@ -46,17 +46,20 @@ class SoundManager(
         soundPool?.setOnLoadCompleteListener { _, sampleId, status ->
             if (status == 0) {
                 loadedSoundIds[sampleId] = true
-                // Воспроизводим отложенные запросы для этого sampleId (если не на паузе)
-                val iter = pendingQueue.iterator()
-                while (iter.hasNext()) {
-                    val req = iter.next()
-                    if (req.soundId == sampleId) {
-                        iter.remove()
-                        if (!isPaused) {
-                            playLoadedSound(req.name, req.soundId, req.volume, req.loop, req.rate)
-                        }
+            }
+            // Снимаем с очереди отложенные запросы для этого sampleId (успех — играем, ошибка — просто отбрасываем)
+            val iter = pendingQueue.iterator()
+            while (iter.hasNext()) {
+                val req = iter.next()
+                if (req.soundId == sampleId) {
+                    iter.remove()
+                    if (status == 0 && !isPaused) {
+                        playLoadedSound(req.name, req.soundId, req.volume, req.loop, req.rate)
                     }
                 }
+            }
+            if (status != 0) {
+                soundIdMap.entries.removeAll { it.value == sampleId }
             }
         }
     }

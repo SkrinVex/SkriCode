@@ -119,17 +119,19 @@ data class SerializedBlock(
     val params: Map<String, String> = emptyMap(),
     val id: String = java.util.UUID.randomUUID().toString(),
     val children: Map<String, List<SerializedBlock>>? = null,
-    val pairId: String? = null  // nullable для обратной совместимости со старыми сохранениями
+    val pairId: String? = null,  // nullable для обратной совместимости со старыми сохранениями
+    val enabled: Boolean? = null  // null/отсутствует = включён (обратная совместимость со старыми сохранениями)
 )
 
 fun BlockDef.serialize(): SerializedBlock = SerializedBlock(
     type, params.mapValues { it.value.value }, id,
     children = if (children.isEmpty()) null else children.mapValues { (_, blocks) -> blocks.map { it.serialize() } },
-    pairId = pairId
+    pairId = pairId,
+    enabled = if (enabled) null else false
 )
 
 fun SerializedBlock.deserialize(): BlockDef? = BlockFactory.create(type)?.let { proto ->
-    var b = proto.copy(id = this.id, pairId = this.pairId ?: "")
+    var b = proto.copy(id = this.id, pairId = this.pairId ?: "", enabled = this.enabled != false)
     params.forEach { (k, v) ->
         if (b.params.containsKey(k)) {
             b = b.withParam(k, v)

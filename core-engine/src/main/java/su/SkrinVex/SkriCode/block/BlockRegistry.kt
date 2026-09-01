@@ -10,7 +10,7 @@ object BlockRegistry {
 
     // Типы показываемые в пикере блоков (закрывающие и else не показываем — добавляются автоматически)
     private val types = listOf(
-        "set_var", "set_tag", "table_set", "table_get",
+        "set_var", "set_tag", "comment", "table_set", "table_get",
         "save_var", "load_var", "save_table", "load_table",
         "if_open", "sim_stop",
         "for_loop_open", "while_loop_open", "wait_open",

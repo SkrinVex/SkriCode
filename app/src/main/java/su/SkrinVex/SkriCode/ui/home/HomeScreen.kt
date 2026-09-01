@@ -35,6 +35,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
     var showNewDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var showBackpack by remember { mutableStateOf(false) }
 
     // Лаунчер для выбора файла импорта
     val importLauncher = rememberLauncherForActivityResult(
@@ -42,6 +43,11 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
     ) { uri: Uri? -> uri?.let { vm.importProject(it) } }
 
     LaunchedEffect(Unit) { vm.refresh() }
+
+    if (showBackpack) {
+        su.SkrinVex.SkriCode.ui.backpack.BackpackScreen(onBack = { showBackpack = false })
+        return
+    }
 
     Box(Modifier.fillMaxSize().background(Navy900)) {
         Column(Modifier.fillMaxSize()) {
@@ -64,6 +70,9 @@ fun HomeScreen(vm: HomeViewModel, onOpenProject: (String?) -> Unit, onThemeChang
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/SkriCode")))
                     }) {
                         Icon(Icons.Default.Send, "Сообщество", tint = TextSec)
+                    }
+                    IconButton(onClick = { showBackpack = true }) {
+                        Icon(Icons.Default.Backpack, "Рюкзак", tint = TextSec)
                     }
                     IconButton(onClick = { showHelp = true }) {
                         Icon(Icons.Default.Help, "Справка", tint = TextSec)
